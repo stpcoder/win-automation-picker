@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "win-automation-picker"
+version = "0.1.0"
+description = "A Windows UI Automation picker and action runner."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "pywinauto>=0.6.8; platform_system == 'Windows'",
+  "pynput>=1.7.6; platform_system == 'Windows'",
+  "pyperclip>=1.8.2; platform_system == 'Windows'",
+]
+
+[project.scripts]
+win-automation-picker = "win_automation_picker.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
