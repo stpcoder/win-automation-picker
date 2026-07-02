@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 import platform
 import time
 from typing import Any, Iterable
 
-from .selector import Rect, SelectorSegment, UISelector
+from .selector import Rect, SelectorSegment, UISelector, WindowMarker
 
 
 class WindowsAutomationError(RuntimeError):
@@ -197,6 +198,70 @@ def _segment_from_wrapper(wrapper: Any) -> SelectorSegment:
     return _segment_from_info(_info(wrapper))
 
 
+def _same_text(left: Any, right: str) -> bool:
+    return str(left or "").casefold() == right.casefold()
+
+
+def _contains_text(value: Any, needle: str) -> bool:
+    return needle.casefold() in str(value or "").casefold()
+
+
+def _marker_matches_info(info: Any, marker: WindowMarker) -> bool:
+    if marker.name_contains and not _contains_text(_safe_attr(info, "name", ""), marker.name_contains):
+        return False
+    if marker.automation_id and not _same_text(_safe_attr(info, "automation_id", ""), marker.automation_id):
+        return False
+    if marker.control_type and not _same_text(_safe_attr(info, "control_type", ""), marker.control_type):
+        return False
+    if marker.class_name and not _same_text(_safe_attr(info, "class_name", ""), marker.class_name):
+        return False
+    return True
+
+
+def _iter_descendant_infos(root_info: Any, *, max_depth: int = 8, limit: int = 2000) -> Iterable[Any]:
+    queue: deque[tuple[Any, int]] = deque([(root_info, 0)])
+    yielded = 0
+    while queue and yielded < limit:
+        info, depth = queue.popleft()
+        yielded += 1
+        yield info
+
+        if depth >= max_depth:
+            continue
+        for child in _children_infos(info):
+            queue.append((child, depth + 1))
+
+
+def _find_window_marker_match(window_or_info: Any, marker: WindowMarker | None) -> Any | None:
+    if marker is None or marker.is_empty():
+        return _info(window_or_info)
+
+    root_info = _info(window_or_info)
+    for info in _iter_descendant_infos(root_info):
+        if _marker_matches_info(info, marker):
+            return info
+    return None
+
+
+def _window_matches_marker(window: Any, marker: WindowMarker | None) -> bool:
+    return _find_window_marker_match(window, marker) is not None
+
+
+def _info_summary(info: Any | None) -> dict[str, Any]:
+    if info is None:
+        return {}
+    rect = Rect.from_any(_safe_attr(info, "rectangle", None))
+    return {
+        "name": _safe_attr(info, "name", ""),
+        "automation_id": _safe_attr(info, "automation_id", ""),
+        "control_type": _safe_attr(info, "control_type", ""),
+        "class_name": _safe_attr(info, "class_name", ""),
+        "handle": _safe_attr(info, "handle", None),
+        "process_id": _safe_attr(info, "process_id", None),
+        "rect": rect.__dict__,
+    }
+
+
 def _find_matching_child(parent: Any, segment: SelectorSegment) -> Any:
     matches = [
         child
@@ -213,11 +278,12 @@ def _find_matching_child(parent: Any, segment: SelectorSegment) -> Any:
 
 def _find_root_window(selector: UISelector) -> Any:
     desktop = _desktop()
+    marker = selector.window_marker
 
     if selector.root_handle:
         try:
             candidate = desktop.window(handle=selector.root_handle).wrapper_object()
-            if selector.root.matches(_segment_from_wrapper(candidate)):
+            if selector.root.matches(_segment_from_wrapper(candidate)) and _window_matches_marker(candidate, marker):
                 return candidate
         except Exception:
             pass
@@ -227,13 +293,81 @@ def _find_root_window(selector: UISelector) -> Any:
         window
         for window in candidates
         if selector.root.matches(_segment_from_wrapper(window))
+        and _window_matches_marker(window, marker)
     ]
     if not matches:
+        if marker and not marker.is_empty():
+            root_matches = [
+                window
+                for window in candidates
+                if selector.root.matches(_segment_from_wrapper(window))
+            ]
+            if root_matches:
+                raise WindowsAutomationError(
+                    "Root window matched, but no candidate contains window marker: "
+                    f"{marker.summary()}"
+                )
         raise WindowsAutomationError(f"No root window matches selector: {selector.root.xpath_node()}")
 
     if selector.root.index < len(matches):
         return matches[selector.root.index]
     return matches[0]
+
+
+def debug_root_candidates(selector: UISelector, *, limit: int = 50) -> list[dict[str, Any]]:
+    desktop = _desktop()
+    marker = selector.window_marker
+    candidates = list(desktop.windows())[: max(0, limit)]
+    rows: list[dict[str, Any]] = []
+    matching_fingerprints: list[tuple[Any, ...]] = []
+    root_match_index = 0
+
+    for position, window in enumerate(candidates, start=1):
+        info = _info(window)
+        root_match = selector.root.matches(_segment_from_wrapper(window))
+        marker_info = None
+        marker_match = False
+        candidate_index: int | None = None
+
+        if root_match:
+            candidate_index = root_match_index
+            root_match_index += 1
+            marker_info = _find_window_marker_match(window, marker)
+            marker_match = marker_info is not None
+            if marker_match:
+                matching_fingerprints.append(_runtime_fingerprint(info))
+
+        rows.append(
+            {
+                "_fingerprint": _runtime_fingerprint(info),
+                "position": position,
+                "root_match_index": candidate_index,
+                "root_match": root_match,
+                "marker_match": marker_match if marker and not marker.is_empty() else root_match,
+                "handle_is_hint": bool(
+                    selector.root_handle
+                    and _safe_attr(info, "handle", None) == selector.root_handle
+                ),
+                "selected": False,
+                "window": _info_summary(info),
+                "marker_target": _info_summary(marker_info) if marker_info is not None else {},
+            }
+        )
+
+    selected_fingerprint = None
+    if matching_fingerprints:
+        selected_index = selector.root.index if selector.root.index < len(matching_fingerprints) else 0
+        selected_fingerprint = matching_fingerprints[selected_index]
+
+    if selected_fingerprint is not None:
+        for row in rows:
+            if row.get("_fingerprint") == selected_fingerprint:
+                row["selected"] = True
+                break
+    for row in rows:
+        row.pop("_fingerprint", None)
+
+    return rows
 
 
 def resolve_selector(selector: UISelector, *, timeout: float = 5.0) -> Any:
@@ -294,3 +428,24 @@ def type_text(
         return
 
     wrapper.type_keys(text, with_spaces=True, set_foreground=True, pause=0.02)
+
+
+def press_keys(
+    keys: str,
+    *,
+    selector: UISelector | None = None,
+    timeout: float = 5.0,
+) -> None:
+    if selector is not None:
+        wrapper = resolve_selector(selector, timeout=timeout)
+        try:
+            wrapper.set_focus()
+        except Exception:
+            pass
+
+    try:
+        from pywinauto.keyboard import send_keys
+    except ImportError as exc:
+        raise WindowsAutomationError("pywinauto is required for key input.") from exc
+
+    send_keys(keys, pause=0.02)

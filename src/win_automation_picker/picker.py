@@ -9,12 +9,20 @@ from .automation import PickedElement, WindowsAutomationError, pick_at_point
 
 PickCallback = Callable[[PickedElement], None]
 ErrorCallback = Callable[[BaseException], None]
+PointFilter = Callable[[int, int], bool]
 
 
 class ClickPicker:
-    def __init__(self, on_pick: PickCallback, on_error: ErrorCallback) -> None:
+    def __init__(
+        self,
+        on_pick: PickCallback,
+        on_error: ErrorCallback,
+        *,
+        ignore_point: PointFilter | None = None,
+    ) -> None:
         self._on_pick = on_pick
         self._on_error = on_error
+        self._ignore_point = ignore_point
         self._listener: Any | None = None
         self._lock = threading.Lock()
 
@@ -31,6 +39,8 @@ class ClickPicker:
 
             def on_click(x: int, y: int, _button: Any, pressed: bool) -> bool:
                 if not pressed:
+                    return True
+                if self._ignore_point and self._ignore_point(int(x), int(y)):
                     return True
                 try:
                     picked = pick_at_point(x, y)

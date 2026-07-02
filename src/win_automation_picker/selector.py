@@ -90,6 +90,51 @@ class SelectorSegment:
 
 
 @dataclass(frozen=True)
+class WindowMarker:
+    name_contains: str = ""
+    automation_id: str = ""
+    control_type: str = ""
+    class_name: str = ""
+    description: str = ""
+
+    @classmethod
+    def from_mapping(cls, data: dict[str, Any] | None) -> "WindowMarker | None":
+        if not data:
+            return None
+        name_contains = _clean(data.get("name_contains")) or _clean(data.get("text_contains"))
+        marker = cls(
+            name_contains=name_contains,
+            automation_id=_clean(data.get("automation_id")),
+            control_type=_clean(data.get("control_type")),
+            class_name=_clean(data.get("class_name")),
+            description=_clean(data.get("description")),
+        )
+        return None if marker.is_empty() else marker
+
+    def is_empty(self) -> bool:
+        return not any(
+            (
+                self.name_contains,
+                self.automation_id,
+                self.control_type,
+                self.class_name,
+            )
+        )
+
+    def summary(self) -> str:
+        pieces: list[str] = []
+        if self.name_contains:
+            pieces.append(f"Name contains {self.name_contains!r}")
+        if self.automation_id:
+            pieces.append(f"AutomationId={self.automation_id!r}")
+        if self.control_type:
+            pieces.append(f"ControlType={self.control_type!r}")
+        if self.class_name:
+            pieces.append(f"ClassName={self.class_name!r}")
+        return ", ".join(pieces)
+
+
+@dataclass(frozen=True)
 class UISelector:
     root: SelectorSegment
     path: list[SelectorSegment] = field(default_factory=list)
@@ -98,6 +143,7 @@ class UISelector:
     process_id: int | None = None
     rect: Rect = field(default_factory=Rect)
     picked_point: tuple[int, int] | None = None
+    window_marker: WindowMarker | None = None
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> "UISelector":
@@ -111,6 +157,7 @@ class UISelector:
             process_id=data.get("process_id"),
             rect=Rect(**rect_data) if isinstance(rect_data, dict) else Rect.from_any(rect_data),
             picked_point=tuple(point) if point else None,
+            window_marker=WindowMarker.from_mapping(data.get("window_marker")),
         )
 
     @classmethod

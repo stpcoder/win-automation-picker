@@ -1,4 +1,4 @@
-from win_automation_picker.recipe import AutomationRecipe, AutomationStep, DataSet, render_template
+from win_automation_picker.recipe import AutomationRecipe, AutomationStep, DataSet, render_template, run_recipe
 from win_automation_picker.selector import SelectorSegment, UISelector
 
 
@@ -51,7 +51,15 @@ def test_recipe_round_trip_json() -> None:
     recipe = AutomationRecipe(
         steps=[
             AutomationStep.click(selector),
-            AutomationStep.type(selector, "${message}", clear=True),
+            AutomationStep.type(
+                selector,
+                "${message}",
+                clear=True,
+                element_id="message_input",
+                element_role="input",
+                description="Message body field",
+            ),
+            AutomationStep.key("{ENTER}", element_id="submit_enter"),
             AutomationStep.wait(0.25),
         ]
     )
@@ -59,3 +67,27 @@ def test_recipe_round_trip_json() -> None:
     restored = AutomationRecipe.from_json(recipe.to_json())
 
     assert restored == recipe
+
+
+def test_key_step_round_trip_json() -> None:
+    recipe = AutomationRecipe(steps=[AutomationStep.key("^s", label="Save", element_role="hotkey")])
+
+    restored = AutomationRecipe.from_json(recipe.to_json())
+
+    assert restored.steps[0].kind == "key"
+    assert restored.steps[0].keys == "^s"
+    assert restored.steps[0].element_role == "hotkey"
+
+
+def test_run_recipe_dispatches_key_step(monkeypatch) -> None:
+    calls: list[tuple[str, object]] = []
+
+    def fake_press_keys(keys: str, *, selector=None, timeout: float = 5.0) -> None:
+        calls.append((keys, selector))
+
+    monkeypatch.setattr("win_automation_picker.recipe.press_keys", fake_press_keys)
+    recipe = AutomationRecipe(steps=[AutomationStep.key("{ENTER}")])
+
+    run_recipe(recipe)
+
+    assert calls == [("{ENTER}", None)]

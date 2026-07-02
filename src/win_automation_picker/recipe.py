@@ -9,7 +9,7 @@ import threading
 import time
 from typing import Any, Callable
 
-from .automation import WindowsAutomationError, click, type_text
+from .automation import WindowsAutomationError, click, press_keys, type_text
 from .selector import UISelector
 
 
@@ -100,13 +100,32 @@ class AutomationStep:
     selector: UISelector | None = None
     text: str = ""
     clear: bool = False
+    keys: str = ""
     seconds: float = 0.5
     timeout: float = 5.0
     label: str = ""
+    element_id: str = ""
+    element_role: str = ""
+    description: str = ""
 
     @classmethod
-    def click(cls, selector: UISelector, *, label: str = "") -> "AutomationStep":
-        return cls(kind="click", selector=selector, label=label)
+    def click(
+        cls,
+        selector: UISelector,
+        *,
+        label: str = "",
+        element_id: str = "",
+        element_role: str = "",
+        description: str = "",
+    ) -> "AutomationStep":
+        return cls(
+            kind="click",
+            selector=selector,
+            label=label,
+            element_id=element_id,
+            element_role=element_role,
+            description=description,
+        )
 
     @classmethod
     def type(
@@ -116,12 +135,45 @@ class AutomationStep:
         *,
         clear: bool = False,
         label: str = "",
+        element_id: str = "",
+        element_role: str = "",
+        description: str = "",
     ) -> "AutomationStep":
-        return cls(kind="type", selector=selector, text=text, clear=clear, label=label)
+        return cls(
+            kind="type",
+            selector=selector,
+            text=text,
+            clear=clear,
+            label=label,
+            element_id=element_id,
+            element_role=element_role,
+            description=description,
+        )
 
     @classmethod
     def wait(cls, seconds: float) -> "AutomationStep":
         return cls(kind="wait", seconds=max(0.0, float(seconds)), label=f"Wait {seconds:g}s")
+
+    @classmethod
+    def key(
+        cls,
+        keys: str,
+        *,
+        selector: UISelector | None = None,
+        label: str = "",
+        element_id: str = "",
+        element_role: str = "hotkey",
+        description: str = "",
+    ) -> "AutomationStep":
+        return cls(
+            kind="key",
+            selector=selector,
+            keys=keys,
+            label=label or f"Press {keys}",
+            element_id=element_id,
+            element_role=element_role,
+            description=description,
+        )
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> "AutomationStep":
@@ -131,9 +183,13 @@ class AutomationStep:
             selector=UISelector.from_mapping(selector_data) if selector_data else None,
             text=str(data.get("text", "")),
             clear=bool(data.get("clear", False)),
+            keys=str(data.get("keys", "")),
             seconds=float(data.get("seconds", 0.5)),
             timeout=float(data.get("timeout", 5.0)),
             label=str(data.get("label", "")),
+            element_id=str(data.get("element_id", "")),
+            element_role=str(data.get("element_role", "")),
+            description=str(data.get("description", "")),
         )
 
     def to_mapping(self) -> dict[str, Any]:
@@ -142,21 +198,28 @@ class AutomationStep:
             "selector": self.selector.to_mapping() if self.selector else None,
             "text": self.text,
             "clear": self.clear,
+            "keys": self.keys,
             "seconds": self.seconds,
             "timeout": self.timeout,
             "label": self.label,
+            "element_id": self.element_id,
+            "element_role": self.element_role,
+            "description": self.description,
         }
 
     def display_label(self) -> str:
         if self.label:
             return self.label
+        prefix = f"{self.element_id}: " if self.element_id else ""
         if self.kind == "click" and self.selector:
             leaf = self.selector.leaf()
-            return f"Click {leaf.control_type or 'Control'} {leaf.name or leaf.automation_id}".strip()
+            return (prefix + f"Click {leaf.control_type or 'Control'} {leaf.name or leaf.automation_id}").strip()
         if self.kind == "type" and self.selector:
             leaf = self.selector.leaf()
             target = leaf.name or leaf.automation_id or leaf.control_type or "Control"
-            return f"Type into {target}: {self.text}"
+            return f"{prefix}Type into {target}: {self.text}"
+        if self.kind == "key":
+            return f"{prefix}Press {self.keys or 'keys'}"
         if self.kind == "wait":
             return f"Wait {self.seconds:g}s"
         return self.kind
@@ -214,5 +277,9 @@ def run_recipe(
             )
         elif step.kind == "wait":
             time.sleep(max(0.0, step.seconds))
+        elif step.kind == "key":
+            if not step.keys:
+                raise WindowsAutomationError(f"Step {index} is missing keys.")
+            press_keys(step.keys, selector=step.selector, timeout=step.timeout)
         else:
             raise WindowsAutomationError(f"Unsupported step kind: {step.kind}")
