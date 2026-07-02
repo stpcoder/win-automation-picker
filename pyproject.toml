@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "win-automation-picker"
-version = "0.6.2"
+version = "0.6.3"
 description = "A Windows UI Automation picker and action runner."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,6 +20,9 @@ rig-commander = "win_automation_picker.rig_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+win_automation_picker = ["assets/*.ico", "assets/*.png"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

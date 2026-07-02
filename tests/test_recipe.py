@@ -79,6 +79,38 @@ def test_key_step_round_trip_json() -> None:
     assert restored.steps[0].element_role == "hotkey"
 
 
+def test_recipe_moves_steps_up_and_down() -> None:
+    recipe = AutomationRecipe(
+        steps=[
+            AutomationStep.wait(1),
+            AutomationStep.key("{ENTER}", label="Enter"),
+            AutomationStep.wait(2),
+        ]
+    )
+
+    moved, index = recipe.move_step(1, -1)
+    assert index == 0
+    assert [step.display_label() for step in moved.steps] == ["Enter", "Wait 1s", "Wait 2s"]
+
+    moved, index = moved.move_step(0, 1)
+    assert index == 1
+    assert [step.display_label() for step in moved.steps] == ["Wait 1s", "Enter", "Wait 2s"]
+
+
+def test_recipe_delete_step_removes_selected_step() -> None:
+    recipe = AutomationRecipe(
+        steps=[
+            AutomationStep.wait(1),
+            AutomationStep.key("{ENTER}", label="Enter"),
+            AutomationStep.wait(2),
+        ]
+    )
+
+    updated = recipe.delete_step(1)
+
+    assert [step.display_label() for step in updated.steps] == ["Wait 1s", "Wait 2s"]
+
+
 def test_run_recipe_dispatches_key_step(monkeypatch) -> None:
     calls: list[tuple[str, object]] = []
 

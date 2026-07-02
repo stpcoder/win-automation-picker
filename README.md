@@ -33,6 +33,7 @@ Windows may show a SmartScreen warning because the executable is not code-signed
 - Shows root-window candidate comparisons in the `Window Debug` tab.
 - Saves and loads selector JSON and workflow JSON.
 - Exports the recorded workflow as a runnable Python script.
+- Lets you move recorded steps up/down and delete incorrect steps.
 - Accepts Excel/Google Sheets-style pasted rows in the `Data rows` tab.
 - Replays the same workflow for every pasted row with template variables such as
   `${col1}`, `${col2}`, `${name}`, `${message}`, and `${row}`.
@@ -55,9 +56,11 @@ adapter.
 7. Set `Element name` to a field name such as `message_input`.
 8. Click `Record type step`, then click the target text input in the other app.
 9. Use `Add Enter` or `Add key` for keyboard-only blocks.
-10. Paste spreadsheet data into `Data rows`.
-11. Click `Run rows`.
-12. Click `Export Python` if you want a `.py` script version of the macro.
+10. In the `Steps` tab, use `Move up`, `Move down`, or `Delete step` to fix the
+    workflow order.
+11. Paste spreadsheet data into `Data rows`.
+12. Click `Run rows`.
+13. Click `Export Python` if you want a `.py` script version of the macro.
 
 Example pasted data:
 
@@ -94,6 +97,10 @@ The `Element name`, `Role`, and `Notes` fields are stored with the recorded step
 Select a step in the `Steps` tab and click `Apply to step` if you want to rename
 or reclassify it after recording. Selecting a step also loads its selector, so
 you can add a `Window marker` and use `Debug windows` against that exact step.
+
+The `Steps` tab also supports reordering and cleanup. Select a step and use
+`Move up`, `Move down`, or `Delete step`. Keyboard shortcuts are `Alt+Up`,
+`Alt+Down`, and `Delete`.
 
 ## Monitor tab
 
@@ -410,10 +417,10 @@ the downloader.
 
 ## Build pipeline
 
-GitHub Actions runs tests on Linux, builds `WinAutomationPicker.exe` and
-`RigCommander.exe` on `windows-latest` with PyInstaller, uploads the executables
-as artifacts, and updates the `latest` GitHub Release assets used by the
-download links above.
+GitHub Actions runs tests on Linux, builds icon-branded `WinAutomationPicker.exe`
+and `RigCommander.exe` on `windows-latest` with PyInstaller, uploads the
+executables as artifacts, and updates the `latest` GitHub Release assets used by
+the download links above.
 
 ## Notes
 

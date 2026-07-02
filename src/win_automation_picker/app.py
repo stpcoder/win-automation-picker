@@ -4,6 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 import queue
 import re
+import sys
 import threading
 import time
 import tkinter as tk
@@ -31,9 +32,31 @@ class PickerApp(tk.Tk):
         self._run_stop_event: threading.Event | None = None
         self._monitor_limit = 500
         self._last_auto_element_id = ""
+        self._icon_image: tk.PhotoImage | None = None
 
+        self._set_app_icon()
         self._build_ui()
         self.after(80, self._drain_queue)
+
+    def _set_app_icon(self) -> None:
+        for base in self._asset_search_paths():
+            icon_path = base / "win_automation_picker.png"
+            if not icon_path.exists():
+                continue
+            try:
+                self._icon_image = tk.PhotoImage(file=str(icon_path))
+                self.iconphoto(True, self._icon_image)
+            except tk.TclError:
+                pass
+            return
+
+    def _asset_search_paths(self) -> list[Path]:
+        paths: list[Path] = []
+        frozen_base = getattr(sys, "_MEIPASS", "")
+        if frozen_base:
+            paths.append(Path(frozen_base) / "win_automation_picker" / "assets")
+        paths.append(Path(__file__).with_name("assets"))
+        return paths
 
     def _build_ui(self) -> None:
         self.columnconfigure(0, weight=1)
@@ -252,9 +275,24 @@ class PickerApp(tk.Tk):
         self.steps_list = tk.Listbox(steps_frame, activestyle="dotbox")
         self.steps_list.grid(row=0, column=0, sticky="nsew")
         self.steps_list.bind("<<ListboxSelect>>", self._load_selected_step_metadata)
+        self.steps_list.bind("<Delete>", self._delete_selected_step_event)
+        self.steps_list.bind("<Alt-Up>", self._move_selected_step_up_event)
+        self.steps_list.bind("<Alt-Down>", self._move_selected_step_down_event)
         step_scroll = ttk.Scrollbar(steps_frame, orient="vertical", command=self.steps_list.yview)
         step_scroll.grid(row=0, column=1, sticky="ns")
         self.steps_list.configure(yscrollcommand=step_scroll.set)
+        step_controls = ttk.Frame(steps_frame)
+        step_controls.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        step_controls.columnconfigure(3, weight=1)
+        ttk.Button(step_controls, text="Move up", command=lambda: self._move_selected_step(-1)).grid(
+            row=0, column=0, padx=(0, 6)
+        )
+        ttk.Button(step_controls, text="Move down", command=lambda: self._move_selected_step(1)).grid(
+            row=0, column=1, padx=(0, 6)
+        )
+        ttk.Button(step_controls, text="Delete step", command=self._delete_selected_step).grid(
+            row=0, column=2, padx=(0, 6)
+        )
         right.add(steps_frame, text="Steps")
 
         elements_frame = ttk.Frame(right, padding=6)
@@ -623,11 +661,18 @@ class PickerApp(tk.Tk):
             return AutomationRecipe()
         return AutomationRecipe.from_json(text)
 
-    def _refresh_recipe_views(self) -> None:
+    def _refresh_recipe_views(self, *, selected_index: int | None = None) -> None:
         self._replace_text(self.workflow_text, self._recipe.to_json())
         self.steps_list.delete(0, "end")
         for index, step in enumerate(self._recipe.steps, start=1):
             self.steps_list.insert("end", f"{index}. {step.display_label()}")
+        if selected_index is not None and self._recipe.steps:
+            index = max(0, min(selected_index, len(self._recipe.steps) - 1))
+            self.steps_list.selection_clear(0, "end")
+            self.steps_list.selection_set(index)
+            self.steps_list.activate(index)
+            self.steps_list.see(index)
+            self._load_selected_step_metadata()
         if hasattr(self, "monitor_steps"):
             self.monitor_steps.set(str(len(self._recipe.steps)))
         if hasattr(self, "elements_list"):
@@ -842,6 +887,53 @@ class PickerApp(tk.Tk):
         if index < 0 or index >= len(self._recipe.steps):
             return None
         return index
+
+    def _move_selected_step_up_event(self, _event: Any | None = None) -> str:
+        self._move_selected_step(-1)
+        return "break"
+
+    def _move_selected_step_down_event(self, _event: Any | None = None) -> str:
+        self._move_selected_step(1)
+        return "break"
+
+    def _delete_selected_step_event(self, _event: Any | None = None) -> str:
+        self._delete_selected_step()
+        return "break"
+
+    def _move_selected_step(self, delta: int) -> None:
+        index = self._selected_step_index()
+        if index is None:
+            self._show_error(WindowsAutomationError("Select a step first."))
+            return
+        try:
+            recipe, new_index = self._recipe.move_step(index, delta)
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+        if new_index == index:
+            self.status.set("Step order unchanged")
+            return
+        self._recipe = recipe
+        self._refresh_recipe_views(selected_index=new_index)
+        direction = "up" if delta < 0 else "down"
+        self.status.set(f"Moved step {direction}")
+        self._add_monitor_event(f"Moved step {index + 1} {direction} to {new_index + 1}.")
+
+    def _delete_selected_step(self) -> None:
+        index = self._selected_step_index()
+        if index is None:
+            self._show_error(WindowsAutomationError("Select a step first."))
+            return
+        removed_label = self._recipe.steps[index].display_label()
+        try:
+            self._recipe = self._recipe.delete_step(index)
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+        selected_index = min(index, len(self._recipe.steps) - 1) if self._recipe.steps else None
+        self._refresh_recipe_views(selected_index=selected_index)
+        self.status.set("Deleted step")
+        self._add_monitor_event(f"Deleted step {index + 1}: {removed_label}")
 
     def _load_selected_step_metadata(self, _event: Any | None = None) -> None:
         index = self._selected_step_index()

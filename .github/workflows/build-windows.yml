@@ -63,6 +63,8 @@ jobs:
           --onefile
           --windowed
           --name WinAutomationPicker
+          --icon src/win_automation_picker/assets/win_automation_picker.ico
+          --add-data "src/win_automation_picker/assets;win_automation_picker/assets"
           src/win_automation_picker/__main__.py
 
       - name: Build CLI executable
@@ -73,6 +75,8 @@ jobs:
           --onefile
           --console
           --name RigCommander
+          --icon src/win_automation_picker/assets/rig_commander.ico
+          --add-data "src/win_automation_picker/assets;win_automation_picker/assets"
           src/win_automation_picker/rig_commander.py
 
       - name: Upload executable artifacts

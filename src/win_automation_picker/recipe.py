@@ -248,6 +248,25 @@ class AutomationRecipe:
     def append(self, step: AutomationStep) -> "AutomationRecipe":
         return AutomationRecipe(steps=[*self.steps, step])
 
+    def move_step(self, index: int, delta: int) -> tuple["AutomationRecipe", int]:
+        if index < 0 or index >= len(self.steps):
+            raise WindowsAutomationError(f"Step index out of range: {index + 1}")
+        new_index = max(0, min(len(self.steps) - 1, index + delta))
+        if new_index == index:
+            return self, index
+
+        steps = list(self.steps)
+        step = steps.pop(index)
+        steps.insert(new_index, step)
+        return AutomationRecipe(steps=steps), new_index
+
+    def delete_step(self, index: int) -> "AutomationRecipe":
+        if index < 0 or index >= len(self.steps):
+            raise WindowsAutomationError(f"Step index out of range: {index + 1}")
+        steps = list(self.steps)
+        del steps[index]
+        return AutomationRecipe(steps=steps)
+
 
 def run_recipe(
     recipe: AutomationRecipe,
