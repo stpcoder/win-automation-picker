@@ -1,4 +1,4 @@
-from .app import run_app
+from win_automation_picker.app import run_app
 
 
 def main() -> None:
