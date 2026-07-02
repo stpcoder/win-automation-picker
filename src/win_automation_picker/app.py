@@ -560,11 +560,11 @@ class PickerApp(tk.Tk):
             f"Root selector: {selector.root.xpath_node()}",
             f"Window marker: {marker.summary() if marker else '-'}",
             "",
-            "SEL ROOT MARK HINT IDX HANDLE PID NAME | CLASS | MARKER TARGET",
-            "--- ---- ---- ---- --- ------ --- -------------------------------",
+            "SEL ROOT MARK HINT SCOPE   DEPTH IDX HANDLE PID NAME | CLASS | MARKER TARGET",
+            "--- ---- ---- ---- ------- ----- --- ------ --- -------------------------------",
         ]
         if not rows:
-            lines.append("No top-level windows returned.")
+            lines.append("No window candidates returned.")
             return "\n".join(lines)
 
         for row in rows:
@@ -576,13 +576,15 @@ class PickerApp(tk.Tk):
             hint = "Y" if row.get("handle_is_hint") else "N"
             index = row.get("root_match_index")
             index_text = "-" if index is None else str(index)
+            scope = str(row.get("scope") or "top")
+            depth = str(row.get("depth") or 0)
             window_name = str(window.get("name", "") or "-")
             class_name = str(window.get("class_name", "") or "-")
             target_name = str(target.get("name", "") or "-")
             target_type = str(target.get("control_type", "") or "-")
             lines.append(
                 f" {selected}   {root}    {marker_match}    {hint}   "
-                f"{index_text:>3} {str(window.get('handle') or '-'):>6} "
+                f"{scope:<7} {depth:>5} {index_text:>3} {str(window.get('handle') or '-'):>6} "
                 f"{str(window.get('process_id') or '-'):>3} "
                 f"{window_name} | {class_name} | {target_type}: {target_name}"
             )

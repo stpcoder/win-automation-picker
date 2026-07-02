@@ -194,6 +194,25 @@ def _iter_children_wrappers(wrapper: Any) -> Iterable[Any]:
         return []
 
 
+def _iter_descendant_wrappers(
+    wrapper: Any,
+    *,
+    max_depth: int = 8,
+    limit: int = 2000,
+) -> Iterable[tuple[Any, int]]:
+    queue: deque[tuple[Any, int]] = deque((child, 1) for child in _iter_children_wrappers(wrapper))
+    yielded = 0
+    while queue and yielded < limit:
+        child, depth = queue.popleft()
+        yielded += 1
+        yield child, depth
+
+        if depth >= max_depth:
+            continue
+        for grandchild in _iter_children_wrappers(child):
+            queue.append((grandchild, depth + 1))
+
+
 def _segment_from_wrapper(wrapper: Any) -> SelectorSegment:
     return _segment_from_info(_info(wrapper))
 
@@ -296,13 +315,27 @@ def _find_root_window(selector: UISelector) -> Any:
         and _window_matches_marker(window, marker)
     ]
     if not matches:
+        nested_matches: list[Any] = []
+        nested_root_matches: list[Any] = []
+        for window in candidates:
+            for child, _depth in _iter_descendant_wrappers(window):
+                if selector.root.matches(_segment_from_wrapper(child)):
+                    nested_root_matches.append(child)
+                    if _window_matches_marker(child, marker):
+                        nested_matches.append(child)
+
+        if nested_matches:
+            if selector.root.index < len(nested_matches):
+                return nested_matches[selector.root.index]
+            return nested_matches[0]
+
         if marker and not marker.is_empty():
             root_matches = [
                 window
                 for window in candidates
                 if selector.root.matches(_segment_from_wrapper(window))
             ]
-            if root_matches:
+            if root_matches or nested_root_matches:
                 raise WindowsAutomationError(
                     "Root window matched, but no candidate contains window marker: "
                     f"{marker.summary()}"
@@ -322,7 +355,15 @@ def debug_root_candidates(selector: UISelector, *, limit: int = 50) -> list[dict
     matching_fingerprints: list[tuple[Any, ...]] = []
     root_match_index = 0
 
-    for position, window in enumerate(candidates, start=1):
+    def add_row(
+        *,
+        position: int,
+        window: Any,
+        scope: str,
+        depth: int,
+        parent_info: Any | None = None,
+    ) -> None:
+        nonlocal root_match_index
         info = _info(window)
         root_match = selector.root.matches(_segment_from_wrapper(window))
         marker_info = None
@@ -341,6 +382,8 @@ def debug_root_candidates(selector: UISelector, *, limit: int = 50) -> list[dict
             {
                 "_fingerprint": _runtime_fingerprint(info),
                 "position": position,
+                "scope": scope,
+                "depth": depth,
                 "root_match_index": candidate_index,
                 "root_match": root_match,
                 "marker_match": marker_match if marker and not marker.is_empty() else root_match,
@@ -350,9 +393,16 @@ def debug_root_candidates(selector: UISelector, *, limit: int = 50) -> list[dict
                 ),
                 "selected": False,
                 "window": _info_summary(info),
+                "parent_window": _info_summary(parent_info),
                 "marker_target": _info_summary(marker_info) if marker_info is not None else {},
             }
         )
+
+    for position, window in enumerate(candidates, start=1):
+        add_row(position=position, window=window, scope="top", depth=0)
+        for child, depth in _iter_descendant_wrappers(window):
+            if selector.root.matches(_segment_from_wrapper(child)):
+                add_row(position=position, window=child, scope="nested", depth=depth, parent_info=_info(window))
 
     selected_fingerprint = None
     if matching_fingerprints:

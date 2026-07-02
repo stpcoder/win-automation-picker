@@ -1,5 +1,7 @@
 # Win Automation Picker
 
+Korean manual: [README.ko.md](README.ko.md)
+
 Win Automation Picker is a Windows UI Automation recorder and runner. It can
 inspect the UI element under a real click, save that element as a reusable
 selector, record click/type/wait steps, and replay the recorded workflow once or
@@ -31,6 +33,8 @@ Windows may show a SmartScreen warning because the executable is not code-signed
 - Adds an optional `Window marker` comparator so repeated windows can be
   distinguished by a component inside the window, such as `CH 1` or `CH 2`.
 - Shows root-window candidate comparisons in the `Window Debug` tab.
+- Resolves buttons inside popup/dialog windows, including nested UIA `Window`
+  controls that are not returned as normal top-level windows.
 - Saves and loads selector JSON and workflow JSON.
 - Exports the recorded workflow as a runnable Python script.
 - Lets you move recorded steps up/down and delete incorrect steps.
@@ -93,6 +97,12 @@ click. To record click, type, click, type, repeat the buttons in that order.
 Clicks inside Win Automation Picker are ignored while capture is armed, so using
 `Cancel capture` or switching tabs will not add a workflow step.
 
+Type recording does not type during capture. `Record type step` stores the
+input control you click, and the text is read from `Text / template` when the
+workflow runs. Use `Clear` if the field should be selected and cleared before
+the new text is pasted. Text input defaults to clipboard paste because it is
+more reliable for Korean and other arbitrary Unicode text than key-by-key input.
+
 The `Element name`, `Role`, and `Notes` fields are stored with the recorded step.
 Select a step in the `Steps` tab and click `Apply to step` if you want to rename
 or reclassify it after recording. Selecting a step also loads its selector, so
@@ -143,6 +153,12 @@ candidate window containing a UIA component whose `Name` includes `CH 1` should
 show `MARK=Y` and `SEL=*`. Repeat with `CH 2`, `CH 3`, and `CH 4` for separate
 agent elements such as `ch_1_start_button` and `ch_2_start_button`.
 
+Nested popup or dialog windows can appear with `SCOPE=nested` in this tab. That
+means the popup is exposed by UI Automation as a child window under the main app
+instead of a normal desktop top-level window. The runner now searches those
+nested window candidates when replaying selectors, so a button recorded inside
+that popup can still resolve as long as the popup is open at run time.
+
 ## How window targeting works
 
 Every captured selector has two parts:
@@ -159,6 +175,12 @@ saved child-control path. That means the same button name in a different window
 should not match unless the root window also matches. The `Monitor` tab shows
 the last captured `Window` and `Target` so you can verify that the right app and
 control were recorded.
+
+If the root window is not found among normal desktop windows, the runner scans
+the descendants of each visible desktop window and looks for nested UIA `Window`
+controls. This is the fallback used for many in-application popup dialogs. It
+does not make custom-drawn canvas controls visible; the target app still has to
+expose useful UI Automation metadata.
 
 The simple UI field sets `window_marker.name_contains`, which checks UIA
 component `Name` text case-insensitively. For advanced cases you can edit the
