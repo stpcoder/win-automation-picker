@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import sys
 import time
 from pathlib import Path
@@ -130,6 +131,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    args_list = list(sys.argv[1:] if argv is None else argv)
+    if not args_list:
+        return interactive_loop()
+    return run_command(args_list)
+
+
+def run_command(argv: Sequence[str]) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
@@ -140,6 +148,63 @@ def main(argv: Sequence[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("stopped", file=sys.stderr)
         return 130
+
+
+def interactive_loop() -> int:
+    parser = build_parser()
+    print("Rig Commander interactive shell")
+    print("Type help for commands, or exit to close.")
+    print("")
+    parser.print_help()
+
+    while True:
+        try:
+            line = input("rig> ").strip()
+        except EOFError:
+            print("")
+            return 0
+        except KeyboardInterrupt:
+            print("")
+            return 130
+
+        if not line:
+            continue
+        if line.casefold() in {"exit", "quit", "q"}:
+            return 0
+
+        try:
+            argv = [_strip_wrapping_quotes(item) for item in shlex.split(line, posix=False)]
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            continue
+
+        if not argv:
+            continue
+        if argv[0].casefold() in {"help", "?"}:
+            _print_interactive_help(parser, argv[1:])
+            continue
+
+        try:
+            run_command(argv)
+        except SystemExit:
+            continue
+
+
+def _print_interactive_help(parser: argparse.ArgumentParser, words: Sequence[str]) -> None:
+    if not words:
+        parser.print_help()
+        return
+
+    try:
+        run_command([*words, "--help"])
+    except SystemExit:
+        return
+
+
+def _strip_wrapping_quotes(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
 
 
 def _add_target_args(parser: argparse.ArgumentParser) -> None:

@@ -109,3 +109,38 @@ def test_cli_firmware_flash_dry_run_prints_downloader_script(tmp_path, capsys) -
     assert "FirmwareDownload.exe" in output
     assert "format_all_download" in output
     assert "C:\\fw\\firmware.xml" in output
+
+
+def test_interactive_loop_shows_help_and_exits(monkeypatch, capsys) -> None:
+    commands = iter(["help", "exit"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(commands))
+
+    code = rig_cli.main([])
+
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "Rig Commander interactive shell" in output
+    assert "firmware" in output
+
+
+def test_interactive_loop_runs_commands(monkeypatch, tmp_path, capsys) -> None:
+    path = tmp_path / "rigs.json"
+    commands = iter([f"init-config -o {path}", "exit"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(commands))
+
+    code = rig_cli.main([])
+
+    output = capsys.readouterr().out
+    assert code == 0
+    assert path.exists()
+    assert f"Wrote {path}" in output
+
+
+def test_interactive_split_keeps_windows_paths_and_strips_quotes() -> None:
+    import shlex
+
+    line = 'firmware flash --xml C:\\fw\\firmware.xml --command "STATUS OK"'
+    parts = [rig_cli._strip_wrapping_quotes(item) for item in shlex.split(line, posix=False)]
+
+    assert "C:\\fw\\firmware.xml" in parts
+    assert "STATUS OK" in parts

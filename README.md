@@ -265,6 +265,11 @@ or power-control devices attached through COM ports. Instead of opening a
 remote desktop session and using a GUI such as SKCOMMANDER, it sends configured
 serial commands through PowerShell.
 
+If you double-click `RigCommander.exe`, it opens an interactive `rig>` shell
+instead of closing immediately. Type `help` to list commands, `help firmware
+flash` to inspect a subcommand, and `exit` to close the shell. From an existing
+PowerShell window, you can also pass commands directly as shown below.
+
 The architecture is:
 
 - Your work PC runs `RigCommander.exe` from PowerShell.
