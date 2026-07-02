@@ -55,7 +55,7 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
-      - name: Build executable
+      - name: Build GUI executable
         run: >
           python -m PyInstaller
           --noconfirm
@@ -65,11 +65,23 @@ jobs:
           --name WinAutomationPicker
           src/win_automation_picker/__main__.py
 
-      - name: Upload executable artifact
+      - name: Build CLI executable
+        run: >
+          python -m PyInstaller
+          --noconfirm
+          --clean
+          --onefile
+          --console
+          --name RigCommander
+          src/win_automation_picker/rig_commander.py
+
+      - name: Upload executable artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: win-automation-picker-exe
-          path: dist/WinAutomationPicker.exe
+          name: windows-executables
+          path: |
+            dist/WinAutomationPicker.exe
+            dist/RigCommander.exe
           if-no-files-found: error
 
   publish-latest-release:
@@ -87,7 +99,7 @@ jobs:
       - name: Download executable artifact
         uses: actions/download-artifact@v8
         with:
-          name: win-automation-picker-exe
+          name: windows-executables
           path: release
 
       - name: Move latest tag
@@ -102,12 +114,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload latest release/WinAutomationPicker.exe --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload latest release/WinAutomationPicker.exe release/RigCommander.exe --clobber --repo "$GITHUB_REPOSITORY"
             gh release edit latest --latest --title "Latest Windows build" --repo "$GITHUB_REPOSITORY"
           else
-            gh release create latest release/WinAutomationPicker.exe \
+            gh release create latest release/WinAutomationPicker.exe release/RigCommander.exe \
               --latest \
               --title "Latest Windows build" \
-              --notes "Automatically built Windows executable from the main branch." \
+              --notes "Automatically built Windows executables from the main branch." \
               --repo "$GITHUB_REPOSITORY"
           fi
