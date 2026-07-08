@@ -1,3 +1,3 @@
 """Windows UI Automation picker."""
 
-__version__ = "0.6.4"
+__version__ = "0.9.0"

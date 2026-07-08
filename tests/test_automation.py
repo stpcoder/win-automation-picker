@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import win_automation_picker.automation as automation
 from win_automation_picker.automation import (
+    WindowsAutomationError,
     _find_window_marker_match,
     _marker_matches_info,
 )
@@ -32,9 +33,20 @@ class FakeWrapper:
     def __init__(self, info: FakeInfo, children: list["FakeWrapper"] | None = None) -> None:
         self.element_info = info
         self._children = children or []
+        self.invoked = False
+        self.clicked = False
 
     def children(self) -> list["FakeWrapper"]:
         return self._children
+
+    def set_focus(self) -> None:
+        pass
+
+    def invoke(self) -> None:
+        self.invoked = True
+
+    def click_input(self) -> None:
+        self.clicked = True
 
 
 class FakeDesktop:
@@ -50,6 +62,19 @@ def test_marker_matches_component_text_case_insensitively() -> None:
     marker = WindowMarker(name_contains="ch 2", automation_id="channellabel", control_type="text")
 
     assert _marker_matches_info(info, marker)
+
+
+def test_marker_equals_does_not_confuse_ch1_and_ch11() -> None:
+    info = FakeInfo(control_type="Text", name="CH11")
+
+    assert not _marker_matches_info(info, WindowMarker(name_equals="CH1"))
+    assert _marker_matches_info(info, WindowMarker(name_equals="Ch11"))
+
+
+def test_marker_regex_supports_flexible_channel_spacing() -> None:
+    info = FakeInfo(control_type="Text", name="Port Ch 11 Ready")
+
+    assert _marker_matches_info(info, WindowMarker(name_regex=r"\bch\s*11\b"))
 
 
 def test_find_window_marker_match_searches_descendants() -> None:
@@ -100,3 +125,51 @@ def test_debug_root_candidates_marks_nested_popup_window(monkeypatch) -> None:
     assert nested_rows[0]["root_match"]
     assert nested_rows[0]["marker_match"]
     assert nested_rows[0]["selected"]
+
+
+def test_click_normalizes_text_child_selector_and_invokes_button(monkeypatch) -> None:
+    button = FakeWrapper(FakeInfo(control_type="Button", name="Search"))
+    resolved_selectors: list[UISelector] = []
+
+    def fake_resolve_selector(selector: UISelector, *, timeout: float = 5.0):
+        resolved_selectors.append(selector)
+        return button
+
+    monkeypatch.setattr(automation, "resolve_selector", fake_resolve_selector)
+    selector = UISelector(
+        root=SelectorSegment(control_type="Window", name="App"),
+        path=[
+            SelectorSegment(control_type="Button", name="Search"),
+            SelectorSegment(control_type="Text", name="Search"),
+        ],
+    )
+
+    automation.click(selector)
+
+    assert resolved_selectors[0].leaf().control_type == "Button"
+    assert button.invoked
+    assert not button.clicked
+
+
+def test_selector_exists_returns_boolean(monkeypatch) -> None:
+    selector = UISelector(root=SelectorSegment(control_type="Window", name="App"))
+    calls = 0
+
+    def fake_resolve_selector(selector_arg: UISelector, *, timeout: float = 5.0):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return object()
+        raise WindowsAutomationError("missing")
+
+    monkeypatch.setattr(automation, "resolve_selector", fake_resolve_selector)
+
+    assert automation.selector_exists(selector)
+    assert not automation.selector_exists(selector)
+
+
+def test_color_parsing_and_matching() -> None:
+    assert automation.parse_color("blue") == (0, 0, 255)
+    assert automation.parse_color("#00FF00") == (0, 255, 0)
+    assert automation.color_matches("#0000FA", "#0000FF", tolerance=6)
+    assert not automation.color_matches("#FF0000", "#0000FF", tolerance=100)

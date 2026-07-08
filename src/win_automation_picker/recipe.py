@@ -9,12 +9,48 @@ import threading
 import time
 from typing import Any, Callable
 
-from .automation import WindowsAutomationError, click, press_keys, type_text
+from .automation import (
+    WindowsAutomationError,
+    click,
+    color_matches,
+    get_element_text,
+    press_keys,
+    sample_element_color,
+    selector_exists,
+    type_text,
+)
 from .selector import UISelector
 
 
 TEMPLATE_PATTERN = re.compile(r"\$\{([^}]+)\}")
 StepCallback = Callable[[int, "AutomationStep"], None]
+MonitorCallback = Callable[["ConditionResult"], None]
+
+
+@dataclass(frozen=True)
+class ConditionResult:
+    label: str
+    kind: str
+    ok: bool
+    actual: str
+    expected: str
+    operator: str
+    element_id: str = ""
+    message: str = ""
+    details: list[dict[str, Any]] = field(default_factory=list)
+
+    def to_mapping(self) -> dict[str, Any]:
+        return {
+            "label": self.label,
+            "kind": self.kind,
+            "ok": self.ok,
+            "actual": self.actual,
+            "expected": self.expected,
+            "operator": self.operator,
+            "element_id": self.element_id,
+            "message": self.message,
+            "details": list(self.details),
+        }
 
 
 def _clean_header(value: str, fallback: str) -> str:
@@ -39,6 +75,13 @@ def _detect_delimiter(text: str) -> str:
     if ";" in sample and "," not in sample:
         return ";"
     return ","
+
+
+def _normalize_group_operator(value: str) -> str:
+    cleaned = (value or "all").strip().casefold()
+    if cleaned in {"any", "or", "||"}:
+        return "any"
+    return "all"
 
 
 @dataclass(frozen=True)
@@ -100,6 +143,7 @@ class AutomationStep:
     selector: UISelector | None = None
     text: str = ""
     clear: bool = False
+    input_method: str = "paste"
     keys: str = ""
     seconds: float = 0.5
     timeout: float = 5.0
@@ -107,6 +151,17 @@ class AutomationStep:
     element_id: str = ""
     element_role: str = ""
     description: str = ""
+    block_name: str = ""
+    block_color: str = ""
+    repeat_count: int = 1
+    condition_invert: bool = False
+    condition_operator: str = ""
+    condition_value: str = ""
+    color_tolerance: float = 20.0
+    monitor_tab: str = ""
+    monitor_channel: str = ""
+    monitor_state: str = ""
+    children: list["AutomationStep"] = field(default_factory=list)
 
     @classmethod
     def click(
@@ -117,6 +172,8 @@ class AutomationStep:
         element_id: str = "",
         element_role: str = "",
         description: str = "",
+        block_name: str = "",
+        block_color: str = "",
     ) -> "AutomationStep":
         return cls(
             kind="click",
@@ -125,6 +182,8 @@ class AutomationStep:
             element_id=element_id,
             element_role=element_role,
             description=description,
+            block_name=block_name,
+            block_color=block_color,
         )
 
     @classmethod
@@ -134,25 +193,37 @@ class AutomationStep:
         text: str,
         *,
         clear: bool = False,
+        input_method: str = "paste",
         label: str = "",
         element_id: str = "",
         element_role: str = "",
         description: str = "",
+        block_name: str = "",
+        block_color: str = "",
     ) -> "AutomationStep":
         return cls(
             kind="type",
             selector=selector,
             text=text,
             clear=clear,
+            input_method=input_method,
             label=label,
             element_id=element_id,
             element_role=element_role,
             description=description,
+            block_name=block_name,
+            block_color=block_color,
         )
 
     @classmethod
-    def wait(cls, seconds: float) -> "AutomationStep":
-        return cls(kind="wait", seconds=max(0.0, float(seconds)), label=f"Wait {seconds:g}s")
+    def wait(cls, seconds: float, *, block_name: str = "", block_color: str = "") -> "AutomationStep":
+        return cls(
+            kind="wait",
+            seconds=max(0.0, float(seconds)),
+            label=f"Wait {seconds:g}s",
+            block_name=block_name,
+            block_color=block_color,
+        )
 
     @classmethod
     def key(
@@ -164,6 +235,8 @@ class AutomationStep:
         element_id: str = "",
         element_role: str = "hotkey",
         description: str = "",
+        block_name: str = "",
+        block_color: str = "",
     ) -> "AutomationStep":
         return cls(
             kind="key",
@@ -173,16 +246,235 @@ class AutomationStep:
             element_id=element_id,
             element_role=element_role,
             description=description,
+            block_name=block_name,
+            block_color=block_color,
+        )
+
+    @classmethod
+    def repeat(
+        cls,
+        children: list["AutomationStep"],
+        *,
+        repeat_count: int = 2,
+        label: str = "",
+        block_name: str = "",
+        block_color: str = "",
+        description: str = "",
+    ) -> "AutomationStep":
+        return cls(
+            kind="repeat",
+            repeat_count=max(1, int(repeat_count)),
+            label=label,
+            block_name=block_name,
+            block_color=block_color,
+            description=description,
+            children=list(children),
+        )
+
+    @classmethod
+    def if_exists(
+        cls,
+        selector: UISelector,
+        children: list["AutomationStep"],
+        *,
+        label: str = "",
+        block_name: str = "",
+        block_color: str = "",
+        description: str = "",
+        invert: bool = False,
+        timeout: float = 1.0,
+    ) -> "AutomationStep":
+        return cls(
+            kind="if_exists",
+            selector=selector,
+            timeout=max(0.0, float(timeout)),
+            label=label,
+            block_name=block_name,
+            block_color=block_color,
+            description=description,
+            condition_invert=bool(invert),
+            children=list(children),
+        )
+
+    @classmethod
+    def if_text(
+        cls,
+        selector: UISelector,
+        expected: str,
+        children: list["AutomationStep"],
+        *,
+        operator: str = "contains",
+        label: str = "",
+        block_name: str = "",
+        block_color: str = "",
+        description: str = "",
+        invert: bool = False,
+        timeout: float = 1.0,
+    ) -> "AutomationStep":
+        return cls(
+            kind="if_text",
+            selector=selector,
+            timeout=max(0.0, float(timeout)),
+            label=label,
+            block_name=block_name,
+            block_color=block_color,
+            description=description,
+            condition_invert=bool(invert),
+            condition_operator=operator or "contains",
+            condition_value=expected,
+            children=list(children),
+        )
+
+    @classmethod
+    def if_color(
+        cls,
+        selector: UISelector,
+        expected_color: str,
+        children: list["AutomationStep"],
+        *,
+        tolerance: float = 20.0,
+        label: str = "",
+        block_name: str = "",
+        block_color: str = "",
+        description: str = "",
+        invert: bool = False,
+        timeout: float = 1.0,
+    ) -> "AutomationStep":
+        return cls(
+            kind="if_color",
+            selector=selector,
+            timeout=max(0.0, float(timeout)),
+            label=label,
+            block_name=block_name,
+            block_color=block_color,
+            description=description,
+            condition_invert=bool(invert),
+            condition_operator="near",
+            condition_value=expected_color,
+            color_tolerance=max(0.0, float(tolerance)),
+            children=list(children),
+        )
+
+    @classmethod
+    def monitor_text(
+        cls,
+        selector: UISelector,
+        expected: str,
+        *,
+        operator: str = "contains",
+        label: str = "",
+        element_id: str = "",
+        element_role: str = "monitor",
+        description: str = "",
+        block_name: str = "",
+        block_color: str = "",
+        monitor_tab: str = "",
+        monitor_channel: str = "",
+        monitor_state: str = "",
+        invert: bool = False,
+        timeout: float = 1.0,
+    ) -> "AutomationStep":
+        return cls(
+            kind="monitor_text",
+            selector=selector,
+            timeout=max(0.0, float(timeout)),
+            label=label,
+            element_id=element_id,
+            element_role=element_role,
+            description=description,
+            block_name=block_name,
+            block_color=block_color,
+            monitor_tab=monitor_tab,
+            monitor_channel=monitor_channel,
+            monitor_state=monitor_state,
+            condition_invert=bool(invert),
+            condition_operator=operator or "contains",
+            condition_value=expected,
+        )
+
+    @classmethod
+    def monitor_color(
+        cls,
+        selector: UISelector,
+        expected_color: str,
+        *,
+        tolerance: float = 20.0,
+        label: str = "",
+        element_id: str = "",
+        element_role: str = "monitor",
+        description: str = "",
+        block_name: str = "",
+        block_color: str = "",
+        monitor_tab: str = "",
+        monitor_channel: str = "",
+        monitor_state: str = "",
+        invert: bool = False,
+        timeout: float = 1.0,
+    ) -> "AutomationStep":
+        return cls(
+            kind="monitor_color",
+            selector=selector,
+            timeout=max(0.0, float(timeout)),
+            label=label,
+            element_id=element_id,
+            element_role=element_role,
+            description=description,
+            block_name=block_name,
+            block_color=block_color,
+            monitor_tab=monitor_tab,
+            monitor_channel=monitor_channel,
+            monitor_state=monitor_state,
+            condition_invert=bool(invert),
+            condition_operator="near",
+            condition_value=expected_color,
+            color_tolerance=max(0.0, float(tolerance)),
+        )
+
+    @classmethod
+    def monitor_group(
+        cls,
+        children: list["AutomationStep"],
+        *,
+        operator: str = "all",
+        label: str = "",
+        element_id: str = "",
+        element_role: str = "monitor",
+        description: str = "",
+        block_name: str = "",
+        block_color: str = "",
+        monitor_tab: str = "",
+        monitor_channel: str = "",
+        monitor_state: str = "",
+        invert: bool = False,
+    ) -> "AutomationStep":
+        return cls(
+            kind="monitor_group",
+            label=label,
+            element_id=element_id,
+            element_role=element_role,
+            description=description,
+            block_name=block_name,
+            block_color=block_color,
+            monitor_tab=monitor_tab,
+            monitor_channel=monitor_channel,
+            monitor_state=monitor_state,
+            condition_invert=bool(invert),
+            condition_operator=_normalize_group_operator(operator),
+            children=list(children),
         )
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> "AutomationStep":
         selector_data = data.get("selector")
+        children_data = data.get("children") or []
+        if not isinstance(children_data, list):
+            children_data = []
         return cls(
             kind=str(data["kind"]),
             selector=UISelector.from_mapping(selector_data) if selector_data else None,
             text=str(data.get("text", "")),
             clear=bool(data.get("clear", False)),
+            input_method=str(data.get("input_method", "paste") or "paste"),
             keys=str(data.get("keys", "")),
             seconds=float(data.get("seconds", 0.5)),
             timeout=float(data.get("timeout", 5.0)),
@@ -190,6 +482,17 @@ class AutomationStep:
             element_id=str(data.get("element_id", "")),
             element_role=str(data.get("element_role", "")),
             description=str(data.get("description", "")),
+            block_name=str(data.get("block_name", "")),
+            block_color=str(data.get("block_color", "")),
+            repeat_count=max(1, int(data.get("repeat_count", 1) or 1)),
+            condition_invert=bool(data.get("condition_invert", False)),
+            condition_operator=str(data.get("condition_operator", "")),
+            condition_value=str(data.get("condition_value", "")),
+            color_tolerance=float(data.get("color_tolerance", 20.0) or 20.0),
+            monitor_tab=str(data.get("monitor_tab", "")),
+            monitor_channel=str(data.get("monitor_channel", "")),
+            monitor_state=str(data.get("monitor_state", "")),
+            children=[cls.from_mapping(item) for item in children_data],
         )
 
     def to_mapping(self) -> dict[str, Any]:
@@ -198,6 +501,7 @@ class AutomationStep:
             "selector": self.selector.to_mapping() if self.selector else None,
             "text": self.text,
             "clear": self.clear,
+            "input_method": self.input_method,
             "keys": self.keys,
             "seconds": self.seconds,
             "timeout": self.timeout,
@@ -205,9 +509,45 @@ class AutomationStep:
             "element_id": self.element_id,
             "element_role": self.element_role,
             "description": self.description,
+            "block_name": self.block_name,
+            "block_color": self.block_color,
+            "repeat_count": self.repeat_count,
+            "condition_invert": self.condition_invert,
+            "condition_operator": self.condition_operator,
+            "condition_value": self.condition_value,
+            "color_tolerance": self.color_tolerance,
+            "monitor_tab": self.monitor_tab,
+            "monitor_channel": self.monitor_channel,
+            "monitor_state": self.monitor_state,
+            "children": [child.to_mapping() for child in self.children],
         }
 
     def display_label(self) -> str:
+        if self.kind == "repeat":
+            name = self.block_name or self.label or "Repeat"
+            return f"{name} x{self.repeat_count}"
+        if self.kind == "if_exists":
+            name = self.block_name or self.label or "If target exists"
+            prefix = "Unless" if self.condition_invert else "If"
+            return name if name.lower().startswith(("if ", "unless ")) else f"{prefix} {name}"
+        if self.kind == "if_text":
+            name = self.block_name or self.label or f"Text {self.condition_operator or 'contains'} {self.condition_value}"
+            prefix = "Unless" if self.condition_invert else "If"
+            return name if name.lower().startswith(("if ", "unless ")) else f"{prefix} {name}"
+        if self.kind == "if_color":
+            name = self.block_name or self.label or f"Color near {self.condition_value}"
+            prefix = "Unless" if self.condition_invert else "If"
+            return name if name.lower().startswith(("if ", "unless ")) else f"{prefix} {name}"
+        if self.kind == "monitor_text":
+            return self.block_name or self.label or f"Monitor text {self.condition_operator or 'contains'} {self.condition_value}"
+        if self.kind == "monitor_color":
+            return self.block_name or self.label or f"Monitor color near {self.condition_value}"
+        if self.kind == "monitor_group":
+            operator = _normalize_group_operator(self.condition_operator)
+            name = self.block_name or self.label or f"Monitor {operator.upper()} group"
+            return f"{name} ({len(self.children)} condition(s))"
+        if self.block_name:
+            return self.block_name
         if self.label:
             return self.label
         prefix = f"{self.element_id}: " if self.element_id else ""
@@ -224,29 +564,40 @@ class AutomationStep:
             return f"Wait {self.seconds:g}s"
         return self.kind
 
+    def block_title(self) -> str:
+        return self.block_name or self.display_label()
+
 
 @dataclass(frozen=True)
 class AutomationRecipe:
     steps: list[AutomationStep] = field(default_factory=list)
+    monitor_view: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_json(cls, text: str) -> "AutomationRecipe":
         data = json.loads(text)
         if isinstance(data, list):
             steps_data = data
+            monitor_view = {}
         else:
             steps_data = data.get("steps", [])
-        return cls(steps=[AutomationStep.from_mapping(item) for item in steps_data])
+            monitor_view = data.get("monitor_view", {})
+        if not isinstance(monitor_view, dict):
+            monitor_view = {}
+        return cls(steps=[AutomationStep.from_mapping(item) for item in steps_data], monitor_view=monitor_view)
 
     def to_json(self, *, indent: int = 2) -> str:
         return json.dumps(
-            {"steps": [step.to_mapping() for step in self.steps]},
+            {
+                "steps": [step.to_mapping() for step in self.steps],
+                "monitor_view": dict(self.monitor_view),
+            },
             indent=indent,
             ensure_ascii=True,
         )
 
     def append(self, step: AutomationStep) -> "AutomationRecipe":
-        return AutomationRecipe(steps=[*self.steps, step])
+        return AutomationRecipe(steps=[*self.steps, step], monitor_view=dict(self.monitor_view))
 
     def move_step(self, index: int, delta: int) -> tuple["AutomationRecipe", int]:
         if index < 0 or index >= len(self.steps):
@@ -258,14 +609,120 @@ class AutomationRecipe:
         steps = list(self.steps)
         step = steps.pop(index)
         steps.insert(new_index, step)
-        return AutomationRecipe(steps=steps), new_index
+        return AutomationRecipe(steps=steps, monitor_view=dict(self.monitor_view)), new_index
 
     def delete_step(self, index: int) -> "AutomationRecipe":
         if index < 0 or index >= len(self.steps):
             raise WindowsAutomationError(f"Step index out of range: {index + 1}")
         steps = list(self.steps)
         del steps[index]
-        return AutomationRecipe(steps=steps)
+        return AutomationRecipe(steps=steps, monitor_view=dict(self.monitor_view))
+
+
+def evaluate_condition(step: AutomationStep, *, row: dict[str, str] | None = None) -> ConditionResult:
+    if step.kind == "monitor_group":
+        if not step.children:
+            raise WindowsAutomationError("Monitor group has no condition blocks.")
+        operator = _normalize_group_operator(step.condition_operator)
+        child_results = [evaluate_condition(child, row=row) for child in step.children]
+        matched = sum(1 for result in child_results if result.ok)
+        raw_ok = matched > 0 if operator == "any" else matched == len(child_results)
+        ok = not raw_ok if step.condition_invert else raw_ok
+        actual = f"{matched}/{len(child_results)} matched"
+        expected = "at least 1 matched" if operator == "any" else "all matched"
+        if step.condition_invert:
+            expected = f"not {expected}"
+        details = [result.to_mapping() for result in child_results]
+        message = "; ".join(
+            f"{'OK' if result.ok else 'FAIL'} {result.label}: {result.actual} {result.operator} {result.expected}"
+            for result in child_results
+        )
+        return ConditionResult(
+            label=step.display_label(),
+            kind=step.kind,
+            ok=ok,
+            actual=actual,
+            expected=expected,
+            operator=("not " if step.condition_invert else "") + operator,
+            element_id=step.element_id,
+            message=message,
+            details=details,
+        )
+
+    if not step.selector:
+        raise WindowsAutomationError(f"Condition step is missing a selector: {step.display_label()}")
+
+    if step.kind == "if_exists":
+        actual_bool = selector_exists(step.selector, timeout=step.timeout)
+        ok = not actual_bool if step.condition_invert else actual_bool
+        actual = "exists" if actual_bool else "missing"
+        expected = "missing" if step.condition_invert else "exists"
+        return ConditionResult(
+            label=step.display_label(),
+            kind=step.kind,
+            ok=ok,
+            actual=actual,
+            expected=expected,
+            operator="exists",
+            element_id=step.element_id,
+            message=f"{actual} expected {expected}",
+        )
+
+    if step.kind in {"if_text", "monitor_text"}:
+        actual = get_element_text(step.selector, timeout=step.timeout)
+        expected = render_template(step.condition_value, row)
+        operator = (step.condition_operator or "contains").casefold()
+        ok = _text_condition(actual, expected, operator)
+        if step.condition_invert:
+            ok = not ok
+        return ConditionResult(
+            label=step.display_label(),
+            kind=step.kind,
+            ok=ok,
+            actual=actual,
+            expected=expected,
+            operator=("not " if step.condition_invert else "") + operator,
+            element_id=step.element_id,
+            message=f"text {operator} {expected!r}: {actual!r}",
+        )
+
+    if step.kind in {"if_color", "monitor_color"}:
+        sample = sample_element_color(step.selector, timeout=step.timeout)
+        actual = sample.hex
+        expected = render_template(step.condition_value, row)
+        ok = color_matches(actual, expected, tolerance=step.color_tolerance)
+        if step.condition_invert:
+            ok = not ok
+        return ConditionResult(
+            label=step.display_label(),
+            kind=step.kind,
+            ok=ok,
+            actual=actual,
+            expected=expected,
+            operator=("not near" if step.condition_invert else "near"),
+            element_id=step.element_id,
+            message=f"color {actual} near {expected} tolerance={step.color_tolerance:g} at {sample.x},{sample.y}",
+        )
+
+    raise WindowsAutomationError(f"Unsupported condition step kind: {step.kind}")
+
+
+def _text_condition(actual: str, expected: str, operator: str) -> bool:
+    left = actual.casefold()
+    right = expected.casefold()
+    if operator in {"contains", "include", "includes"}:
+        return right in left
+    if operator in {"equals", "equal", "=="}:
+        return left == right
+    if operator in {"starts", "starts_with", "startswith"}:
+        return left.startswith(right)
+    if operator in {"ends", "ends_with", "endswith"}:
+        return left.endswith(right)
+    if operator in {"regex", "matches"}:
+        return re.search(expected, actual) is not None
+    if operator in {"not_empty", "nonempty"}:
+        return bool(actual.strip())
+    raise WindowsAutomationError(f"Unsupported text condition operator: {operator}")
 
 
 def run_recipe(
@@ -274,31 +731,61 @@ def run_recipe(
     row: dict[str, str] | None = None,
     stop_event: threading.Event | None = None,
     on_step: StepCallback | None = None,
+    on_monitor: MonitorCallback | None = None,
 ) -> None:
-    for index, step in enumerate(recipe.steps, start=1):
+    step_counter = 0
+
+    def run_step(step: AutomationStep) -> None:
+        nonlocal step_counter
         if stop_event and stop_event.is_set():
             raise WindowsAutomationError("Run stopped.")
+        step_counter += 1
         if on_step:
-            on_step(index, step)
+            on_step(step_counter, step)
 
         if step.kind == "click":
             if not step.selector:
-                raise WindowsAutomationError(f"Step {index} is missing a selector.")
+                raise WindowsAutomationError(f"Step {step_counter} is missing a selector.")
             click(step.selector, timeout=step.timeout)
         elif step.kind == "type":
             if not step.selector:
-                raise WindowsAutomationError(f"Step {index} is missing a selector.")
+                raise WindowsAutomationError(f"Step {step_counter} is missing a selector.")
             type_text(
                 step.selector,
                 render_template(step.text, row),
                 clear=step.clear,
+                method=step.input_method,
                 timeout=step.timeout,
             )
         elif step.kind == "wait":
             time.sleep(max(0.0, step.seconds))
         elif step.kind == "key":
             if not step.keys:
-                raise WindowsAutomationError(f"Step {index} is missing keys.")
+                raise WindowsAutomationError(f"Step {step_counter} is missing keys.")
             press_keys(step.keys, selector=step.selector, timeout=step.timeout)
+        elif step.kind == "repeat":
+            if not step.children:
+                raise WindowsAutomationError(f"Repeat block {step_counter} has no child steps.")
+            for _ in range(max(1, step.repeat_count)):
+                for child in step.children:
+                    run_step(child)
+        elif step.kind in {"if_exists", "if_text", "if_color"}:
+            if not step.selector:
+                raise WindowsAutomationError(f"Condition block {step_counter} is missing a selector.")
+            if not step.children:
+                raise WindowsAutomationError(f"Condition block {step_counter} has no child steps.")
+            result = evaluate_condition(step, row=row)
+            if on_monitor:
+                on_monitor(result)
+            if result.ok:
+                for child in step.children:
+                    run_step(child)
+        elif step.kind in {"monitor_text", "monitor_color", "monitor_group"}:
+            result = evaluate_condition(step, row=row)
+            if on_monitor:
+                on_monitor(result)
         else:
             raise WindowsAutomationError(f"Unsupported step kind: {step.kind}")
+
+    for step in recipe.steps:
+        run_step(step)

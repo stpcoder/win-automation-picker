@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 import json
 from typing import Any
 
@@ -14,6 +14,10 @@ def _clean(value: Any) -> str:
 def _xpath_quote(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
+
+
+def _control_type_key(value: str) -> str:
+    return "".join(ch for ch in value.casefold() if ch.isalnum())
 
 
 @dataclass(frozen=True)
@@ -92,6 +96,8 @@ class SelectorSegment:
 @dataclass(frozen=True)
 class WindowMarker:
     name_contains: str = ""
+    name_equals: str = ""
+    name_regex: str = ""
     automation_id: str = ""
     control_type: str = ""
     class_name: str = ""
@@ -102,8 +108,12 @@ class WindowMarker:
         if not data:
             return None
         name_contains = _clean(data.get("name_contains")) or _clean(data.get("text_contains"))
+        name_equals = _clean(data.get("name_equals")) or _clean(data.get("text_equals"))
+        name_regex = _clean(data.get("name_regex")) or _clean(data.get("text_regex"))
         marker = cls(
             name_contains=name_contains,
+            name_equals=name_equals,
+            name_regex=name_regex,
             automation_id=_clean(data.get("automation_id")),
             control_type=_clean(data.get("control_type")),
             class_name=_clean(data.get("class_name")),
@@ -115,6 +125,8 @@ class WindowMarker:
         return not any(
             (
                 self.name_contains,
+                self.name_equals,
+                self.name_regex,
                 self.automation_id,
                 self.control_type,
                 self.class_name,
@@ -125,6 +137,10 @@ class WindowMarker:
         pieces: list[str] = []
         if self.name_contains:
             pieces.append(f"Name contains {self.name_contains!r}")
+        if self.name_equals:
+            pieces.append(f"Name equals {self.name_equals!r}")
+        if self.name_regex:
+            pieces.append(f"Name regex {self.name_regex!r}")
         if self.automation_id:
             pieces.append(f"AutomationId={self.automation_id!r}")
         if self.control_type:
@@ -178,3 +194,49 @@ class UISelector:
         if self.path:
             return self.path[-1]
         return self.root
+
+
+CLICK_CONTROL_TYPES = {
+    "button",
+    "calendar",
+    "checkbox",
+    "dataitem",
+    "hyperlink",
+    "image",
+    "listitem",
+    "menu",
+    "menubar",
+    "menuitem",
+    "radiobutton",
+    "splitbutton",
+    "tabitem",
+    "treeitem",
+}
+
+TYPE_CONTROL_TYPES = {
+    "combobox",
+    "document",
+    "edit",
+    "spinner",
+}
+
+
+def selector_for_action(selector: UISelector, action: str) -> UISelector:
+    action_key = action.casefold()
+    if action_key == "click":
+        return _trim_to_deepest_control_type(selector, CLICK_CONTROL_TYPES)
+    if action_key in {"type", "text", "input"}:
+        return _trim_to_deepest_control_type(selector, TYPE_CONTROL_TYPES)
+    return selector
+
+
+def _trim_to_deepest_control_type(selector: UISelector, control_types: set[str]) -> UISelector:
+    segments = [selector.root, *selector.path]
+    best_index: int | None = None
+    for index, segment in enumerate(segments):
+        if _control_type_key(segment.control_type) in control_types:
+            best_index = index
+
+    if best_index is None or best_index == len(segments) - 1:
+        return selector
+    return replace(selector, path=segments[1 : best_index + 1])

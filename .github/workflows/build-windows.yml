@@ -79,6 +79,30 @@ jobs:
           --add-data "src/win_automation_picker/assets;win_automation_picker/assets"
           src/win_automation_picker/rig_commander.py
 
+      - name: Build FTP orchestration executable
+        run: >
+          python -m PyInstaller
+          --noconfirm
+          --clean
+          --onefile
+          --windowed
+          --name RigFtpCommander
+          --icon src/win_automation_picker/assets/rig_commander.ico
+          --add-data "src/win_automation_picker/assets;win_automation_picker/assets"
+          src/win_automation_picker/rig_ftp_commander.py
+
+      - name: Build FTP CLI executable
+        run: >
+          python -m PyInstaller
+          --noconfirm
+          --clean
+          --onefile
+          --console
+          --name RigFtpCli
+          --icon src/win_automation_picker/assets/rig_commander.ico
+          --add-data "src/win_automation_picker/assets;win_automation_picker/assets"
+          src/win_automation_picker/rig_ftp_cli.py
+
       - name: Upload executable artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -86,6 +110,8 @@ jobs:
           path: |
             dist/WinAutomationPicker.exe
             dist/RigCommander.exe
+            dist/RigFtpCommander.exe
+            dist/RigFtpCli.exe
           if-no-files-found: error
 
   publish-latest-release:
@@ -118,10 +144,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload latest release/WinAutomationPicker.exe release/RigCommander.exe --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload latest release/WinAutomationPicker.exe release/RigCommander.exe release/RigFtpCommander.exe release/RigFtpCli.exe --clobber --repo "$GITHUB_REPOSITORY"
             gh release edit latest --latest --title "Latest Windows build" --repo "$GITHUB_REPOSITORY"
           else
-            gh release create latest release/WinAutomationPicker.exe release/RigCommander.exe \
+            gh release create latest release/WinAutomationPicker.exe release/RigCommander.exe release/RigFtpCommander.exe release/RigFtpCli.exe \
               --latest \
               --title "Latest Windows build" \
               --notes "Automatically built Windows executables from the main branch." \

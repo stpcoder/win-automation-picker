@@ -23,6 +23,21 @@ def test_generate_python_script_embeds_recipe_and_data() -> None:
             ),
             AutomationStep.key("{ENTER}", element_id="submit_enter", element_role="hotkey"),
             AutomationStep.wait(0.5),
+            AutomationStep.if_exists(
+                selector,
+                [AutomationStep.key("{ESC}", element_id="close_optional_popup")],
+                block_name="If optional popup exists",
+            ),
+            AutomationStep.monitor_text(
+                selector,
+                "READY",
+                operator="contains",
+                element_id="status_text",
+                element_role="monitor",
+                monitor_tab="SK Commander",
+                monitor_channel="CH1",
+                monitor_state="READY",
+            ),
         ]
     )
 
@@ -46,9 +61,17 @@ def test_generate_python_script_embeds_recipe_and_data() -> None:
     assert elements["message_input"]["role"] == "input"
     assert elements["message_input"]["description"] == "Message field"
     assert elements["message_input"]["window_marker"]["name_contains"] == "CH 1"
+    assert elements["status_text"]["monitor_tab"] == "SK Commander"
+    assert elements["status_text"]["monitor_channel"] == "CH1"
+    assert elements["status_text"]["monitor_state"] == "READY"
     assert "click_element" in namespace
     assert "type_into" in namespace
+    assert "element_exists" in namespace
+    assert "read_text" in namespace
+    assert "read_color" in namespace
     assert "press_key" in namespace
+    assert "method: str = 'paste'" in script
+    assert "MONITOR" in script
 
 
 def test_generate_python_script_escapes_non_ascii_data() -> None:
@@ -84,3 +107,31 @@ def test_element_catalog_uses_agent_metadata() -> None:
     assert catalog["search_button"]["description"] == "Runs the customer search"
     assert catalog["search_button"]["target"]["name"] == "Search"
     assert catalog["search_button"]["window_marker"]["name_contains"] == "CH 3"
+
+
+def test_element_catalog_includes_repeat_children() -> None:
+    selector = UISelector(
+        root=SelectorSegment(control_type="Window", name="ERP"),
+        path=[SelectorSegment(control_type="Button", name="Next")],
+    )
+    recipe = AutomationRecipe(
+        steps=[
+            AutomationStep.repeat(
+                [
+                    AutomationStep.click(
+                        selector,
+                        element_id="next_button",
+                        element_role="button",
+                        block_name="Next",
+                    )
+                ],
+                repeat_count=2,
+                block_name="Next twice",
+            )
+        ]
+    )
+
+    catalog = element_catalog(recipe)
+
+    assert catalog["next_button"]["role"] == "button"
+    assert catalog["next_button"]["target"]["name"] == "Next"

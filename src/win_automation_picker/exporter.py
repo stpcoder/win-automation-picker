@@ -27,29 +27,42 @@ def _fallback_element_id(selector: UISelector | None, index: int, kind: str) -> 
 
 def element_catalog(recipe: AutomationRecipe) -> dict[str, dict[str, object]]:
     catalog: dict[str, dict[str, object]] = {}
-    for index, step in enumerate(recipe.steps, start=1):
+
+    def visit(step, index: int) -> int:
         if not step.selector and not step.element_id:
-            continue
-        element_id = step.element_id or _fallback_element_id(step.selector, index, step.kind)
-        if element_id in catalog:
-            continue
-        leaf = step.selector.leaf() if step.selector else None
-        selector_mapping = step.selector.to_mapping() if step.selector else None
-        catalog[element_id] = {
-            "role": step.element_role or ("hotkey" if step.kind == "key" else "other"),
-            "description": step.description,
-            "first_step": index,
-            "selector": selector_mapping,
-            "xpath": step.selector.xpath_like() if step.selector else "",
-            "window_marker": selector_mapping.get("window_marker") if selector_mapping else None,
-            "target": {
-                "control_type": leaf.control_type if leaf else "",
-                "name": leaf.name if leaf else "",
-                "automation_id": leaf.automation_id if leaf else "",
-                "class_name": leaf.class_name if leaf else "",
-            },
-            "keys": step.keys,
-        }
+            next_index = index
+        else:
+            element_id = step.element_id or _fallback_element_id(step.selector, index, step.kind)
+            if element_id not in catalog:
+                leaf = step.selector.leaf() if step.selector else None
+                selector_mapping = step.selector.to_mapping() if step.selector else None
+                catalog[element_id] = {
+                    "role": step.element_role or ("hotkey" if step.kind == "key" else "other"),
+                    "description": step.description,
+                    "monitor_tab": step.monitor_tab,
+                    "monitor_channel": step.monitor_channel,
+                    "monitor_state": step.monitor_state,
+                    "first_step": index,
+                    "selector": selector_mapping,
+                    "xpath": step.selector.xpath_like() if step.selector else "",
+                    "window_marker": selector_mapping.get("window_marker") if selector_mapping else None,
+                    "target": {
+                        "control_type": leaf.control_type if leaf else "",
+                        "name": leaf.name if leaf else "",
+                        "automation_id": leaf.automation_id if leaf else "",
+                        "class_name": leaf.class_name if leaf else "",
+                    },
+                    "keys": step.keys,
+                }
+            next_index = index + 1
+
+        for child in step.children:
+            next_index = visit(child, next_index)
+        return next_index
+
+    next_index = 1
+    for step in recipe.steps:
+        next_index = visit(step, next_index)
     return catalog
 
 
@@ -72,7 +85,8 @@ def generate_python_script(
             "import json",
             "import time",
             "",
-            "from win_automation_picker.automation import click, press_keys, type_text",
+            "from win_automation_picker.automation import get_element_text, press_keys, sample_element_color, selector_exists",
+            "from win_automation_picker.automation import click, type_text",
             "from win_automation_picker.recipe import AutomationRecipe, DataSet, run_recipe",
             "from win_automation_picker.selector import UISelector",
             "",
@@ -99,8 +113,26 @@ def generate_python_script(
             "    click(get_selector(element_id))",
             "",
             "",
-            "def type_into(element_id: str, text: str, *, clear: bool = False) -> None:",
-            "    type_text(get_selector(element_id), text, clear=clear)",
+            "def type_into(",
+            "    element_id: str,",
+            "    text: str,",
+            "    *,",
+            "    clear: bool = False,",
+            "    method: str = 'paste',",
+            ") -> None:",
+            "    type_text(get_selector(element_id), text, clear=clear, method=method)",
+            "",
+            "",
+            "def element_exists(element_id: str, *, timeout: float = 1.0) -> bool:",
+            "    return selector_exists(get_selector(element_id), timeout=timeout)",
+            "",
+            "",
+            "def read_text(element_id: str, *, timeout: float = 1.0) -> str:",
+            "    return get_element_text(get_selector(element_id), timeout=timeout)",
+            "",
+            "",
+            "def read_color(element_id: str, *, timeout: float = 1.0) -> str:",
+            "    return sample_element_color(get_selector(element_id), timeout=timeout).hex",
             "",
             "",
             "def press_key(keys: str, *, element_id: str | None = None) -> None:",
@@ -120,7 +152,11 @@ def generate_python_script(
             "        def on_step(step_index, step):",
             '            print(f"  step {step_index}: {step.display_label()}")',
             "",
-            "        run_recipe(recipe, row=row, on_step=on_step)",
+            "        def on_monitor(result):",
+            '            state = "OK" if result.ok else "FAIL"',
+            '            print(f"  MONITOR {state}: {result.label} | actual={result.actual!r} expected={result.expected!r}")',
+            "",
+            "        run_recipe(recipe, row=row, on_step=on_step, on_monitor=on_monitor)",
             "        if ROW_DELAY_SECONDS and row_index < total:",
             "            time.sleep(ROW_DELAY_SECONDS)",
             "",

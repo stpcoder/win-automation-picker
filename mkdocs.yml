@@ -1,0 +1,55 @@
+site_name: Win Automation Picker Manual
+site_description: Windows UI Automation macro builder and FTP master/slave orchestration manual.
+site_url: https://stpcoder.github.io/win-automation-picker/
+repo_url: https://github.com/stpcoder/win-automation-picker
+repo_name: stpcoder/win-automation-picker
+docs_dir: docs
+theme:
+  name: material
+  language: ko
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: blue
+      accent: teal
+  font:
+    text: Noto Sans KR
+    code: Roboto Mono
+extra_css:
+  - stylesheets/extra.css
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+nav:
+  - 시작하기:
+      - 개요: index.md
+      - 설치와 실행: getting-started.md
+      - 화면 구성: interface.md
+  - 매크로 생성기:
+      - 기본 매크로 만들기: macro-builder/basic-flow.md
+      - 블록 디자인: macro-builder/block-designer.md
+      - 조건과 모니터링 블록: macro-builder/conditions-monitoring.md
+      - 데이터 행과 템플릿: macro-builder/data-rows.md
+      - Python export: macro-builder/python-export.md
+  - 원격 운영:
+      - FTP master/slave 개요: rig-ftp/overview.md
+      - Master 세팅: rig-ftp/master-setup.md
+      - Slave 세팅: rig-ftp/slave-setup.md
+      - 상태 모니터링과 캡처: rig-ftp/monitoring.md
+  - 참고:
+      - 버튼/메뉴 사전: reference/buttons.md
+      - 설정 파일 예시: reference/config-files.md
+      - 문제 해결: troubleshooting.md

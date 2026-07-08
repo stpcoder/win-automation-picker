@@ -1,0 +1,66 @@
+# 문제 해결
+
+## 클릭이 녹화되지 않음
+
+확인할 것:
+
+1. `Click block` 또는 `Type block`을 먼저 눌렀는지 확인합니다.
+2. Win Automation Picker 내부가 아니라 대상 프로그램을 클릭했는지 확인합니다.
+3. `Run Log`에 error가 있는지 확인합니다.
+4. 대상 프로그램이 관리자 권한이면 Win Automation Picker도 관리자 권한으로 실행합니다.
+
+## Type block이 입력하지 않음
+
+`Type block`은 녹화 중 바로 입력하지 않습니다. 실행 시 입력합니다.
+
+확인할 것:
+
+1. `Input > Text`에 값이 있는지 확인합니다.
+2. `Clear` 여부가 맞는지 확인합니다.
+3. 붙여넣기가 막힌 프로그램이면 `Method=keys`로 바꿉니다.
+4. `Capture Quality`에서 대상이 input control인지 확인합니다.
+
+## CH1과 CH11이 헷갈림
+
+`Window match` mode를 바꿉니다.
+
+| mode | 사용 상황 |
+| --- | --- |
+| `contains` | 빠르게 포함 여부만 볼 때 |
+| `equals` | 정확히 같은 텍스트만 허용할 때 |
+| `regex` | `CH 11`, `Ch11` 같은 변형까지 처리할 때 |
+
+정규식 예:
+
+```text
+\bch\s*11\b
+```
+
+## 팝업 버튼을 못 찾음
+
+1. 팝업이 열린 상태에서 다시 캡처합니다.
+2. 버튼 중앙을 클릭합니다.
+3. `Windows > Test windows`로 후보 창을 확인합니다.
+4. 팝업 내부 고유 텍스트를 `Window match`에 넣습니다.
+
+## FTP status가 안 보임
+
+1. slave PC에서 `This PC Agent > Start agent`가 실행 중인지 확인합니다.
+2. master와 slave의 `root_dir`이 같은지 확인합니다.
+3. FTP 계정이 `status/`, `results/`, `logs/`에 쓰기 권한이 있는지 확인합니다.
+4. `Monitor & Run > Refresh status`를 누릅니다.
+
+## screenshot이 안 뜸
+
+1. slave agent가 interactive desktop에서 실행 중인지 확인합니다.
+2. `min_screenshot_interval_seconds` 때문에 skip된 것은 아닌지 master log를 확인합니다.
+3. FTP의 `screenshots/{node}/` 폴더 권한을 확인합니다.
+
+## FTP 서버 부하가 걱정됨
+
+이 도구는 FTP를 socket처럼 고속 polling하지 않는 구조입니다.
+
+- 기본 polling interval을 5초 이상으로 둡니다.
+- monitor loop는 최소 10초 간격으로 제한됩니다.
+- screenshot은 수동 요청 위주로 사용합니다.
+- 오래된 결과와 screenshot은 retention 설정으로 정리합니다.

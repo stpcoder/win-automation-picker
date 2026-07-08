@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+import ctypes
 import platform
+import re
 import time
 from typing import Any, Iterable
 
-from .selector import Rect, SelectorSegment, UISelector, WindowMarker
+from .selector import Rect, SelectorSegment, UISelector, WindowMarker, selector_for_action
 
 
 class WindowsAutomationError(RuntimeError):
@@ -18,6 +20,30 @@ class PickedElement:
     selector: UISelector
     xpath: str
     summary: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ColorSample:
+    red: int
+    green: int
+    blue: int
+    x: int
+    y: int
+
+    @property
+    def hex(self) -> str:
+        return f"#{self.red:02X}{self.green:02X}{self.blue:02X}"
+
+
+INVOKE_CONTROL_TYPES = {
+    "button",
+    "checkbox",
+    "hyperlink",
+    "menuitem",
+    "radiobutton",
+    "splitbutton",
+    "tabitem",
+}
 
 
 def _require_windows() -> None:
@@ -225,9 +251,24 @@ def _contains_text(value: Any, needle: str) -> bool:
     return needle.casefold() in str(value or "").casefold()
 
 
+def _control_type_key(wrapper_or_info: Any) -> str:
+    value = _safe_attr(_info(wrapper_or_info), "control_type", "")
+    return "".join(ch for ch in str(value or "").casefold() if ch.isalnum())
+
+
 def _marker_matches_info(info: Any, marker: WindowMarker) -> bool:
-    if marker.name_contains and not _contains_text(_safe_attr(info, "name", ""), marker.name_contains):
+    name = _safe_attr(info, "name", "")
+    if marker.name_contains and not _contains_text(name, marker.name_contains):
         return False
+    if marker.name_equals and not _same_text(name, marker.name_equals):
+        return False
+    if marker.name_regex:
+        try:
+            matched = re.search(marker.name_regex, str(name or ""), flags=re.IGNORECASE) is not None
+        except re.error as exc:
+            raise WindowsAutomationError(f"Invalid window marker regex {marker.name_regex!r}: {exc}") from exc
+        if not matched:
+            return False
     if marker.automation_id and not _same_text(_safe_attr(info, "automation_id", ""), marker.automation_id):
         return False
     if marker.control_type and not _same_text(_safe_attr(info, "control_type", ""), marker.control_type):
@@ -438,13 +479,162 @@ def resolve_selector(selector: UISelector, *, timeout: float = 5.0) -> Any:
     raise WindowsAutomationError(str(last_error) if last_error else "Selector did not resolve.")
 
 
-def click(selector: UISelector, *, timeout: float = 5.0) -> None:
-    wrapper = resolve_selector(selector, timeout=timeout)
+def selector_exists(selector: UISelector, *, timeout: float = 1.0) -> bool:
+    try:
+        resolve_selector(selector, timeout=max(0.0, timeout))
+        return True
+    except WindowsAutomationError:
+        return False
+
+
+def get_element_text(selector: UISelector, *, timeout: float = 1.0) -> str:
+    wrapper = resolve_selector(selector, timeout=max(0.0, timeout))
+    candidates: list[str] = []
+    for attr in ("window_text", "texts"):
+        func = getattr(wrapper, attr, None)
+        if not callable(func):
+            continue
+        try:
+            value = func()
+        except Exception:
+            continue
+        if isinstance(value, list):
+            candidates.extend(str(item) for item in value if str(item).strip())
+        elif str(value).strip():
+            candidates.append(str(value))
+    info = _info(wrapper)
+    for attr in ("name", "automation_id", "control_type"):
+        value = _safe_attr(info, attr, "")
+        if str(value).strip():
+            candidates.append(str(value))
+    return "\n".join(dict.fromkeys(item.strip() for item in candidates if item.strip()))
+
+
+def sample_element_color(selector: UISelector, *, timeout: float = 1.0) -> ColorSample:
+    wrapper = resolve_selector(selector, timeout=max(0.0, timeout))
+    x, y = _sample_point(selector, wrapper)
+    return _screen_pixel(x, y)
+
+
+def parse_color(value: str) -> tuple[int, int, int]:
+    cleaned = value.strip().lower()
+    named = {
+        "black": "#000000",
+        "white": "#ffffff",
+        "red": "#ff0000",
+        "green": "#00ff00",
+        "blue": "#0000ff",
+        "yellow": "#ffff00",
+        "orange": "#ffa500",
+        "purple": "#800080",
+        "gray": "#808080",
+        "grey": "#808080",
+    }
+    cleaned = named.get(cleaned, cleaned)
+    match = re.fullmatch(r"#?([0-9a-f]{6})", cleaned)
+    if not match:
+        raise WindowsAutomationError(f"Color must be a name or #RRGGBB value: {value}")
+    raw = match.group(1)
+    return int(raw[0:2], 16), int(raw[2:4], 16), int(raw[4:6], 16)
+
+
+def color_distance(left: str, right: str) -> float:
+    left_rgb = parse_color(left)
+    right_rgb = parse_color(right)
+    return sum((a - b) ** 2 for a, b in zip(left_rgb, right_rgb)) ** 0.5
+
+
+def color_matches(actual: str, expected: str, *, tolerance: float = 20.0) -> bool:
+    return color_distance(actual, expected) <= max(0.0, float(tolerance))
+
+
+def _sample_point(selector: UISelector, wrapper: Any) -> tuple[int, int]:
+    rect = Rect.from_any(_safe_attr(_info(wrapper), "rectangle", None))
+    if rect.right <= rect.left or rect.bottom <= rect.top:
+        if selector.picked_point:
+            return int(selector.picked_point[0]), int(selector.picked_point[1])
+        raise WindowsAutomationError("Resolved element has no usable rectangle for color sampling.")
+
+    old_rect = selector.rect
+    point = selector.picked_point
+    if (
+        point
+        and old_rect.right > old_rect.left
+        and old_rect.bottom > old_rect.top
+        and old_rect.left <= point[0] <= old_rect.right
+        and old_rect.top <= point[1] <= old_rect.bottom
+    ):
+        x_ratio = (point[0] - old_rect.left) / max(1, old_rect.right - old_rect.left)
+        y_ratio = (point[1] - old_rect.top) / max(1, old_rect.bottom - old_rect.top)
+        x = rect.left + int((rect.right - rect.left) * x_ratio)
+        y = rect.top + int((rect.bottom - rect.top) * y_ratio)
+    else:
+        x = rect.left + (rect.right - rect.left) // 2
+        y = rect.top + (rect.bottom - rect.top) // 2
+    return x, y
+
+
+def _screen_pixel(x: int, y: int) -> ColorSample:
+    _require_windows()
+    user32 = ctypes.windll.user32
+    gdi32 = ctypes.windll.gdi32
+    hdc = user32.GetDC(0)
+    if not hdc:
+        raise WindowsAutomationError("Could not read screen device context.")
+    try:
+        pixel = gdi32.GetPixel(hdc, int(x), int(y))
+    finally:
+        user32.ReleaseDC(0, hdc)
+    if pixel < 0:
+        raise WindowsAutomationError(f"Could not read screen pixel at {x}, {y}.")
+    red = pixel & 0xFF
+    green = (pixel >> 8) & 0xFF
+    blue = (pixel >> 16) & 0xFF
+    return ColorSample(red=red, green=green, blue=blue, x=int(x), y=int(y))
+
+
+def _focus_wrapper(wrapper: Any) -> None:
     try:
         wrapper.set_focus()
     except Exception:
         pass
-    wrapper.click_input()
+
+
+def _click_input(wrapper: Any) -> None:
+    try:
+        wrapper.click_input()
+        return
+    except Exception as exc:
+        last_error = exc
+
+    try:
+        wrapper.click()
+        return
+    except Exception:
+        pass
+
+    raise last_error
+
+
+def _invoke_wrapper(wrapper: Any) -> bool:
+    if _control_type_key(wrapper) not in INVOKE_CONTROL_TYPES:
+        return False
+    invoke = getattr(wrapper, "invoke", None)
+    if not callable(invoke):
+        return False
+    try:
+        invoke()
+        return True
+    except Exception:
+        return False
+
+
+def click(selector: UISelector, *, timeout: float = 5.0) -> None:
+    wrapper = resolve_selector(selector_for_action(selector, "click"), timeout=timeout)
+    _focus_wrapper(wrapper)
+    if _invoke_wrapper(wrapper):
+        return
+    _click_input(wrapper)
 
 
 def type_text(
@@ -455,17 +645,13 @@ def type_text(
     method: str = "paste",
     timeout: float = 5.0,
 ) -> None:
-    wrapper = resolve_selector(selector, timeout=timeout)
+    wrapper = resolve_selector(selector_for_action(selector, "type"), timeout=timeout)
+    _focus_wrapper(wrapper)
     try:
-        wrapper.set_focus()
+        wrapper.click_input()
+        time.sleep(0.05)
     except Exception:
         pass
-
-    if clear:
-        try:
-            wrapper.type_keys("^a{BACKSPACE}", set_foreground=True)
-        except Exception:
-            pass
 
     if method == "paste":
         try:
@@ -473,9 +659,23 @@ def type_text(
             from pywinauto.keyboard import send_keys
         except ImportError as exc:
             raise WindowsAutomationError("pyperclip and pywinauto are required for paste input.") from exc
+
+        if clear:
+            send_keys("^a{BACKSPACE}", pause=0.02)
         pyperclip.copy(text)
+        time.sleep(0.05)
         send_keys("^v", pause=0.02)
         return
+
+    if clear:
+        try:
+            wrapper.type_keys("^a{BACKSPACE}", set_foreground=True)
+        except Exception:
+            try:
+                from pywinauto.keyboard import send_keys
+            except ImportError as exc:
+                raise WindowsAutomationError("pywinauto is required for key input.") from exc
+            send_keys("^a{BACKSPACE}", pause=0.02)
 
     wrapper.type_keys(text, with_spaces=True, set_foreground=True, pause=0.02)
 
