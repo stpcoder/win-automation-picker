@@ -1,0 +1,63 @@
+:root {
+  --wap-ink: #111827;
+  --wap-muted: #5b6472;
+  --wap-line: #d9e2ef;
+  --wap-blue: #2563eb;
+  --wap-teal: #0f766e;
+}
+
+.md-header {
+  box-shadow: none;
+}
+
+.md-main__inner {
+  margin-top: 1.4rem;
+}
+
+.md-typeset h1,
+.md-typeset h2 {
+  letter-spacing: 0;
+}
+
+.md-typeset h1 {
+  font-weight: 800;
+}
+
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: 6px;
+}
+
+.workflow-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin: 1rem 0;
+}
+
+.workflow-card {
+  border: 1px solid var(--wap-line);
+  border-radius: 6px;
+  padding: 0.9rem;
+  background: #ffffff;
+}
+
+.workflow-card strong {
+  color: var(--wap-ink);
+  display: block;
+  margin-bottom: 0.3rem;
+}
+
+.workflow-card span {
+  color: var(--wap-muted);
+  font-size: 0.92rem;
+}
+
+.kbd {
+  border: 1px solid #cbd5e1;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0.05rem 0.35rem;
+  background: #f8fafc;
+  font-size: 0.85rem;
+}
