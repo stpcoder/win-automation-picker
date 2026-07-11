@@ -38,6 +38,8 @@ from .ftp_spool import (
     FtpSpoolConfig,
     FtpSpoolError,
     PackageInfo,
+    RunProfile,
+    SlaveInfo,
     SpoolJob,
     backend_from_config,
     deploy_package,
@@ -47,7 +49,7 @@ from .ftp_spool import (
     submit_job,
     write_example_spool_config,
 )
-from .picker import ClickPicker
+from .picker import ClickPicker, ContinuousRecorder
 from .recipe import (
     AutomationRecipe,
     AutomationStep,
@@ -58,6 +60,7 @@ from .recipe import (
     validate_recipe,
 )
 from .scratch_editor import ScratchPaletteItem, ScratchWorkspace
+from .recording import RecordedAction, exact_variable, recipe_variables, recording_to_steps
 from .selector import CLICK_CONTROL_TYPES, TYPE_CONTROL_TYPES, UISelector, WindowMarker, selector_for_action
 
 
@@ -128,6 +131,14 @@ class PickerApp(tk.Tk):
 
         self._queue: queue.Queue[tuple[str, Any]] = queue.Queue()
         self._picker: ClickPicker | None = None
+        self._continuous_recorder: ContinuousRecorder | None = None
+        self._recorded_actions: list[RecordedAction] = []
+        self._recording_started_at = 0.0
+        self._recording_app_bounds: tuple[int, int, int, int] | None = None
+        self._recording_defaults: dict[str, str] = {}
+        self._recording_action_paths: dict[int, BlockPath] = {}
+        self._recording_action_variables: dict[int, str] = {}
+        self._recording_action_ids: dict[int, str] = {}
         self._current_selector: UISelector | None = None
         self._recipe = AutomationRecipe()
         self._run_stop_event: threading.Event | None = None
@@ -146,10 +157,14 @@ class PickerApp(tk.Tk):
         self._recipe_revision = 0
         self._ftp_packages: list[PackageInfo] = []
         self._ftp_variables: dict[str, str] = {}
+        self._ftp_slaves: tuple[SlaveInfo, ...] = ()
+        self._ftp_profile_rows: list[dict[str, Any]] = []
+        self._ftp_base_config = FtpSpoolConfig(python_executable="python")
 
         self._set_app_icon()
         self._configure_style()
         self._build_ui()
+        self.protocol("WM_DELETE_WINDOW", self._close_app)
         self.after(80, self._drain_queue)
 
     def _set_app_icon(self) -> None:
@@ -277,35 +292,67 @@ class PickerApp(tk.Tk):
 
         quick = ttk.Frame(top, style="Panel.TFrame")
         quick.grid(row=1, column=0, columnspan=11, sticky="ew", pady=(8, 0))
+        quick.columnconfigure(3, weight=1)
+        self.record_session_button = ttk.Button(
+            quick,
+            text="연속 녹화 시작",
+            command=self._start_continuous_recording,
+            style="Danger.TButton",
+        )
+        self.record_session_button.grid(row=0, column=0, padx=(0, 5), pady=(0, 6))
+        self.stop_recording_button = ttk.Button(
+            quick,
+            text="녹화 정지",
+            command=self._stop_continuous_recording,
+            state="disabled",
+        )
+        self.stop_recording_button.grid(row=0, column=1, padx=(0, 10), pady=(0, 6))
+        self.recording_status_var = tk.StringVar(value="녹화 대기")
+        ttk.Label(quick, textvariable=self.recording_status_var, style="Panel.TLabel").grid(
+            row=0, column=2, columnspan=2, sticky="w", pady=(0, 6)
+        )
+        self.record_variable_inputs_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            quick,
+            text="입력값을 PC별 변수로",
+            variable=self.record_variable_inputs_var,
+        ).grid(row=0, column=4, padx=(8, 10), pady=(0, 6))
+        self.record_delays_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            quick,
+            text="동작 사이 대기 포함",
+            variable=self.record_delays_var,
+        ).grid(row=0, column=5, padx=(0, 6), pady=(0, 6))
+
         quick.columnconfigure(5, weight=1)
         self.pick_button = ttk.Button(quick, text="대상 확인", command=lambda: self._start_pick("inspect"))
-        self.pick_button.grid(row=0, column=0, padx=(0, 5))
+        self.pick_button.grid(row=1, column=0, padx=(0, 5))
         self.record_click_button = ttk.Button(
             quick,
             text="클릭 녹화",
             command=lambda: self._start_pick("click_step"),
             style="Primary.TButton",
         )
-        self.record_click_button.grid(row=0, column=1, padx=(0, 5))
+        self.record_click_button.grid(row=1, column=1, padx=(0, 5))
         self.record_type_button = ttk.Button(
             quick,
             text="입력 녹화",
             command=lambda: self._start_pick("type_step"),
             style="Success.TButton",
         )
-        self.record_type_button.grid(row=0, column=2, padx=(0, 5))
+        self.record_type_button.grid(row=1, column=2, padx=(0, 5))
         self.cancel_pick_button = ttk.Button(
             quick,
             text="캡처 취소",
             command=self._cancel_pick,
             state="disabled",
         )
-        self.cancel_pick_button.grid(row=0, column=3, padx=(0, 12))
-        ttk.Label(quick, text="입력값", style="Panel.TLabel").grid(row=0, column=4, padx=(0, 5))
+        self.cancel_pick_button.grid(row=1, column=3, padx=(0, 12))
+        ttk.Label(quick, text="수동 입력값", style="Panel.TLabel").grid(row=1, column=4, padx=(0, 5))
         self.input_text = ttk.Entry(quick, width=28)
-        self.input_text.grid(row=0, column=5, sticky="ew", padx=(0, 6))
+        self.input_text.grid(row=1, column=5, sticky="ew", padx=(0, 6))
         self.clear_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(quick, text="기존값 지우기", variable=self.clear_var).grid(row=0, column=6, padx=(0, 6))
+        ttk.Checkbutton(quick, text="기존값 지우기", variable=self.clear_var).grid(row=1, column=6, padx=(0, 6))
         self.input_method_var = tk.StringVar(value="paste")
         ttk.Combobox(
             quick,
@@ -313,10 +360,10 @@ class PickerApp(tk.Tk):
             values=("paste", "keys"),
             width=7,
             state="readonly",
-        ).grid(row=0, column=7, padx=(0, 10))
+        ).grid(row=1, column=7, padx=(0, 10))
         self.first_row_headers_var = tk.BooleanVar(value=True)
         self.row_delay_var = tk.StringVar(value="0.2")
-        ttk.Button(quick, text="대상 고급 설정", command=self._toggle_target_setup).grid(row=0, column=8)
+        ttk.Button(quick, text="대상 고급 설정", command=self._toggle_target_setup).grid(row=1, column=8)
 
         agent_toolbar = ttk.Frame(self, padding=(12, 8), style="Panel.TFrame")
         agent_toolbar.grid(row=1, column=0, sticky="ew")
@@ -824,6 +871,63 @@ class PickerApp(tk.Tk):
         canvas_scroll = ttk.Scrollbar(canvas_shell, orient="vertical", command=self.block_workspace.yview)
         canvas_scroll.grid(row=0, column=1, sticky="ns")
         self.block_workspace.configure(yscrollcommand=canvas_scroll.set)
+
+        recording_panel = ttk.Labelframe(workspace, text="녹화 타임라인", padding=(8, 6))
+        recording_panel.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        recording_panel.columnconfigure(0, weight=1)
+        recording_columns = ("time", "app", "action", "target", "value", "mode")
+        self.recording_tree = ttk.Treeview(
+            recording_panel,
+            columns=recording_columns,
+            show="headings",
+            height=5,
+            selectmode="extended",
+        )
+        recording_headings = {
+            "time": "시점",
+            "app": "프로그램 / 창",
+            "action": "동작",
+            "target": "컴포넌트",
+            "value": "기록값",
+            "mode": "실행값",
+        }
+        recording_widths = {
+            "time": 64,
+            "app": 180,
+            "action": 90,
+            "target": 160,
+            "value": 180,
+            "mode": 100,
+        }
+        for column in recording_columns:
+            self.recording_tree.heading(column, text=recording_headings[column])
+            self.recording_tree.column(column, width=recording_widths[column], anchor="w", stretch=column != "time")
+        self.recording_tree.grid(row=0, column=0, sticky="ew")
+        recording_scroll = ttk.Scrollbar(recording_panel, orient="vertical", command=self.recording_tree.yview)
+        recording_scroll.grid(row=0, column=1, sticky="ns")
+        recording_scroll_x = ttk.Scrollbar(recording_panel, orient="horizontal", command=self.recording_tree.xview)
+        recording_scroll_x.grid(row=1, column=0, sticky="ew")
+        self.recording_tree.configure(yscrollcommand=recording_scroll.set, xscrollcommand=recording_scroll_x.set)
+        self.recording_tree.tag_configure("secure", background="#fff1f2", foreground="#9f1239")
+        self.recording_tree.tag_configure("input", background="#ecfdf5", foreground="#065f46")
+        self.recording_tree.bind("<Double-Button-1>", lambda _event: self._set_recorded_input_mode(True))
+
+        recording_actions = ttk.Frame(recording_panel)
+        recording_actions.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        self.recording_hint_var = tk.StringVar(value="연속 녹화를 시작하면 외부 프로그램의 클릭과 입력이 여기에 표시됩니다.")
+        ttk.Label(recording_actions, textvariable=self.recording_hint_var).grid(row=0, column=0, sticky="w")
+        recording_actions.columnconfigure(0, weight=1)
+        ttk.Button(
+            recording_actions,
+            text="선택 입력을 PC별 변수로",
+            command=lambda: self._set_recorded_input_mode(True),
+        ).grid(row=0, column=1, padx=(8, 5))
+        ttk.Button(
+            recording_actions,
+            text="선택 입력을 고정값으로",
+            command=lambda: self._set_recorded_input_mode(False),
+        ).grid(row=0, column=2, padx=(0, 5))
+        ttk.Button(recording_actions, text="목록 비우기", command=self._clear_recording_timeline).grid(row=0, column=3)
         body.add(workspace, weight=1)
 
         inspector = ttk.Frame(body, padding=(12, 10), style="Panel.TFrame", width=292)
@@ -892,6 +996,30 @@ class PickerApp(tk.Tk):
         self.block_tolerance_entry = self._inspector_entry(fields, 8, "색상 오차", self.block_tolerance_var)
         self.block_invert_check = ttk.Checkbutton(fields, text="조건 결과 반전", variable=self.block_invert_var)
         self.block_invert_check.grid(row=18, column=0, sticky="w", pady=(4, 9))
+        self.block_input_mode_var = tk.StringVar(value="fixed")
+        self.block_variable_var = tk.StringVar(value="")
+        self.block_input_mode_frame = ttk.Frame(fields, style="Panel.TFrame")
+        self.block_input_mode_frame.grid(row=18, column=0, sticky="ew", pady=(2, 8))
+        self.block_input_mode_frame.columnconfigure(1, weight=1)
+        ttk.Radiobutton(
+            self.block_input_mode_frame,
+            text="고정값",
+            value="fixed",
+            variable=self.block_input_mode_var,
+        ).grid(row=0, column=0, sticky="w", padx=(0, 8))
+        ttk.Radiobutton(
+            self.block_input_mode_frame,
+            text="PC별 변수",
+            value="variable",
+            variable=self.block_input_mode_var,
+        ).grid(row=0, column=1, sticky="w")
+        ttk.Label(self.block_input_mode_frame, text="변수 이름", style="Panel.TLabel").grid(
+            row=1, column=0, sticky="w", pady=(5, 0), padx=(0, 8)
+        )
+        ttk.Entry(self.block_input_mode_frame, textvariable=self.block_variable_var).grid(
+            row=1, column=1, sticky="ew", pady=(5, 0)
+        )
+        self.block_input_mode_frame.grid_remove()
 
         ttk.Separator(fields).grid(row=19, column=0, sticky="ew", pady=(2, 10))
         ttk.Label(fields, text="대상", style="PanelTitle.TLabel").grid(row=20, column=0, sticky="w")
@@ -1105,17 +1233,39 @@ class PickerApp(tk.Tk):
         self.ftp_package_detail_text = tk.Text(parent, height=8, wrap="word")
         self.ftp_package_detail_text.grid(row=2, column=1, sticky="nsew", pady=(0, 8))
 
-        run_frame = ttk.Labelframe(parent, text="Submit Selected Macro", padding=(10, 8))
+        run_frame = ttk.Labelframe(parent, text="PC별 실행표", padding=(10, 8))
         run_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        run_frame.columnconfigure(1, weight=1)
-        ttk.Label(run_frame, text="Target").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        run_frame.columnconfigure(0, weight=1)
+        profile_toolbar = ttk.Frame(run_frame)
+        profile_toolbar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        profile_toolbar.columnconfigure(1, weight=1)
+        ttk.Label(profile_toolbar, text="PC / Node").grid(row=0, column=0, sticky="w", padx=(0, 6))
         self.ftp_target_var = tk.StringVar(value="all")
-        ttk.Entry(run_frame, textvariable=self.ftp_target_var).grid(row=0, column=1, sticky="ew", padx=(0, 8))
-        ttk.Button(run_frame, text="Submit selected", command=self._ftp_submit_selected_package).grid(
-            row=0,
-            column=2,
-            sticky="e",
+        ttk.Entry(profile_toolbar, textvariable=self.ftp_target_var).grid(row=0, column=1, sticky="ew", padx=(0, 8))
+        ttk.Button(profile_toolbar, text="PC 추가", command=self._ftp_add_profile_rows).grid(row=0, column=2, padx=(0, 5))
+        ttk.Button(profile_toolbar, text="설정 PC 불러오기", command=self._ftp_import_slave_profiles).grid(
+            row=0, column=3, padx=(0, 5)
         )
+        ttk.Button(profile_toolbar, text="선택 삭제", command=self._ftp_delete_profile_rows).grid(
+            row=0, column=4, padx=(0, 5)
+        )
+        ttk.Button(
+            profile_toolbar,
+            text="실행표 전송",
+            command=self._ftp_submit_profiles,
+            style="Primary.TButton",
+        ).grid(row=0, column=5)
+
+        self.ftp_profile_tree = ttk.Treeview(run_frame, show="headings", height=6, selectmode="extended")
+        self.ftp_profile_tree.grid(row=1, column=0, sticky="ew")
+        profile_scroll = ttk.Scrollbar(run_frame, orient="vertical", command=self.ftp_profile_tree.yview)
+        profile_scroll.grid(row=1, column=1, sticky="ns")
+        profile_scroll_x = ttk.Scrollbar(run_frame, orient="horizontal", command=self.ftp_profile_tree.xview)
+        profile_scroll_x.grid(row=2, column=0, sticky="ew")
+        self.ftp_profile_tree.configure(yscrollcommand=profile_scroll.set, xscrollcommand=profile_scroll_x.set)
+        self.ftp_profile_tree.bind("<Double-Button-1>", self._ftp_edit_profile_cell)
+        self.ftp_profile_tree.bind("<Button-1>", self._ftp_toggle_profile_enabled, add="+")
+        self._refresh_ftp_profile_columns()
 
         self.ftp_log_text = tk.Text(parent, height=7, wrap="word")
         self.ftp_log_text.grid(row=4, column=0, columnspan=2, sticky="nsew")
@@ -1299,6 +1449,13 @@ class PickerApp(tk.Tk):
         message: str = "",
         record_history: bool = True,
     ) -> None:
+        variable_names = recipe_variables(recipe.steps)
+        normalized_variables = {
+            name: recipe.variables.get(name, self._recording_defaults.get(name, ""))
+            for name in variable_names
+        }
+        if normalized_variables != recipe.variables:
+            recipe = replace(recipe, variables=normalized_variables)
         recipe_changed = recipe != self._recipe
         if recipe_changed and record_history:
             self._recipe_history.append(self._recipe)
@@ -1309,9 +1466,11 @@ class PickerApp(tk.Tk):
             self._monitor_latest.clear()
             self._recipe_revision += 1
         self._recipe = recipe
+        self._recording_defaults = dict(recipe.variables)
         self._selected_block_path = nearest_block_path(recipe, selected_path)
         self._selected_block_index = self._selected_block_path[0] if self._selected_block_path else None
         self._refresh_recipe_views()
+        self._refresh_ftp_profile_columns()
         if self._selected_block_path is not None:
             self._load_selected_step_metadata()
         else:
@@ -1383,7 +1542,10 @@ class PickerApp(tk.Tk):
             return
         self._run_action(
             f"'{step.block_title()}' 시험 중...",
-            lambda: run_recipe(AutomationRecipe(steps=[step])),
+            lambda: run_recipe(
+                AutomationRecipe(steps=[step], variables=dict(self._recipe.variables)),
+                row=dict(self._recipe.variables),
+            ),
         )
 
     def _sample_selected_block_value(self) -> None:
@@ -1428,6 +1590,239 @@ class PickerApp(tk.Tk):
             return
         self.block_target_var.set(f"{self._block_target_label(step)} · 현재 값: {compact or '-'}")
         self.status.set(f"현재 값: {compact or '-'}")
+
+    def _start_continuous_recording(self) -> None:
+        if self._continuous_recorder is not None:
+            self.status.set("이미 연속 녹화 중입니다")
+            return
+        if self._picker is not None:
+            self._show_error(WindowsAutomationError("진행 중인 대상 캡처를 먼저 취소하세요."))
+            return
+        if self._run_stop_event is not None:
+            self._show_error(WindowsAutomationError("매크로 실행을 중지한 뒤 녹화를 시작하세요."))
+            return
+        self._clear_recording_timeline(reset_message=False)
+        app_bounds = self._app_screen_bounds()
+        self._recording_app_bounds = app_bounds
+        recorder = ContinuousRecorder(
+            on_action=lambda action: self._queue.put(("recorded_action", action)),
+            on_error=lambda exc: self._queue.put(("recording_error", exc)),
+            on_stopped=lambda actions: self._queue.put(("recording_stopped", actions)),
+            ignore_point=lambda x, y: self._point_in_bounds(
+                x,
+                y,
+                self._recording_app_bounds or app_bounds,
+            ),
+        )
+        try:
+            recorder.start()
+        except BaseException as exc:
+            self._recording_app_bounds = None
+            self._show_error(exc)
+            return
+        self._continuous_recorder = recorder
+        self._recording_started_at = time.monotonic()
+        self.recording_status_var.set("녹화 중 00:00 · 동작 0개")
+        self.recording_hint_var.set("외부 프로그램을 평소처럼 조작한 뒤 이 창의 '녹화 정지'를 누르세요.")
+        self.status.set("연속 녹화 중 · 이 앱 안의 클릭은 기록하지 않습니다")
+        self._set_recording_buttons(True)
+        self._add_monitor_event("Continuous recording started. Clicks inside this app are excluded.")
+        self.after(250, self._update_recording_clock)
+
+    def _stop_continuous_recording(self) -> None:
+        recorder = self._continuous_recorder
+        if recorder is None:
+            return
+        self.stop_recording_button.configure(state="disabled")
+        self.recording_status_var.set(f"녹화 정리 중 · 동작 {len(self._recorded_actions)}개")
+        recorder.stop()
+
+    def _update_recording_clock(self) -> None:
+        recorder = self._continuous_recorder
+        if recorder is None or not recorder.running:
+            return
+        elapsed = max(0, int(time.monotonic() - self._recording_started_at))
+        self._recording_app_bounds = self._app_screen_bounds()
+        self.recording_status_var.set(
+            f"녹화 중 {elapsed // 60:02d}:{elapsed % 60:02d} · 동작 {len(self._recorded_actions)}개"
+        )
+        self.after(250, self._update_recording_clock)
+
+    def _set_recording_buttons(self, recording: bool) -> None:
+        self.record_session_button.configure(state="disabled" if recording else "normal")
+        self.stop_recording_button.configure(state="normal" if recording else "disabled")
+        manual_state = "disabled" if recording else "normal"
+        self.pick_button.configure(state=manual_state)
+        self.record_click_button.configure(state=manual_state)
+        self.record_type_button.configure(state=manual_state)
+        self.cancel_pick_button.configure(state="disabled")
+
+    def _append_recorded_action(self, action: RecordedAction) -> None:
+        self._recorded_actions.append(action)
+        self._refresh_recording_tree()
+        self.recording_hint_var.set(
+            f"{action.window_title or '전역'} · {action.action_label()} · {action.target_label()}"
+        )
+
+    def _finish_continuous_recording(self, actions: list[RecordedAction]) -> None:
+        self._continuous_recorder = None
+        self._recording_app_bounds = None
+        self._recorded_actions = list(actions)
+        self._set_recording_buttons(False)
+        if not actions:
+            self.recording_status_var.set("녹화 완료 · 기록된 동작 없음")
+            self.recording_hint_var.set("외부 프로그램에서 클릭하거나 입력한 동작이 없었습니다.")
+            self.status.set("연속 녹화를 종료했습니다")
+            return
+        conversion = recording_to_steps(
+            actions,
+            variable_inputs=bool(self.record_variable_inputs_var.get()),
+            include_delays=bool(self.record_delays_var.get()),
+            recording_prefix=f"recording-{int(time.time() * 1000)}",
+        )
+        if not conversion.steps:
+            self.recording_status_var.set("녹화 완료 · 변환할 동작 없음")
+            return
+        start_index = len(self._recipe.steps)
+        variables = {**self._recipe.variables, **conversion.defaults}
+        recipe = replace(
+            self._recipe,
+            steps=[*self._recipe.steps, *conversion.steps],
+            variables=variables,
+        )
+        self._recording_defaults = dict(variables)
+        self._recording_action_paths = {
+            action_index: (start_index + step_index,)
+            for action_index, step_index in conversion.action_step_indices.items()
+        }
+        self._recording_action_variables = dict(conversion.action_variables)
+        self._recording_action_ids = dict(conversion.action_recording_ids)
+        selected = None
+        if conversion.action_step_indices:
+            last_step = max(conversion.action_step_indices.values())
+            selected = (start_index + last_step,)
+        self._commit_recipe(
+            recipe,
+            selected_path=selected,
+            message=f"연속 녹화 {len(actions)}개 동작을 블록으로 만들었습니다",
+        )
+        self.recording_status_var.set(f"녹화 완료 · 동작 {len(actions)}개")
+        variable_count = len(conversion.defaults)
+        self.recording_hint_var.set(
+            f"블록 변환 완료 · PC별 입력 변수 {variable_count}개 · 아래 배포 실행표에서 PC마다 값을 지정할 수 있습니다."
+        )
+        self._refresh_recording_tree()
+        self._refresh_ftp_profile_columns()
+
+    def _refresh_recording_tree(self) -> None:
+        if not hasattr(self, "recording_tree"):
+            return
+        selected = set(self.recording_tree.selection())
+        self.recording_tree.delete(*self.recording_tree.get_children())
+        first_timestamp = self._recorded_actions[0].timestamp if self._recorded_actions else 0.0
+        for index, action in enumerate(self._recorded_actions):
+            variable = self._recording_action_variables.get(index, "")
+            if action.kind == "type":
+                mode = f"변수 · {variable}" if variable else "고정값"
+                if action.secure:
+                    mode = f"필수 변수 · {variable or '미지정'}"
+            else:
+                mode = "-"
+            tags = ("secure",) if action.secure else (("input",) if action.kind == "type" else ())
+            iid = str(index)
+            self.recording_tree.insert(
+                "",
+                "end",
+                iid=iid,
+                values=(
+                    f"+{max(0.0, action.timestamp - first_timestamp):.1f}s",
+                    action.window_title or "전역 키",
+                    action.action_label(),
+                    action.target_label(),
+                    action.value_preview(),
+                    mode,
+                ),
+                tags=tags,
+            )
+            if iid in selected:
+                self.recording_tree.selection_add(iid)
+
+    def _clear_recording_timeline(self, *, reset_message: bool = True) -> None:
+        if self._continuous_recorder is not None:
+            self._show_error(WindowsAutomationError("녹화를 정지한 뒤 목록을 비우세요."))
+            return
+        self._recorded_actions = []
+        self._recording_action_paths = {}
+        self._recording_action_variables = {}
+        self._recording_action_ids = {}
+        if hasattr(self, "recording_tree"):
+            self.recording_tree.delete(*self.recording_tree.get_children())
+        if reset_message and hasattr(self, "recording_hint_var"):
+            self.recording_hint_var.set("표시 목록만 비웠습니다. 이미 만든 블록은 그대로 유지됩니다.")
+
+    def _set_recorded_input_mode(self, variable_mode: bool) -> None:
+        selected = [int(iid) for iid in self.recording_tree.selection() if str(iid).isdigit()]
+        selected = [index for index in selected if 0 <= index < len(self._recorded_actions)]
+        selected = [index for index in selected if self._recorded_actions[index].kind == "type"]
+        if not selected:
+            self._show_error(WindowsAutomationError("타임라인에서 텍스트 입력 동작을 선택하세요."))
+            return
+        recipe = self._recipe
+        used_variables = set(recipe_variables(recipe.steps))
+        changed = 0
+        for action_index in selected:
+            recording_id = self._recording_action_ids.get(action_index, "")
+            if recording_id:
+                path = next(
+                    (candidate for candidate, step in iter_block_paths(recipe) if step.recording_id == recording_id),
+                    self._recording_action_paths.get(action_index),
+                )
+            else:
+                path = self._recording_action_paths.get(action_index)
+            if path is None:
+                continue
+            action = self._recorded_actions[action_index]
+            try:
+                step = get_block_step(recipe, path)
+            except BaseException:
+                continue
+            old_variable = exact_variable(step.text)
+            if old_variable:
+                used_variables.discard(old_variable)
+            if variable_mode:
+                suggested = self._recording_action_variables.get(action_index, "")
+                if not suggested:
+                    one = recording_to_steps([action], variable_inputs=True, include_delays=False)
+                    suggested = one.action_variables.get(0, "input_value")
+                variable = self._unique_variable_name(suggested, used_variables)
+                value = f"${{{variable}}}"
+                self._recording_defaults[variable] = "" if action.secure else action.text
+                self._recording_action_variables[action_index] = variable
+            else:
+                if action.secure:
+                    self._show_error(WindowsAutomationError("보안 입력은 고정값으로 저장할 수 없습니다."))
+                    continue
+                value = action.text
+                self._recording_action_variables.pop(action_index, None)
+            updated_step = replace(step, text=value, clear=True)
+            recipe = replace_block_step(recipe, path, updated_step)
+            self._recording_action_paths[action_index] = path
+            changed += 1
+        if changed:
+            mode = "PC별 변수" if variable_mode else "고정값"
+            recipe = replace(recipe, variables=dict(self._recording_defaults))
+            self._commit_recipe(recipe, selected_path=self._recording_action_paths.get(selected[-1]), message=f"입력값을 {mode}로 변경했습니다")
+            self._refresh_recording_tree()
+            self._refresh_ftp_profile_columns()
+
+    def _unique_variable_name(self, base: str, used: set[str]) -> str:
+        candidate = base or "input_value"
+        suffix = 2
+        while candidate in used:
+            candidate = f"{base}_{suffix}"
+            suffix += 1
+        used.add(candidate)
+        return candidate
 
     def _start_pick(self, mode: str) -> None:
         try:
@@ -1514,6 +1909,13 @@ class PickerApp(tk.Tk):
                 path, value_kind, value, revision = payload
                 if int(revision) == self._recipe_revision:
                     self._apply_sampled_block_value(tuple(path), str(value_kind), str(value))
+            elif kind == "recorded_action":
+                self._append_recorded_action(payload)
+            elif kind == "recording_stopped":
+                self._finish_continuous_recording(list(payload))
+            elif kind == "recording_error":
+                self._add_monitor_event(f"Recording warning: {payload}")
+                self.log.set(str(payload))
             elif kind == "run_finished":
                 self._set_running(False)
         self.after(80, self._drain_queue)
@@ -2036,7 +2438,7 @@ class PickerApp(tk.Tk):
         return AutomationRecipe.from_json(text)
 
     def _recipe_with_steps(self, steps: list[AutomationStep]) -> AutomationRecipe:
-        return AutomationRecipe(steps=steps, monitor_view=dict(self._recipe.monitor_view))
+        return replace(self._recipe, steps=steps)
 
     def _refresh_recipe_views(self, *, selected_index: int | None = None) -> None:
         self._replace_text(self.workflow_text, self._recipe.to_json())
@@ -2479,7 +2881,7 @@ class PickerApp(tk.Tk):
 
     def _apply_monitor_view_layout(self) -> None:
         view = self._monitor_view_layout_from_fields()
-        recipe = AutomationRecipe(steps=list(self._recipe.steps), monitor_view=view)
+        recipe = replace(self._recipe, monitor_view=view)
         self._commit_recipe(
             recipe,
             selected_path=self._selected_block_path,
@@ -2759,7 +3161,8 @@ class PickerApp(tk.Tk):
                             )
                         )
 
-                    run_recipe(recipe, row=row, stop_event=stop_event, on_step=on_step, on_monitor=on_monitor)
+                    values = {**recipe.variables, **(row or {})}
+                    run_recipe(recipe, row=values, stop_event=stop_event, on_step=on_step, on_monitor=on_monitor)
                     if row_delay and row_index < total:
                         time.sleep(row_delay)
                 self._queue.put(("status", "Done"))
@@ -2874,6 +3277,214 @@ class PickerApp(tk.Tk):
         self.status.set("Python script exported")
         self._add_monitor_event(f"Exported Python script: {path}")
 
+    def _ftp_profile_variable_names(self) -> list[str]:
+        names = recipe_variables(self._recipe.steps)
+        for name in self._recording_defaults:
+            if name not in names:
+                names.append(name)
+        package = self._selected_ftp_package() if hasattr(self, "ftp_package_list") else None
+        for name in (package.variables if package else {}):
+            if name not in names:
+                names.append(name)
+        for row in self._ftp_profile_rows:
+            row_package = next(
+                (item for item in self._ftp_packages if item.name == str(row.get("package", ""))),
+                None,
+            )
+            for name in (row_package.variables if row_package else {}):
+                if name not in names:
+                    names.append(name)
+            for name in row.get("variables", {}):
+                if name not in names:
+                    names.append(name)
+        return names
+
+    def _refresh_ftp_profile_columns(self) -> None:
+        if not hasattr(self, "ftp_profile_tree"):
+            return
+        variable_names = self._ftp_profile_variable_names()
+        package = self._selected_ftp_package() if hasattr(self, "ftp_package_list") else None
+        for row in self._ftp_profile_rows:
+            values = row.setdefault("variables", {})
+            row_package = next(
+                (item for item in self._ftp_packages if item.name == str(row.get("package", ""))),
+                package,
+            )
+            for name in variable_names:
+                default = self._recording_defaults.get(name, "")
+                if row_package is not None:
+                    default = row_package.variables.get(name, default)
+                values.setdefault(name, default)
+        columns = ("enabled", "alias", "target", "package", *[f"var::{name}" for name in variable_names])
+        self.ftp_profile_tree.configure(columns=columns)
+        headings = {
+            "enabled": "실행",
+            "alias": "별명",
+            "target": "PC / Node",
+            "package": "매크로",
+        }
+        for column in columns:
+            if column.startswith("var::"):
+                heading = column.removeprefix("var::")
+                width = 150
+            else:
+                heading = headings[column]
+                width = {"enabled": 54, "alias": 90, "target": 130, "package": 150}[column]
+            self.ftp_profile_tree.heading(column, text=heading)
+            self.ftp_profile_tree.column(column, width=width, minwidth=50, anchor="w", stretch=column != "enabled")
+        self._refresh_ftp_profile_rows()
+
+    def _refresh_ftp_profile_rows(self) -> None:
+        if not hasattr(self, "ftp_profile_tree"):
+            return
+        selected = set(self.ftp_profile_tree.selection())
+        self.ftp_profile_tree.delete(*self.ftp_profile_tree.get_children())
+        columns = tuple(self.ftp_profile_tree["columns"])
+        for index, row in enumerate(self._ftp_profile_rows):
+            values: list[str] = []
+            for column in columns:
+                if column == "enabled":
+                    values.append("✓" if row.get("enabled", True) else "")
+                elif column.startswith("var::"):
+                    name = column.removeprefix("var::")
+                    values.append(str(row.get("variables", {}).get(name, "")))
+                else:
+                    values.append(str(row.get(column, "")))
+            iid = str(index)
+            self.ftp_profile_tree.insert("", "end", iid=iid, values=values)
+            if iid in selected:
+                self.ftp_profile_tree.selection_add(iid)
+
+    def _ftp_add_profile_rows(self) -> None:
+        targets = self._ftp_targets(self.ftp_target_var.get()) or ["all"]
+        if targets == ["all"] and self._ftp_slaves:
+            self._ftp_import_slave_profiles()
+            return
+        package = self._selected_ftp_package()
+        package_name = package.name if package is not None else self.ftp_package_name_var.get().strip()
+        aliases = {slave.node_id: slave.label() for slave in self._ftp_slaves}
+        slave_variables = {slave.node_id: dict(slave.variables) for slave in self._ftp_slaves}
+        for target in targets:
+            values = dict(package.variables if package is not None else self._recording_defaults)
+            values.update(slave_variables.get(target, {}))
+            self._ftp_profile_rows.append(
+                {
+                    "enabled": True,
+                    "alias": aliases.get(target, target),
+                    "target": target,
+                    "package": package_name,
+                    "variables": values,
+                }
+            )
+        self._refresh_ftp_profile_columns()
+
+    def _ftp_import_slave_profiles(self) -> None:
+        if not self._ftp_slaves:
+            self._show_error(WindowsAutomationError("설정 파일에 slaves 목록이 없습니다."))
+            return
+        package = self._selected_ftp_package()
+        package_name = package.name if package is not None else self.ftp_package_name_var.get().strip()
+        existing = {str(row.get("target", "")) for row in self._ftp_profile_rows}
+        for slave in self._ftp_slaves:
+            if slave.node_id in existing:
+                continue
+            values = dict(package.variables if package is not None else self._recording_defaults)
+            values.update(slave.variables)
+            self._ftp_profile_rows.append(
+                {
+                    "enabled": True,
+                    "alias": slave.label(),
+                    "target": slave.node_id,
+                    "package": package_name,
+                    "variables": values,
+                }
+            )
+        self._refresh_ftp_profile_columns()
+
+    def _ftp_delete_profile_rows(self) -> None:
+        selected = sorted((int(iid) for iid in self.ftp_profile_tree.selection()), reverse=True)
+        for index in selected:
+            if 0 <= index < len(self._ftp_profile_rows):
+                self._ftp_profile_rows.pop(index)
+        self._refresh_ftp_profile_rows()
+
+    def _ftp_toggle_profile_enabled(self, event: Any) -> str | None:
+        row_id = self.ftp_profile_tree.identify_row(event.y)
+        column_id = self.ftp_profile_tree.identify_column(event.x)
+        if not row_id or column_id != "#1" or not row_id.isdigit():
+            return None
+        index = int(row_id)
+        if 0 <= index < len(self._ftp_profile_rows):
+            row = self._ftp_profile_rows[index]
+            row["enabled"] = not bool(row.get("enabled", True))
+            self._refresh_ftp_profile_rows()
+        return "break"
+
+    def _ftp_edit_profile_cell(self, event: Any) -> str:
+        row_id = self.ftp_profile_tree.identify_row(event.y)
+        column_id = self.ftp_profile_tree.identify_column(event.x)
+        if not row_id or not row_id.isdigit() or not column_id.startswith("#"):
+            return "break"
+        index = int(row_id)
+        column_index = int(column_id[1:]) - 1
+        columns = tuple(self.ftp_profile_tree["columns"])
+        if not (0 <= index < len(self._ftp_profile_rows) and 0 <= column_index < len(columns)):
+            return "break"
+        column = columns[column_index]
+        if column == "enabled":
+            row = self._ftp_profile_rows[index]
+            row["enabled"] = not bool(row.get("enabled", True))
+            self._refresh_ftp_profile_rows()
+            return "break"
+        row = self._ftp_profile_rows[index]
+        if column.startswith("var::"):
+            key = column.removeprefix("var::")
+            current = str(row.get("variables", {}).get(key, ""))
+            label = f"{row.get('alias') or row.get('target')}의 {key}"
+        else:
+            key = column
+            current = str(row.get(key, ""))
+            label = {"alias": "별명", "target": "PC / Node", "package": "매크로 파일"}.get(key, key)
+        value = simpledialog.askstring("실행표 값 변경", label, initialvalue=current, parent=self)
+        if value is None:
+            return "break"
+        if column.startswith("var::"):
+            row.setdefault("variables", {})[key] = value
+        else:
+            row[key] = value.strip()
+        self._refresh_ftp_profile_rows()
+        return "break"
+
+    def _ftp_submit_profiles(self) -> None:
+        try:
+            _config, backend = self._ftp_snapshot_backend()
+            rows = [row for row in self._ftp_profile_rows if row.get("enabled", True)]
+            if not rows:
+                raise FtpSpoolError("실행할 PC 행을 추가하고 '실행'을 체크하세요.")
+            for row in rows:
+                if not str(row.get("target", "")).strip() or not str(row.get("package", "")).strip():
+                    raise FtpSpoolError("모든 실행 행에 PC / Node와 매크로를 입력하세요.")
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+
+        def worker() -> None:
+            try:
+                submitted: list[str] = []
+                for row in rows:
+                    job = SpoolJob.create(
+                        kind="python",
+                        payload={"package": str(row["package"]), "args": [], "pass_variables": True},
+                        variables={str(key): str(value) for key, value in row.get("variables", {}).items()},
+                    )
+                    submitted.extend(submit_job(backend, job, [str(row["target"])]))
+                self._queue.put(("monitor", f"PC별 매크로 {len(rows)}건을 전송했습니다: {', '.join(submitted)}"))
+            except BaseException as exc:
+                self._queue.put(("error", exc))
+
+        self._ftp_log(f"PC별 실행표 {len(rows)}건을 전송 중입니다...")
+        threading.Thread(target=worker, daemon=True).start()
+
     def _ftp_create_config(self) -> None:
         path = Path(self.ftp_config_path_var.get().strip() or "rig-ftp.info")
         force = False
@@ -2902,6 +3513,10 @@ class PickerApp(tk.Tk):
             self.ftp_root_var.set(config.root_dir)
             self.ftp_node_var.set(config.node_id)
             self._ftp_variables = dict(config.variables)
+            self._ftp_slaves = tuple(config.slaves)
+            self._ftp_profile_rows = [profile.to_mapping() for profile in config.run_profiles]
+            self._ftp_base_config = config
+            self._refresh_ftp_profile_columns()
             self._ftp_log(f"Loaded FTP settings: {path}")
         except BaseException as exc:
             self._show_error(exc)
@@ -2911,19 +3526,22 @@ class PickerApp(tk.Tk):
             config = self._ftp_config_from_fields()
             path = Path(self.ftp_config_path_var.get().strip() or "rig-ftp.info")
             path.write_text(json.dumps(config.to_mapping(), indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+            self._ftp_base_config = config
             self._ftp_log(f"Saved FTP settings: {path}")
         except BaseException as exc:
             self._show_error(exc)
 
     def _ftp_config_from_fields(self) -> FtpSpoolConfig:
-        return FtpSpoolConfig(
+        return replace(
+            self._ftp_base_config,
             host=self.ftp_host_var.get().strip(),
             username=self.ftp_user_var.get().strip(),
             password=self.ftp_password_var.get(),
             root_dir=self.ftp_root_var.get().strip() or "/win_automation_macros",
             node_id=self.ftp_node_var.get().strip(),
-            python_executable="python",
             variables=dict(self._ftp_variables),
+            slaves=tuple(self._ftp_slaves),
+            run_profiles=tuple(RunProfile.from_mapping(row) for row in self._ftp_profile_rows),
         )
 
     def _ftp_snapshot_backend(self) -> tuple[FtpSpoolConfig, Any]:
@@ -2982,6 +3600,7 @@ class PickerApp(tk.Tk):
                         name=package_name,
                         title=title,
                         notes=notes,
+                        variables=dict(recipe.variables),
                     )
                 packages = list_packages(backend)
                 self._queue.put(("ftp_packages", packages))
@@ -3017,7 +3636,11 @@ class PickerApp(tk.Tk):
             if package is None:
                 raise FtpSpoolError("Select an FTP macro package first.")
             targets = self._ftp_targets(self.ftp_target_var.get()) or ["all"]
-            job = SpoolJob.create(kind="python", payload={"package": package.name, "args": []})
+            job = SpoolJob.create(
+                kind="python",
+                payload={"package": package.name, "args": [], "pass_variables": True},
+                variables=dict(self._recording_defaults),
+            )
         except BaseException as exc:
             self._show_error(exc)
             return
@@ -3067,7 +3690,10 @@ class PickerApp(tk.Tk):
             "",
             package.notes or "No notes.",
         ]
+        if package.variables:
+            lines.extend(["", "PC별 입력값", *[f"- {key}: {value}" for key, value in package.variables.items()]])
         self._replace_text(self.ftp_package_detail_text, "\n".join(lines))
+        self._refresh_ftp_profile_columns()
 
     def _ftp_targets(self, raw: str) -> list[str]:
         return [part for part in raw.replace(",", " ").replace(";", " ").split() if part]
@@ -3146,8 +3772,15 @@ class PickerApp(tk.Tk):
                 "monitor_state": self.block_monitor_state_var.get().strip(),
             }
             if step.kind == "type":
+                input_value = self.block_text_var.get()
+                if self.block_input_mode_var.get() == "variable":
+                    variable = self.block_variable_var.get().strip()
+                    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", variable):
+                        raise WindowsAutomationError("변수 이름은 영문 또는 _로 시작하고 영문, 숫자, _만 사용할 수 있습니다.")
+                    self._recording_defaults[variable] = input_value
+                    input_value = f"${{{variable}}}"
                 updates.update(
-                    text=self.block_text_var.get(),
+                    text=input_value,
                     clear=bool(self.clear_var.get()),
                     input_method=self._input_method(),
                 )
@@ -3172,6 +3805,8 @@ class PickerApp(tk.Tk):
 
             updated = replace(step, **updates)
             recipe = replace_block_step(self._recipe, path, updated)
+            if step.kind == "type":
+                recipe = replace(recipe, variables=dict(self._recording_defaults))
         except ValueError as exc:
             self._show_error(WindowsAutomationError("반복 횟수, 대기 시간, 색상 오차는 숫자로 입력하세요."))
             return
@@ -3555,7 +4190,15 @@ class PickerApp(tk.Tk):
             self.block_repeat_var.set(str(step.repeat_count if step.kind == "repeat" else 2))
             self.block_seconds_var.set(f"{step.seconds:g}")
             self.block_keys_var.set(step.keys or "{ENTER}")
-            self.block_text_var.set(step.text)
+            variable = exact_variable(step.text) if step.kind == "type" else ""
+            if variable:
+                self.block_input_mode_var.set("variable")
+                self.block_variable_var.set(variable)
+                self.block_text_var.set(self._recording_defaults.get(variable, ""))
+            else:
+                self.block_input_mode_var.set("fixed")
+                self.block_variable_var.set("")
+                self.block_text_var.set(step.text)
             self.block_condition_operator_var.set(step.condition_operator or "contains")
             self.block_condition_value_var.set(step.condition_value)
             self.block_tolerance_var.set(f"{step.color_tolerance:g}")
@@ -3641,6 +4284,10 @@ class PickerApp(tk.Tk):
             self.block_invert_check.configure(state="normal")
         else:
             self.block_invert_check.grid_remove()
+        if step.kind == "type":
+            self.block_input_mode_frame.grid()
+        else:
+            self.block_input_mode_frame.grid_remove()
         for widget in (
             self.block_monitor_separator,
             self.block_monitor_title,
@@ -3830,6 +4477,17 @@ class PickerApp(tk.Tk):
             self.monitor_state.set("Error")
             self._add_monitor_event(f"Error: {exc}")
         messagebox.showerror("Win Automation Picker", str(exc))
+
+    def _close_app(self) -> None:
+        if self._continuous_recorder is not None:
+            self._continuous_recorder.stop()
+        if self._picker is not None:
+            self._picker.stop()
+        if self._live_monitor_stop_event is not None:
+            self._live_monitor_stop_event.set()
+        if self._run_stop_event is not None:
+            self._run_stop_event.set()
+        self.destroy()
 
     def _app_screen_bounds(self) -> tuple[int, int, int, int]:
         self.update_idletasks()

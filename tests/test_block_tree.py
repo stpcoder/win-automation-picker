@@ -142,3 +142,16 @@ def test_remove_duplicate_and_iter_paths() -> None:
         ((0,), "loop"),
         ((0, 0), "inside"),
     ]
+
+
+def test_tree_edits_preserve_recipe_variables() -> None:
+    recipe = AutomationRecipe(
+        steps=[AutomationStep.wait(1)],
+        variables={"sequence": "Seq 1"},
+    )
+
+    updated, _path = insert_step(recipe, (), 1, AutomationStep.wait(2))
+    moved, _path = move_step(updated, (1,), (), 0)
+    removed, _step = remove_step(moved, (0,))
+
+    assert removed.variables == {"sequence": "Seq 1"}

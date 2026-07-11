@@ -1,4 +1,4 @@
-from win_automation_picker.exporter import element_catalog, generate_python_script
+from win_automation_picker.exporter import element_catalog, generate_python_script, read_exported_variables
 from win_automation_picker.recipe import AutomationRecipe, AutomationStep
 from win_automation_picker.selector import SelectorSegment, UISelector, WindowMarker
 
@@ -57,6 +57,7 @@ def test_generate_python_script_embeds_recipe_and_data() -> None:
     assert namespace["DATA_TEXT"] == "name\tmessage\nAlice\tHello"
     assert namespace["FIRST_ROW_HEADERS"] is True
     assert namespace["ROW_DELAY_SECONDS"] == 0.25
+    assert namespace["load_runtime_variables"](["--vars-json", '{"message":"PC02"}']) == {"message": "PC02"}
     elements = namespace["ELEMENTS"]
     assert elements["message_input"]["role"] == "input"
     assert elements["message_input"]["description"] == "Message field"
@@ -72,6 +73,7 @@ def test_generate_python_script_embeds_recipe_and_data() -> None:
     assert "press_key" in namespace
     assert "method: str = 'paste'" in script
     assert "MONITOR" in script
+    assert "values = {**recipe.variables, **row, **runtime_variables}" in script
 
 
 def test_generate_python_script_escapes_non_ascii_data() -> None:
@@ -135,3 +137,15 @@ def test_element_catalog_includes_repeat_children() -> None:
 
     assert catalog["next_button"]["role"] == "button"
     assert catalog["next_button"]["target"]["name"] == "Next"
+
+
+def test_read_exported_variables_uses_ast_without_executing(tmp_path) -> None:
+    selector = UISelector(root=SelectorSegment(control_type="Window", name="App"))
+    recipe = AutomationRecipe(
+        steps=[AutomationStep.type(selector, "${sequence}")],
+        variables={"sequence": "Seq 1"},
+    )
+    path = tmp_path / "workflow.py"
+    path.write_text(generate_python_script(recipe), encoding="utf-8")
+
+    assert read_exported_variables(path) == {"sequence": "Seq 1"}

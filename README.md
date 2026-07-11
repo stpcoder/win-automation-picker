@@ -19,7 +19,8 @@ The executables are not code-signed, so Windows SmartScreen may show a warning.
 
 ## Highlights
 
-- Captures the Windows UIA component under the next external click.
+- Continuously records external-app clicks, grouped text input, and common keys between explicit Start/Stop actions.
+- Reads the final UIA field value so IME composition and paste become one input block; password values are never stored.
 - Drags click, type, key, wait, repeat, if, and monitor blocks from a palette into the workspace.
 - Moves blocks between top-level order and nested C-shaped repeat/condition containers.
 - Selects, renames, duplicates, moves, and deletes nested children independently.
@@ -30,21 +31,22 @@ The executables are not code-signed, so Windows SmartScreen may show a warning.
 - Builds custom boards from arbitrary equipment/channel labels, states, axes, and display order.
 - Runs monitor rules once or on an interval without executing click/type/key blocks.
 - Replays pasted spreadsheet rows with `${name}`, `${col1}`, and `${row}` variables.
+- Converts recorded values into runtime variables and submits a different macro/value matrix for each PC.
 - Exports the complete nested workflow as runnable Python.
 - Distributes jobs and collects status, results, and screenshots through an FTP spool.
 
 ## Macro quick start
 
 1. Start `WinAutomationPicker.exe`.
-2. Click `클릭 녹화` (Record click), then click a button in the target app.
-3. Rename the new block in the right inspector and press Enter.
-4. Enter a value in the top input field and use `입력 녹화` (Record input) for a text field.
-5. Drag a repeat or if block from the left palette into the workspace.
-6. Drag action blocks into the C-shaped container.
-7. Reorder blocks by dragging them to the blue insertion line.
-8. Run once or export the workflow as Python.
+2. Keep `입력값을 PC별 변수로` enabled and click `연속 녹화 시작`.
+3. Use the target application normally: click fields, type values, and click buttons.
+4. Return to the Picker and click `녹화 정지`; the stop click itself is excluded.
+5. Inspect the app, component, captured value, and variable mode in the recording timeline.
+6. Drag repeat or if blocks around the recorded blocks as needed.
+7. Run with the captured defaults or export the workflow as Python.
+8. Use the Deploy run matrix to assign a different macro and input value to each PC.
 
-Recording is one-shot: each record command captures the next outside-app click and then stops. Recording an input target does not type immediately; typing occurs during execution.
+Continuous recording is active only after an explicit start and always shows elapsed time and action count. One-shot click/input capture remains available for adding a single block.
 
 See the [basic macro guide](https://stpcoder.github.io/win-automation-picker/macro-builder/basic-flow/) and [block workspace guide](https://stpcoder.github.io/win-automation-picker/macro-builder/block-designer/).
 
@@ -69,7 +71,7 @@ The FTP tools use a configured root directory as a shared spool when inbound por
 3. Initialize the dedicated folders.
 4. Export one `.info` file per slave and place it next to the executable on that PC.
 5. Start `This PC Agent` on each slave.
-6. Upload a macro and submit it to selected slaves from the master.
+6. Load the configured PCs into the run matrix, edit per-PC macro values, and submit the table.
 
 Connections are opened only for transfers. Poll jitter, screenshot rate limits, and retention limits reduce server load. The tool stays under its configured FTP root and does not touch unrelated folders.
 

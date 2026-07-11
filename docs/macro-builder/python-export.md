@@ -15,6 +15,7 @@
 - `데이터 행`
 - 첫 행 헤더 설정
 - 행 사이 대기 설정
+- 녹화된 변수 기본값
 - helper API
 
 ## 실행
@@ -25,6 +26,15 @@ Windows PC에서 패키지를 설치한 뒤 실행합니다.
 python -m pip install -e .
 python .\exported_workflow.py
 ```
+
+PC별 값을 직접 덮어쓸 수 있습니다. 명령행 값은 녹화 기본값과 데이터 행보다 우선합니다.
+
+```powershell
+python .\exported_workflow.py --vars-json '{"sequenceinput_value":"Seq 2","channel":"CH11"}'
+python .\exported_workflow.py --vars-file .\pc02-values.json
+```
+
+FTP slave는 `pass_variables` 작업을 실행할 때 slave `.info`의 변수와 master가 보낸 작업 변수를 합쳐 `--vars-json`으로 자동 전달합니다. 작업 변수가 같은 이름의 slave 기본값을 덮어씁니다.
 
 ## agent용 helper API
 

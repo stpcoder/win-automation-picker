@@ -200,6 +200,7 @@ class AutomationStep:
     monitor_tab: str = ""
     monitor_channel: str = ""
     monitor_state: str = ""
+    recording_id: str = ""
     children: list["AutomationStep"] = field(default_factory=list)
 
     @classmethod
@@ -543,6 +544,7 @@ class AutomationStep:
             monitor_tab=str(data.get("monitor_tab", "")),
             monitor_channel=str(data.get("monitor_channel", "")),
             monitor_state=str(data.get("monitor_state", "")),
+            recording_id=str(data.get("recording_id", "")),
             children=[cls.from_mapping(item) for item in children_data],
         )
 
@@ -570,6 +572,7 @@ class AutomationStep:
             "monitor_tab": self.monitor_tab,
             "monitor_channel": self.monitor_channel,
             "monitor_state": self.monitor_state,
+            "recording_id": self.recording_id,
             "children": [child.to_mapping() for child in self.children],
         }
 
@@ -623,6 +626,7 @@ class AutomationStep:
 class AutomationRecipe:
     steps: list[AutomationStep] = field(default_factory=list)
     monitor_view: dict[str, Any] = field(default_factory=dict)
+    variables: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_json(cls, text: str) -> "AutomationRecipe":
@@ -630,25 +634,38 @@ class AutomationRecipe:
         if isinstance(data, list):
             steps_data = data
             monitor_view = {}
+            variables = {}
         else:
             steps_data = data.get("steps", [])
             monitor_view = data.get("monitor_view", {})
+            variables = data.get("variables", {})
         if not isinstance(monitor_view, dict):
             monitor_view = {}
-        return cls(steps=[AutomationStep.from_mapping(item) for item in steps_data], monitor_view=monitor_view)
+        if not isinstance(variables, dict):
+            variables = {}
+        return cls(
+            steps=[AutomationStep.from_mapping(item) for item in steps_data],
+            monitor_view=monitor_view,
+            variables={str(key): str(value) for key, value in variables.items()},
+        )
 
     def to_json(self, *, indent: int = 2) -> str:
         return json.dumps(
             {
                 "steps": [step.to_mapping() for step in self.steps],
                 "monitor_view": dict(self.monitor_view),
+                "variables": dict(self.variables),
             },
             indent=indent,
             ensure_ascii=True,
         )
 
     def append(self, step: AutomationStep) -> "AutomationRecipe":
-        return AutomationRecipe(steps=[*self.steps, step], monitor_view=dict(self.monitor_view))
+        return AutomationRecipe(
+            steps=[*self.steps, step],
+            monitor_view=dict(self.monitor_view),
+            variables=dict(self.variables),
+        )
 
     def move_step(self, index: int, delta: int) -> tuple["AutomationRecipe", int]:
         if index < 0 or index >= len(self.steps):
@@ -660,14 +677,22 @@ class AutomationRecipe:
         steps = list(self.steps)
         step = steps.pop(index)
         steps.insert(new_index, step)
-        return AutomationRecipe(steps=steps, monitor_view=dict(self.monitor_view)), new_index
+        return AutomationRecipe(
+            steps=steps,
+            monitor_view=dict(self.monitor_view),
+            variables=dict(self.variables),
+        ), new_index
 
     def delete_step(self, index: int) -> "AutomationRecipe":
         if index < 0 or index >= len(self.steps):
             raise WindowsAutomationError(f"Step index out of range: {index + 1}")
         steps = list(self.steps)
         del steps[index]
-        return AutomationRecipe(steps=steps, monitor_view=dict(self.monitor_view))
+        return AutomationRecipe(
+            steps=steps,
+            monitor_view=dict(self.monitor_view),
+            variables=dict(self.variables),
+        )
 
 
 def evaluate_condition(step: AutomationStep, *, row: dict[str, str] | None = None) -> ConditionResult:

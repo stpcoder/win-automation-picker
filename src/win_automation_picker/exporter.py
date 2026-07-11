@@ -1,9 +1,25 @@
 from __future__ import annotations
 
+import ast
 import json
+from pathlib import Path
 
 from .recipe import AutomationRecipe
 from .selector import UISelector
+
+
+def read_exported_variables(path: str | Path) -> dict[str, str]:
+    """Read embedded workflow defaults without importing or executing the script."""
+    source = Path(path).read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=str(path))
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Constant):
+            continue
+        if not isinstance(node.value.value, str):
+            continue
+        if any(isinstance(target, ast.Name) and target.id == "RECIPE_JSON" for target in node.targets):
+            return dict(AutomationRecipe.from_json(node.value.value).variables)
+    return {}
 
 
 def _python_string(value: str) -> str:
@@ -82,7 +98,9 @@ def generate_python_script(
             '"""Exported Win Automation Picker workflow."""',
             "from __future__ import annotations",
             "",
+            "import argparse",
             "import json",
+            "from pathlib import Path",
             "import time",
             "",
             "from win_automation_picker.automation import get_element_text, press_keys, sample_element_color, selector_exists",
@@ -140,13 +158,30 @@ def generate_python_script(
             "    press_keys(keys, selector=selector)",
             "",
             "",
-            "def main() -> None:",
+            "def load_runtime_variables(argv=None):",
+            "    parser = argparse.ArgumentParser(description='Run an exported Windows automation workflow.')",
+            "    parser.add_argument('--vars-json', default='{}', help='Per-PC variables as a JSON object.')",
+            "    parser.add_argument('--vars-file', default='', help='UTF-8 JSON file containing per-PC variables.')",
+            "    args = parser.parse_args(argv)",
+            "    values = {}",
+            "    if args.vars_file:",
+            "        values.update(json.loads(Path(args.vars_file).read_text(encoding='utf-8')))",
+            "    if args.vars_json:",
+            "        values.update(json.loads(args.vars_json))",
+            "    if not isinstance(values, dict):",
+            "        raise ValueError('Runtime variables must be a JSON object.')",
+            "    return {str(key): str(value) for key, value in values.items()}",
+            "",
+            "",
+            "def main(argv=None) -> None:",
             "    recipe = AutomationRecipe.from_json(RECIPE_JSON)",
             "    dataset = DataSet.from_text(DATA_TEXT, first_row_headers=FIRST_ROW_HEADERS)",
-            "    rows = dataset.rows or [None]",
+            "    runtime_variables = load_runtime_variables(argv)",
+            "    rows = dataset.rows or [{}]",
             "    total = len(rows)",
             "",
             "    for row_index, row in enumerate(rows, start=1):",
+            "        values = {**recipe.variables, **row, **runtime_variables}",
             '        print(f"Running row {row_index}/{total}")',
             "",
             "        def on_step(step_index, step):",
@@ -156,7 +191,7 @@ def generate_python_script(
             '            state = "OK" if result.ok else "FAIL"',
             '            print(f"  MONITOR {state}: {result.label} | actual={result.actual!r} expected={result.expected!r}")',
             "",
-            "        run_recipe(recipe, row=row, on_step=on_step, on_monitor=on_monitor)",
+            "        run_recipe(recipe, row=values, on_step=on_step, on_monitor=on_monitor)",
             "        if ROW_DELAY_SECONDS and row_index < total:",
             "            time.sleep(ROW_DELAY_SECONDS)",
             "",

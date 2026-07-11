@@ -9,6 +9,7 @@ from win_automation_picker.ftp_spool import (
     FtpSpoolConfig,
     FtpSpoolError,
     LocalSpoolBackend,
+    RunProfile,
     SlaveInfo,
     SpoolJob,
     cleanup_node_files,
@@ -76,6 +77,15 @@ def test_config_supports_slave_roster() -> None:
                     "variables": {"channel": "ch4"},
                 }
             ],
+            "run_profiles": [
+                {
+                    "enabled": True,
+                    "alias": "PC04",
+                    "target": "rig-pc-04",
+                    "package": "workflow.py",
+                    "variables": {"sequence": "Seq 4"},
+                }
+            ],
         }
     )
 
@@ -90,6 +100,15 @@ def test_config_supports_slave_roster() -> None:
         ),
     )
     assert config.to_mapping()["slaves"][0]["alias"] == "PC04"
+    assert config.run_profiles == (
+        RunProfile(
+            target="rig-pc-04",
+            package="workflow.py",
+            alias="PC04",
+            enabled=True,
+            variables={"sequence": "Seq 4"},
+        ),
+    )
     assert config.poll_jitter_seconds == 2.5
     assert config.min_screenshot_interval_seconds == 45
     assert config.to_mapping()["runtime"]["poll_jitter_seconds"] == 2.5
@@ -153,18 +172,58 @@ def test_slave_runs_broadcast_python_package_with_variables(tmp_path) -> None:
     assert "macro rig-pc-02 ch2 smoke" in results[0].stdout
 
 
+def test_slave_can_pass_merged_variables_to_exported_macro(tmp_path) -> None:
+    backend = LocalSpoolBackend(tmp_path)
+    script = tmp_path / "macro.py"
+    script.write_text(
+        "import argparse, json\n"
+        "p = argparse.ArgumentParser()\n"
+        "p.add_argument('--vars-json')\n"
+        "print(json.loads(p.parse_args().vars_json)['sequence'])\n",
+        encoding="utf-8",
+    )
+    deploy_package(backend, script, name="macro.py")
+    config = FtpSpoolConfig(
+        node_id="rig-pc-02",
+        work_dir=str(tmp_path / "work"),
+        python_executable=sys.executable,
+        variables={"sequence": "Seq from slave"},
+    )
+    initialize_spool(backend, nodes=["rig-pc-02"])
+    job = SpoolJob.create(
+        kind="python",
+        payload={"package": "macro.py", "args": [], "pass_variables": True},
+        variables={"sequence": "Seq 2"},
+        job_id="job-runtime-vars",
+    )
+
+    submit_job(backend, job, ["rig-pc-02"])
+    results = run_slave_once(backend, config)
+
+    assert results[0].ok
+    assert "Seq 2" in results[0].stdout
+
+
 def test_deploy_package_writes_metadata(tmp_path) -> None:
     backend = LocalSpoolBackend(tmp_path)
     script = tmp_path / "macro.py"
     script.write_text("print('ok')\n", encoding="utf-8")
 
-    remote_path = deploy_package(backend, script, name="smoke.py", title="Boot smoke", notes="Runs boot checks.")
+    remote_path = deploy_package(
+        backend,
+        script,
+        name="smoke.py",
+        title="Boot smoke",
+        notes="Runs boot checks.",
+        variables={"sequence": "Seq 1"},
+    )
     packages = list_packages(backend)
 
     assert remote_path == "packages/smoke.py"
     assert packages[0].name == "smoke.py"
     assert packages[0].title == "Boot smoke"
     assert packages[0].notes == "Runs boot checks."
+    assert packages[0].variables == {"sequence": "Seq 1"}
     assert (tmp_path / "packages" / "smoke.py.meta.json").exists()
 
 

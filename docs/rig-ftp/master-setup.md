@@ -62,10 +62,17 @@
 
 Win Automation Picker에서 현재 블록 workflow를 바로 업로드하려면 `WinAutomationPicker.exe > Deploy` 탭을 사용합니다.
 
-## 6. macro 실행
+## 6. PC별 macro와 입력값 실행
 
 1. `Macro Library`에서 macro를 선택합니다.
-2. `Run on Slaves > Target`에 `all`, `PC04`, `rig-pc-04` 등을 입력합니다.
-3. 필요한 인자가 있으면 `Args`에 입력합니다.
-4. 변수 override가 필요하면 `Vars`에 입력합니다. 예: `channel=CH11`.
-5. `Submit macro`를 누릅니다.
+2. `PC별 매크로 실행표 > 설정 PC 불러오기`를 누릅니다.
+3. package metadata에 저장된 입력 변수 열이 자동으로 생겼는지 확인합니다.
+4. 각 행을 더블클릭해 PC별 매크로와 값을 바꿉니다. 예: `PC01 = Seq 1`, `PC02 = Seq 2`.
+5. 실행하지 않을 PC는 첫 `실행` 셀을 클릭해 체크를 끕니다.
+6. `실행표 전송`을 누릅니다. Master는 PC마다 별도 job과 variables를 생성합니다.
+
+상단 `Save`를 누르면 실행표도 master의 `rig-ftp.info`에 저장되고 다음 실행 때 복원됩니다. 비밀번호나 token처럼 파일에 남기면 안 되는 값은 저장 전에 비워 두고 실행 직전에 입력하십시오.
+
+한 PC만 빠르게 실행할 때는 기존 `Run on Slaves` 영역의 `Target`, `Args`, `Vars`, `Submit macro`를 사용할 수 있습니다. `Vars` 형식은 `channel=CH11 sequence="Seq 2"`입니다.
+
+Win Automation Picker의 `배포 > PC별 실행표`에서도 같은 흐름을 사용할 수 있습니다. 연속 녹화 직후에는 현재 workflow의 변수 열과 녹화 기본값이 이미 준비되어 있습니다.

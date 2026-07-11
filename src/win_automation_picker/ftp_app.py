@@ -11,13 +11,15 @@ import sys
 import threading
 import time
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any, Callable
 
+from .exporter import read_exported_variables
 from .ftp_spool import (
     FtpSpoolConfig,
     FtpSpoolError,
     PackageInfo,
+    RunProfile,
     SlaveInfo,
     SpoolJob,
     backend_from_config,
@@ -47,11 +49,12 @@ class RigFtpApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Rig FTP Commander")
-        self.geometry("980x720")
-        self.minsize(860, 600)
+        self.geometry("1180x820")
+        self.minsize(980, 680)
 
         self._queue: queue.Queue[tuple[str, Any]] = queue.Queue()
         self._packages: list[PackageInfo] = []
+        self._run_profiles: list[dict[str, Any]] = []
         self._slave_stop: threading.Event | None = None
         self._monitor_stop: threading.Event | None = None
         self._last_status_rows: list[dict[str, Any]] = []
@@ -252,9 +255,9 @@ class RigFtpApp(tk.Tk):
     def _build_master_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
         parent.columnconfigure(1, weight=1)
-        parent.rowconfigure(2, weight=1)
         parent.rowconfigure(3, weight=1)
         parent.rowconfigure(4, weight=1)
+        parent.rowconfigure(5, weight=1)
 
         server = ttk.Labelframe(parent, text="Server Setup", padding=10)
         server.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
@@ -368,8 +371,46 @@ class RigFtpApp(tk.Tk):
             pady=(6, 0),
         )
 
+        profiles = ttk.Labelframe(parent, text="PC별 매크로 실행표", padding=10)
+        profiles.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        profiles.columnconfigure(0, weight=1)
+        profile_toolbar = ttk.Frame(profiles)
+        profile_toolbar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        profile_toolbar.columnconfigure(0, weight=1)
+        ttk.Label(profile_toolbar, text="셀을 더블클릭해 PC별 매크로와 입력값을 변경합니다.").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Button(profile_toolbar, text="설정 PC 불러오기", command=self._load_run_profiles_from_config).grid(
+            row=0, column=1, padx=(8, 5)
+        )
+        ttk.Button(profile_toolbar, text="대상 추가", command=self._add_run_profile_target).grid(
+            row=0, column=2, padx=(0, 5)
+        )
+        ttk.Button(profile_toolbar, text="선택 삭제", command=self._delete_run_profiles).grid(
+            row=0, column=3, padx=(0, 5)
+        )
+        ttk.Button(
+            profile_toolbar,
+            text="실행표 전송",
+            command=self._submit_run_profiles,
+            style="Primary.TButton",
+        ).grid(row=0, column=4)
+        self.run_profile_tree = ttk.Treeview(profiles, show="headings", height=5, selectmode="extended")
+        self.run_profile_tree.grid(row=1, column=0, sticky="ew")
+        run_profile_scroll = ttk.Scrollbar(profiles, orient="vertical", command=self.run_profile_tree.yview)
+        run_profile_scroll.grid(row=1, column=1, sticky="ns")
+        run_profile_scroll_x = ttk.Scrollbar(profiles, orient="horizontal", command=self.run_profile_tree.xview)
+        run_profile_scroll_x.grid(row=2, column=0, sticky="ew")
+        self.run_profile_tree.configure(
+            yscrollcommand=run_profile_scroll.set,
+            xscrollcommand=run_profile_scroll_x.set,
+        )
+        self.run_profile_tree.bind("<Double-Button-1>", self._edit_run_profile_cell)
+        self.run_profile_tree.bind("<Button-1>", self._toggle_run_profile, add="+")
+        self._refresh_run_profile_columns()
+
         packages_frame = ttk.Labelframe(parent, text="Macro Library", padding=10)
-        packages_frame.grid(row=2, column=0, sticky="nsew", padx=(0, 8), pady=(0, 8))
+        packages_frame.grid(row=3, column=0, sticky="nsew", padx=(0, 8), pady=(0, 8))
         packages_frame.rowconfigure(0, weight=1)
         packages_frame.columnconfigure(0, weight=1)
         self.package_list = tk.Listbox(packages_frame, activestyle="dotbox")
@@ -380,14 +421,14 @@ class RigFtpApp(tk.Tk):
         self.package_list.configure(yscrollcommand=package_scroll.set)
 
         detail_frame = ttk.Labelframe(parent, text="Selected Macro", padding=10)
-        detail_frame.grid(row=2, column=1, sticky="nsew", pady=(0, 8))
+        detail_frame.grid(row=3, column=1, sticky="nsew", pady=(0, 8))
         detail_frame.rowconfigure(0, weight=1)
         detail_frame.columnconfigure(0, weight=1)
         self.package_detail_text = tk.Text(detail_frame, height=8, wrap="word")
         self.package_detail_text.grid(row=0, column=0, sticky="nsew")
 
         monitor = ttk.Labelframe(parent, text="Slave Monitor", padding=10)
-        monitor.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
+        monitor.grid(row=4, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
         monitor.columnconfigure(1, weight=1)
         monitor.rowconfigure(1, weight=1)
         ttk.Label(monitor, text="Node").grid(row=0, column=0, sticky="w", padx=(0, 6))
@@ -444,7 +485,7 @@ class RigFtpApp(tk.Tk):
         )
 
         log_frame = ttk.Frame(parent)
-        log_frame.grid(row=4, column=0, columnspan=2, sticky="nsew")
+        log_frame.grid(row=5, column=0, columnspan=2, sticky="nsew")
         log_frame.rowconfigure(0, weight=1)
         log_frame.columnconfigure(0, weight=1)
         self.master_log_text = tk.Text(log_frame, height=8, wrap="word")
@@ -592,6 +633,7 @@ class RigFtpApp(tk.Tk):
                     config,
                     node_id=slave.node_id,
                     variables={**config.variables, **slave.variables},
+                    run_profiles=(),
                 )
                 node_dir = root / self._safe_folder_name(slave.label())
                 node_dir.mkdir(parents=True, exist_ok=True)
@@ -659,6 +701,8 @@ class RigFtpApp(tk.Tk):
             self.init_nodes_var.set(" ".join(slave.label() for slave in config.slaves))
         if not self.result_node_var.get().strip():
             self.result_node_var.set(config.node_id)
+        self._run_profiles = [profile.to_mapping() for profile in config.run_profiles]
+        self._refresh_run_profile_columns()
 
     def _config_from_fields(self) -> FtpSpoolConfig:
         try:
@@ -697,6 +741,7 @@ class RigFtpApp(tk.Tk):
             max_screenshot_files=int(self.max_screens_var.get() or "20"),
             variables={str(key): str(value) for key, value in variables.items()},
             slaves=tuple(SlaveInfo.from_mapping(item) for item in slaves_data if isinstance(item, dict)),
+            run_profiles=tuple(RunProfile.from_mapping(row) for row in self._run_profiles),
         )
 
     def _backend(self, config: FtpSpoolConfig, local_root: str):
@@ -732,12 +777,25 @@ class RigFtpApp(tk.Tk):
             name = self.package_name_var.get().strip()
             title = self.package_title_var.get().strip()
             notes = self.package_notes_text.get("1.0", "end").strip()
+            variables: dict[str, str] = {}
+            if Path(file_path).suffix.casefold() == ".py":
+                try:
+                    variables = read_exported_variables(file_path)
+                except (OSError, SyntaxError, ValueError):
+                    variables = {}
         except BaseException as exc:
             self._show_error(exc)
             return
 
         def worker() -> None:
-            remote_path = deploy_package(backend, file_path, name=name, title=title, notes=notes)
+            remote_path = deploy_package(
+                backend,
+                file_path,
+                name=name,
+                title=title,
+                notes=notes,
+                variables=variables,
+            )
             packages = list_packages(backend)
             self._queue.put(("packages", packages))
             self._queue.put(("log", f"Uploaded macro: {remote_path}"))
@@ -757,6 +815,222 @@ class RigFtpApp(tk.Tk):
             self._queue.put(("log", f"Loaded {len(packages)} uploaded macro(s)."))
 
         self._start_worker("Refreshing packages", worker)
+
+    def _run_profile_variable_names(self) -> list[str]:
+        names: list[str] = []
+        package = self._selected_package() if hasattr(self, "package_list") else None
+        for name in (package.variables if package else {}):
+            if name not in names:
+                names.append(name)
+        for row in self._run_profiles:
+            row_package = next(
+                (item for item in self._packages if item.name == str(row.get("package", ""))),
+                None,
+            )
+            for name in (row_package.variables if row_package else {}):
+                if name not in names:
+                    names.append(name)
+            for name in row.get("variables", {}):
+                if name not in names:
+                    names.append(name)
+        return names
+
+    def _refresh_run_profile_columns(self) -> None:
+        if not hasattr(self, "run_profile_tree"):
+            return
+        variable_names = self._run_profile_variable_names()
+        package = self._selected_package() if hasattr(self, "package_list") else None
+        for row in self._run_profiles:
+            variables = row.setdefault("variables", {})
+            row_package = next(
+                (item for item in self._packages if item.name == str(row.get("package", ""))),
+                package,
+            )
+            for name in variable_names:
+                variables.setdefault(name, row_package.variables.get(name, "") if row_package else "")
+        columns = ("enabled", "alias", "target", "package", *[f"var::{name}" for name in variable_names])
+        self.run_profile_tree.configure(columns=columns)
+        base_headings = {"enabled": "실행", "alias": "별명", "target": "PC / Node", "package": "매크로"}
+        base_widths = {"enabled": 54, "alias": 90, "target": 130, "package": 170}
+        for column in columns:
+            if column.startswith("var::"):
+                heading = column.removeprefix("var::")
+                width = 150
+            else:
+                heading = base_headings[column]
+                width = base_widths[column]
+            self.run_profile_tree.heading(column, text=heading)
+            self.run_profile_tree.column(column, width=width, minwidth=50, anchor="w", stretch=column != "enabled")
+        self._refresh_run_profile_rows()
+
+    def _refresh_run_profile_rows(self) -> None:
+        if not hasattr(self, "run_profile_tree"):
+            return
+        selected = set(self.run_profile_tree.selection())
+        self.run_profile_tree.delete(*self.run_profile_tree.get_children())
+        columns = tuple(self.run_profile_tree["columns"])
+        for index, row in enumerate(self._run_profiles):
+            values: list[str] = []
+            for column in columns:
+                if column == "enabled":
+                    values.append("✓" if row.get("enabled", True) else "")
+                elif column.startswith("var::"):
+                    values.append(str(row.get("variables", {}).get(column.removeprefix("var::"), "")))
+                else:
+                    values.append(str(row.get(column, "")))
+            iid = str(index)
+            self.run_profile_tree.insert("", "end", iid=iid, values=values)
+            if iid in selected:
+                self.run_profile_tree.selection_add(iid)
+
+    def _profile_package(self) -> PackageInfo | None:
+        return self._selected_package()
+
+    def _profile_base_variables(self, package: PackageInfo | None) -> dict[str, str]:
+        variables = dict(package.variables if package else {})
+        variables.update(self._parse_vars(self.job_vars_var.get()))
+        return variables
+
+    def _load_run_profiles_from_config(self) -> None:
+        try:
+            config = self._config_from_fields()
+            if not config.slaves:
+                raise FtpSpoolError("Connection Setup의 Slaves 목록이 비어 있습니다.")
+            package = self._profile_package()
+            base_variables = self._profile_base_variables(package)
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+        existing = {str(row.get("target", "")) for row in self._run_profiles}
+        for slave in config.slaves:
+            if slave.node_id in existing:
+                continue
+            variables = dict(base_variables)
+            variables.update(slave.variables)
+            self._run_profiles.append(
+                {
+                    "enabled": True,
+                    "alias": slave.label(),
+                    "target": slave.node_id,
+                    "package": package.name if package else "",
+                    "variables": variables,
+                }
+            )
+        self._refresh_run_profile_columns()
+
+    def _add_run_profile_target(self) -> None:
+        try:
+            config = self._config_from_fields()
+            targets = self._targets(self.job_target_var.get(), config=config) or ["all"]
+            if targets == ["all"] and config.slaves:
+                self._load_run_profiles_from_config()
+                return
+            package = self._profile_package()
+            base_variables = self._profile_base_variables(package)
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+        aliases = {slave.node_id: slave.label() for slave in config.slaves}
+        slave_variables = {slave.node_id: dict(slave.variables) for slave in config.slaves}
+        for target in targets:
+            variables = dict(base_variables)
+            variables.update(slave_variables.get(target, {}))
+            self._run_profiles.append(
+                {
+                    "enabled": True,
+                    "alias": aliases.get(target, target),
+                    "target": target,
+                    "package": package.name if package else "",
+                    "variables": variables,
+                }
+            )
+        self._refresh_run_profile_columns()
+
+    def _delete_run_profiles(self) -> None:
+        selected = sorted((int(iid) for iid in self.run_profile_tree.selection()), reverse=True)
+        for index in selected:
+            if 0 <= index < len(self._run_profiles):
+                self._run_profiles.pop(index)
+        self._refresh_run_profile_columns()
+
+    def _toggle_run_profile(self, event: Any) -> str | None:
+        row_id = self.run_profile_tree.identify_row(event.y)
+        column_id = self.run_profile_tree.identify_column(event.x)
+        if not row_id or not row_id.isdigit() or column_id != "#1":
+            return None
+        index = int(row_id)
+        if 0 <= index < len(self._run_profiles):
+            row = self._run_profiles[index]
+            row["enabled"] = not bool(row.get("enabled", True))
+            self._refresh_run_profile_rows()
+        return "break"
+
+    def _edit_run_profile_cell(self, event: Any) -> str:
+        row_id = self.run_profile_tree.identify_row(event.y)
+        column_id = self.run_profile_tree.identify_column(event.x)
+        if not row_id or not row_id.isdigit() or not column_id.startswith("#"):
+            return "break"
+        index = int(row_id)
+        column_index = int(column_id[1:]) - 1
+        columns = tuple(self.run_profile_tree["columns"])
+        if not (0 <= index < len(self._run_profiles) and 0 <= column_index < len(columns)):
+            return "break"
+        row = self._run_profiles[index]
+        column = columns[column_index]
+        if column == "enabled":
+            row["enabled"] = not bool(row.get("enabled", True))
+            self._refresh_run_profile_rows()
+            return "break"
+        if column.startswith("var::"):
+            key = column.removeprefix("var::")
+            current = str(row.get("variables", {}).get(key, ""))
+            prompt = f"{row.get('alias') or row.get('target')}의 {key}"
+        else:
+            key = column
+            current = str(row.get(key, ""))
+            prompt = {"alias": "별명", "target": "PC / Node", "package": "매크로 파일"}.get(key, key)
+        value = simpledialog.askstring("실행표 값 변경", prompt, initialvalue=current, parent=self)
+        if value is None:
+            return "break"
+        if column.startswith("var::"):
+            row.setdefault("variables", {})[key] = value
+        else:
+            row[key] = value.strip()
+        self._refresh_run_profile_columns()
+        return "break"
+
+    def _submit_run_profiles(self) -> None:
+        try:
+            _config, backend, _local_root = self._snapshot_backend()
+            rows = [row for row in self._run_profiles if row.get("enabled", True)]
+            if not rows:
+                raise FtpSpoolError("실행할 PC 행을 추가하고 실행 열을 체크하세요.")
+            args = shlex.split(self.job_args_var.get(), posix=False) if self.job_args_var.get().strip() else []
+            timeout = float(self.job_timeout_var.get() or "0")
+            for row in rows:
+                if not str(row.get("target", "")).strip() or not str(row.get("package", "")).strip():
+                    raise FtpSpoolError("모든 실행 행에 PC / Node와 매크로를 입력하세요.")
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+
+        def worker() -> None:
+            submitted: list[str] = []
+            for row in rows:
+                job = SpoolJob.create(
+                    kind="python",
+                    payload={
+                        "package": str(row["package"]),
+                        "args": args,
+                        "timeout_seconds": timeout,
+                        "pass_variables": True,
+                    },
+                    variables={str(key): str(value) for key, value in row.get("variables", {}).items()},
+                )
+                submitted.extend(submit_job(backend, job, [str(row["target"])]))
+            self._queue.put(("log", f"Submitted {len(rows)} PC-specific macro job(s): {', '.join(submitted)}"))
+
+        self._start_worker("Submitting PC-specific run table", worker)
 
     def _submit_selected_package(self) -> None:
         try:
@@ -782,7 +1056,12 @@ class RigFtpApp(tk.Tk):
         targets = self._targets(self.job_target_var.get(), config=_config) or ["all"]
         job = SpoolJob.create(
             kind="python",
-            payload={"package": package.name, "args": args, "timeout_seconds": timeout},
+            payload={
+                "package": package.name,
+                "args": args,
+                "timeout_seconds": timeout,
+                "pass_variables": True,
+            },
             variables=variables,
         )
         return backend, package, targets, job
@@ -813,6 +1092,7 @@ class RigFtpApp(tk.Tk):
                             "package": package.name,
                             "args": shlex.split(args_raw, posix=False) if args_raw.strip() else [],
                             "timeout_seconds": timeout,
+                            "pass_variables": True,
                         },
                         variables=self._parse_vars(vars_raw),
                     )
@@ -1216,7 +1496,10 @@ class RigFtpApp(tk.Tk):
             "",
             package.notes or "No notes.",
         ]
+        if package.variables:
+            lines.extend(["", "PC별 입력값", *[f"- {key}: {value}" for key, value in package.variables.items()]])
         self.package_detail_text.insert("1.0", "\n".join(lines))
+        self._refresh_run_profile_columns()
 
     def _set_packages(self, packages: list[PackageInfo]) -> None:
         self._packages = packages
@@ -1230,6 +1513,7 @@ class RigFtpApp(tk.Tk):
             self._show_selected_package()
         else:
             self.package_detail_text.delete("1.0", "end")
+            self._refresh_run_profile_columns()
 
     def _targets(self, raw: str, *, config: FtpSpoolConfig | None = None) -> list[str]:
         tokens = self._target_tokens(raw)

@@ -125,12 +125,14 @@ def test_recipe_round_trip_json() -> None:
                 monitor_channel="CH1",
                 monitor_state="RUNNING",
             ),
-        ]
+        ],
+        variables={"message": "Hello"},
     )
 
     restored = AutomationRecipe.from_json(recipe.to_json())
 
     assert restored == recipe
+    assert restored.variables == {"message": "Hello"}
 
 
 def test_key_step_round_trip_json() -> None:

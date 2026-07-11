@@ -78,6 +78,37 @@ class SlaveInfo:
 
 
 @dataclass(frozen=True)
+class RunProfile:
+    target: str
+    package: str
+    alias: str = ""
+    enabled: bool = True
+    variables: dict[str, str] = field(default_factory=dict)
+
+    @classmethod
+    def from_mapping(cls, data: dict[str, Any]) -> "RunProfile":
+        variables = data.get("variables") or {}
+        if not isinstance(variables, dict):
+            raise FtpSpoolError("Run profile variables must be an object.")
+        return cls(
+            target=str(data.get("target") or data.get("node_id") or "").strip(),
+            package=str(data.get("package") or data.get("macro") or "").strip(),
+            alias=str(data.get("alias") or "").strip(),
+            enabled=bool(data.get("enabled", True)),
+            variables={str(key): str(value) for key, value in variables.items()},
+        )
+
+    def to_mapping(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "alias": self.alias,
+            "target": self.target,
+            "package": self.package,
+            "variables": dict(self.variables),
+        }
+
+
+@dataclass(frozen=True)
 class FtpSpoolConfig:
     host: str = ""
     username: str = ""
@@ -101,6 +132,7 @@ class FtpSpoolConfig:
     max_screenshot_files: int = 20
     variables: dict[str, str] = field(default_factory=dict)
     slaves: tuple[SlaveInfo, ...] = ()
+    run_profiles: tuple[RunProfile, ...] = ()
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> "FtpSpoolConfig":
@@ -112,6 +144,9 @@ class FtpSpoolConfig:
         slaves_data = data.get("slaves") or []
         if not isinstance(slaves_data, list):
             raise FtpSpoolError("Config field 'slaves' must be a list.")
+        profiles_data = data.get("run_profiles") or []
+        if not isinstance(profiles_data, list):
+            raise FtpSpoolError("Config field 'run_profiles' must be a list.")
         password_env = str(ftp_data.get("password_env", "") or "")
         password = str(ftp_data.get("password", "") or "")
         if password_env:
@@ -154,6 +189,7 @@ class FtpSpoolConfig:
             ),
             variables={str(key): str(value) for key, value in variables.items()},
             slaves=tuple(SlaveInfo.from_mapping(item) for item in slaves_data if isinstance(item, dict)),
+            run_profiles=tuple(RunProfile.from_mapping(item) for item in profiles_data if isinstance(item, dict)),
         )
 
     @classmethod
@@ -197,6 +233,7 @@ class FtpSpoolConfig:
             },
             "variables": dict(self.variables),
             "slaves": [slave.to_mapping() for slave in self.slaves],
+            "run_profiles": [profile.to_mapping() for profile in self.run_profiles],
         }
 
 
@@ -452,16 +489,21 @@ class PackageInfo:
     title: str = ""
     notes: str = ""
     uploaded_at: str = ""
+    variables: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any], *, fallback_name: str = "") -> "PackageInfo":
         name = _safe_name(str(data.get("name") or fallback_name))
+        variables = data.get("variables") or {}
+        if not isinstance(variables, dict):
+            variables = {}
         return cls(
             name=name,
             path=str(data.get("path") or f"packages/{name}"),
             title=str(data.get("title") or ""),
             notes=str(data.get("notes") or ""),
             uploaded_at=str(data.get("uploaded_at") or ""),
+            variables={str(key): str(value) for key, value in variables.items()},
         )
 
     def to_mapping(self) -> dict[str, Any]:
@@ -471,6 +513,7 @@ class PackageInfo:
             "title": self.title,
             "notes": self.notes,
             "uploaded_at": self.uploaded_at,
+            "variables": dict(self.variables),
         }
 
 
@@ -507,6 +550,7 @@ def deploy_package(
     *,
     title: str = "",
     notes: str = "",
+    variables: dict[str, str] | None = None,
 ) -> str:
     source_path = Path(source)
     if not source_path.exists():
@@ -521,6 +565,7 @@ def deploy_package(
         title=title or source_path.stem,
         notes=notes,
         uploaded_at=_utc_now(),
+        variables={str(key): str(value) for key, value in (variables or {}).items()},
     )
     backend.write_bytes(
         f"packages/{safe_package_name}.meta.json",
@@ -997,6 +1042,8 @@ def _execute_python(
         str(script_path),
         *[_render_placeholders(str(item), variables) for item in args],
     ]
+    if bool(job.payload.get("pass_variables", False)):
+        argv.extend(["--vars-json", json.dumps(variables, ensure_ascii=True)])
     return _run_process(
         backend,
         argv,

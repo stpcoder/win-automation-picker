@@ -64,7 +64,7 @@ def replace_step(recipe: AutomationRecipe, path: BlockPath, step: AutomationStep
             updated[index] = replace(parent, children=replace_in(parent.children, depth + 1))
         return updated
 
-    return AutomationRecipe(steps=replace_in(recipe.steps, 0), monitor_view=dict(recipe.monitor_view))
+    return replace(recipe, steps=replace_in(recipe.steps, 0))
 
 
 def insert_step(
@@ -77,7 +77,7 @@ def insert_step(
     insert_index = max(0, min(len(children), int(index)))
     children.insert(insert_index, step)
     if not parent_path:
-        updated = AutomationRecipe(steps=children, monitor_view=dict(recipe.monitor_view))
+        updated = replace(recipe, steps=children)
     else:
         parent = get_step(recipe, parent_path)
         updated = replace_step(recipe, parent_path, replace(parent, children=children))
@@ -93,7 +93,7 @@ def remove_step(recipe: AutomationRecipe, path: BlockPath) -> tuple[AutomationRe
     _validate_index(children, index, path)
     removed = children.pop(index)
     if not parent_path:
-        updated = AutomationRecipe(steps=children, monitor_view=dict(recipe.monitor_view))
+        updated = replace(recipe, steps=children)
     else:
         parent = get_step(recipe, parent_path)
         updated = replace_step(recipe, parent_path, replace(parent, children=children))

@@ -10,6 +10,8 @@
 | `실행` | 매크로 1회 실행 |
 | `데이터 실행` | 데이터 행별 실행 |
 | `중지` | 실행 중단 요청 |
+| `연속 녹화 시작` | 외부 프로그램 조작 세션 녹화 |
+| `녹화 정지` | 녹화 종료 및 블록 변환 |
 | `대상 확인` | 블록 없이 component 조사 |
 | `클릭 녹화` | 클릭 블록 생성 |
 | `입력 녹화` | 입력 블록 생성 |
@@ -29,6 +31,9 @@
 | `복제` | 선택 블록과 자식 전체 복제 |
 | `풀기` | 반복/조건 컨테이너 제거, 자식 유지 |
 | `삭제` | 선택 블록과 자식 제거 |
+| `선택 입력을 PC별 변수로` | 타임라인 입력을 `${변수}`로 변경 |
+| `선택 입력을 고정값으로` | 타임라인 입력을 녹화 문자열로 고정 |
+| `목록 비우기` | 타임라인 표시만 비움; 생성 블록은 유지 |
 
 ## 모니터링
 
@@ -58,6 +63,9 @@
 | `Server Setup > More` | `Export slave .info` | slave별 config 생성 |
 | `Macro Upload` | `Upload macro` | Python macro 업로드 |
 | `Run on Slaves` | `Submit macro` | 선택 macro 실행 요청 |
+| `PC별 매크로 실행표` | `설정 PC 불러오기` | config의 slave를 실행 행으로 추가 |
+| `PC별 매크로 실행표` | `대상 추가` | Target의 PC를 실행 행으로 추가 |
+| `PC별 매크로 실행표` | `실행표 전송` | PC별 macro와 variables를 각각 제출 |
 | `Run on Slaves` | `Emergency stop` | stop signal 전송 |
 | `Run on Slaves > More` | `Ask for screenshot` | screenshot job 제출 |
 | `Slave Monitor` | `Refresh status` | slave heartbeat 읽기 |
