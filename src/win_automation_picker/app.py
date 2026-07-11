@@ -11,7 +11,7 @@ import threading
 import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from .automation import (
     PickedElement,
@@ -124,12 +124,28 @@ class ToolTip:
         self._window = None
 
 
-class PickerApp(tk.Tk):
-    def __init__(self) -> None:
-        super().__init__()
+class PickerApp(tk.Toplevel):
+    def __init__(
+        self,
+        master: tk.Misc | None = None,
+        *,
+        project_path: str | Path | None = None,
+        on_project_saved: Callable[[Path, AutomationProject], None] | None = None,
+        on_create_shortcut: Callable[[str, Path, AutomationProject], None] | None = None,
+    ) -> None:
+        standalone_root: tk.Tk | None = None
+        if master is None:
+            standalone_root = tk.Tk()
+            standalone_root.withdraw()
+            master = standalone_root
+        super().__init__(master)
         self.title("Win Automation Picker")
         self.geometry("1440x900")
         self.minsize(1080, 700)
+
+        self._standalone_root = standalone_root
+        self._on_project_saved = on_project_saved
+        self._on_create_shortcut = on_create_shortcut
 
         self._queue: queue.Queue[tuple[str, Any]] = queue.Queue()
         self._picker: ClickPicker | None = None
@@ -168,7 +184,10 @@ class PickerApp(tk.Tk):
         self._set_app_icon()
         self._configure_style()
         self._build_ui()
-        self._saved_project_token = self._project_state_token()
+        if project_path:
+            self.load_project_path(project_path)
+        else:
+            self._saved_project_token = self._project_state_token()
         self.protocol("WM_DELETE_WINDOW", self._close_app)
         self.after(80, self._drain_queue)
 
@@ -179,7 +198,7 @@ class PickerApp(tk.Tk):
                 continue
             try:
                 self._icon_image = tk.PhotoImage(file=str(icon_path))
-                self.iconphoto(True, self._icon_image)
+                self.iconphoto(False, self._icon_image)
             except tk.TclError:
                 pass
             return
@@ -809,6 +828,13 @@ class PickerApp(tk.Tk):
             state="readonly",
         ).grid(row=0, column=5)
         self.block_color_mode_var.trace_add("write", lambda *_: self._refresh_block_canvas())
+        if self._on_create_shortcut is not None:
+            ttk.Button(
+                studio_bar,
+                text="Rig 버튼으로 등록",
+                command=self._request_workbench_shortcut,
+                style="Success.TButton",
+            ).grid(row=0, column=6, padx=(10, 0))
 
         body = ttk.PanedWindow(parent, orient=tk.HORIZONTAL)
         body.grid(row=1, column=0, sticky="nsew")
@@ -3246,13 +3272,7 @@ class PickerApp(tk.Tk):
 
     def _save_workflow(self, *, save_as: bool = False) -> bool:
         try:
-            recipe = self._recipe_from_editor()
-            project = AutomationProject(
-                recipe=recipe,
-                data_text=self.data_text.get("1.0", "end").rstrip("\n"),
-                first_row_headers=bool(self.first_row_headers_var.get()),
-                row_delay_seconds=self._row_delay_seconds(),
-            )
+            project = self.current_project()
         except BaseException as exc:
             self._show_error(exc)
             return False
@@ -3269,8 +3289,23 @@ class PickerApp(tk.Tk):
         path.write_text(project.to_json() + "\n", encoding="utf-8")
         self._project_path = path
         self._saved_project_token = self._project_state_token()
-        self.status.set("Workflow saved")
+        self.title(f"Win Automation Picker | {path.stem}")
+        self.status.set(f"저장됨: {path.name}")
+        if self._on_project_saved is not None:
+            try:
+                self._on_project_saved(path, project)
+            except BaseException as exc:
+                self._show_error(exc)
+                return False
         return True
+
+    def current_project(self) -> AutomationProject:
+        return AutomationProject(
+            recipe=self._recipe_from_editor(),
+            data_text=self.data_text.get("1.0", "end").rstrip("\n"),
+            first_row_headers=bool(self.first_row_headers_var.get()),
+            row_delay_seconds=self._row_delay_seconds(),
+        )
 
     def _export_python_script(self) -> None:
         try:
@@ -3741,18 +3776,60 @@ class PickerApp(tk.Tk):
     def _load_workflow(self) -> None:
         path = filedialog.askopenfilename(
             title="Load workflow",
-            filetypes=[("JSON", "*.json"), ("All files", "*.*")],
+            filetypes=[
+                ("Macro project or export", "*.json *.py"),
+                ("Macro project", "*.json"),
+                ("Exported Python", "*.py"),
+                ("All files", "*.*"),
+            ],
         )
         if not path:
             return
-        text = Path(path).read_text(encoding="utf-8")
-        project = AutomationProject.from_json(text)
+        self.load_project_path(path)
+
+    def load_project_path(self, path: str | Path) -> None:
+        source = Path(path)
+        if source.suffix.casefold() == ".py":
+            from .workbench import read_automation_project
+
+            project = read_automation_project(source)
+            self._project_path = None
+            status = f"Python export 불러옴: {source.name} (저장 시 원본 프로젝트 생성)"
+        else:
+            project = AutomationProject.from_json(source.read_text(encoding="utf-8"))
+            self._project_path = source
+            status = f"불러옴: {source.name}"
         self._replace_text(self.data_text, project.data_text)
         self.first_row_headers_var.set(project.first_row_headers)
         self.row_delay_var.set(str(project.row_delay_seconds))
         self._commit_recipe(project.recipe, selected_path=None, message="워크플로 프로젝트를 불러왔습니다")
-        self._project_path = Path(path)
         self._saved_project_token = self._project_state_token()
+        self.title(f"Win Automation Picker | {source.stem}")
+        self.status.set(status)
+
+    def _request_workbench_shortcut(self) -> None:
+        if self._on_create_shortcut is None:
+            return
+        if self._project_path is None or self._project_state_token() != self._saved_project_token:
+            if not self._save_workflow():
+                return
+        if self._project_path is None:
+            return
+        name = simpledialog.askstring(
+            "Rig 버튼 만들기",
+            "Rig 작업대에 표시할 버튼 이름",
+            initialvalue=self._project_path.stem,
+            parent=self,
+        )
+        if not name or not name.strip():
+            return
+        try:
+            project = self.current_project()
+            self._on_create_shortcut(name.strip(), self._project_path, project)
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+        self.status.set(f"Rig 버튼 등록됨: {name.strip()}")
 
     def _clear_workflow(self) -> None:
         self._commit_recipe(AutomationRecipe(), selected_path=None, message="워크플로를 비웠습니다")
@@ -4550,6 +4627,11 @@ class PickerApp(tk.Tk):
         if self._run_stop_event is not None:
             self._run_stop_event.set()
         self.destroy()
+        if self._standalone_root is not None:
+            try:
+                self._standalone_root.destroy()
+            except tk.TclError:
+                pass
 
     def _app_screen_bounds(self) -> tuple[int, int, int, int]:
         self.update_idletasks()

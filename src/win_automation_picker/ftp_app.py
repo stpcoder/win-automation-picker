@@ -45,6 +45,8 @@ from .ftp_spool import (
 )
 from .xlsx_export import write_xlsx_workbook
 from .sequence_bundle import RigSequenceBundleError, read_rig_sequence_bundle
+from .workbench import AEWorkbenchProject
+from .workbench_ui import AEWorkbenchMixin
 
 
 DEFAULT_CONFIG = "rig-ftp.info"
@@ -52,12 +54,12 @@ LEGACY_CONFIG = "rig-ftp.config.json"
 DEFAULT_CONFIG_FILES = (DEFAULT_CONFIG, LEGACY_CONFIG)
 
 
-class RigFtpApp(tk.Tk):
+class RigFtpApp(AEWorkbenchMixin, tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("Rig FTP Commander")
-        self.geometry("1180x820")
-        self.minsize(980, 680)
+        self.title("AE Workbench | Rig Control")
+        self.geometry("1320x860")
+        self.minsize(1080, 720)
 
         self._queue: queue.Queue[tuple[str, Any]] = queue.Queue()
         self._packages: list[PackageInfo] = []
@@ -73,11 +75,19 @@ class RigFtpApp(tk.Tk):
         self._last_screenshot_request_by_node: dict[str, float] = {}
         self._image_refs: list[tk.PhotoImage] = []
         self._icon_image: tk.PhotoImage | None = None
+        self._workbench_project = AEWorkbenchProject()
+        self._macro_editor: Any | None = None
+        self._macro_test_stop: threading.Event | None = None
+        self._sequence_processes: list[Any] = []
+        self._workbench_uploaded = False
+        self._selected_shortcut_name = ""
 
         self._configure_style()
         self._set_app_icon()
         self._build_ui()
+        self._load_workbench_project(silent=True)
         self._load_config(silent=True)
+        self.protocol("WM_DELETE_WINDOW", self._close_workbench_app)
         self.after(100, self._drain_queue)
 
     def _configure_style(self) -> None:
@@ -95,6 +105,12 @@ class RigFtpApp(tk.Tk):
         style.configure("TLabel", background="#f4f7fb", foreground="#111827")
         style.configure("Panel.TLabel", background="#ffffff", foreground="#111827")
         style.configure("Muted.TLabel", background="#ffffff", foreground="#6b7280")
+        style.configure(
+            "PanelTitle.TLabel",
+            background="#ffffff",
+            foreground="#111827",
+            font=(font[0], 11, "bold"),
+        )
         style.configure("TButton", padding=(9, 5))
         style.configure("Primary.TButton", padding=(10, 6), background="#2563eb", foreground="#ffffff")
         style.configure("Danger.TButton", padding=(10, 6), background="#dc2626", foreground="#ffffff")
@@ -165,18 +181,301 @@ class RigFtpApp(tk.Tk):
         )
 
         notebook = ttk.Notebook(self)
+        self.main_notebook = notebook
         notebook.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
 
+        workbench = ttk.Frame(notebook, padding=10)
         settings = ttk.Frame(notebook, padding=10)
         master = ttk.Frame(notebook, padding=10)
         slave = ttk.Frame(notebook, padding=10)
-        notebook.add(master, text="모니터 및 실행")
+        notebook.add(workbench, text="AE 작업대")
+        notebook.add(master, text="배포 · 모니터")
         notebook.add(slave, text="이 PC Agent")
         notebook.add(settings, text="연결 설정")
 
+        self._build_workbench_tab(workbench)
         self._build_settings_tab(settings)
         self._build_master_tab(master)
         self._build_slave_tab(slave)
+
+    def _build_workbench_tab(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(2, weight=1)
+
+        header = ttk.Frame(parent, padding=(12, 10), style="Panel.TFrame")
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        header.columnconfigure(1, weight=1)
+        header.columnconfigure(5, weight=1)
+        ttk.Label(header, text="작업 파일", style="Panel.TLabel").grid(row=0, column=0, padx=(0, 6))
+        self.workbench_path_var = tk.StringVar(value=str(self._default_workbench_path()))
+        ttk.Entry(header, textvariable=self.workbench_path_var).grid(
+            row=0, column=1, sticky="ew", padx=(0, 6)
+        )
+        ttk.Button(header, text="열기", command=self._browse_workbench_project).grid(
+            row=0, column=2, padx=(0, 5)
+        )
+        ttk.Button(header, text="저장", command=self._save_workbench_project).grid(
+            row=0, column=3, padx=(0, 12)
+        )
+        ttk.Label(header, text="작업 이름", style="Panel.TLabel").grid(row=0, column=4, padx=(0, 6))
+        self.workbench_name_var = tk.StringVar(value=self._workbench_project.name)
+        ttk.Entry(header, textvariable=self.workbench_name_var).grid(row=0, column=5, sticky="ew")
+
+        flow = ttk.Frame(parent, padding=(12, 8), style="Panel.TFrame")
+        flow.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        for column in range(9):
+            flow.columnconfigure(column, weight=1 if column % 2 == 0 else 0)
+        self.wb_stage_labels: list[tk.Label] = []
+        stage_labels = ("1  SEQ", "2  매크로", "3  검증", "4  업로드", "5  실행 · 모니터")
+        for index, label in enumerate(stage_labels):
+            badge = tk.Label(
+                flow,
+                text=label,
+                background="#e2e8f0",
+                foreground="#334155",
+                padx=12,
+                pady=7,
+                font=("TkDefaultFont", 9, "bold"),
+            )
+            badge.grid(row=0, column=index * 2, sticky="ew")
+            self.wb_stage_labels.append(badge)
+            if index < 4:
+                ttk.Label(flow, text=">", style="Panel.TLabel").grid(
+                    row=0, column=index * 2 + 1, padx=6
+                )
+
+        body = ttk.PanedWindow(parent, orient=tk.HORIZONTAL)
+        body.grid(row=2, column=0, sticky="nsew", pady=(0, 8))
+
+        sequence = ttk.Frame(body, padding=(12, 10), style="Panel.TFrame")
+        sequence.columnconfigure(1, weight=1)
+        sequence.rowconfigure(6, weight=1)
+        ttk.Label(sequence, text="SEQ 조건 · 빌드", style="PanelTitle.TLabel").grid(
+            row=0, column=0, columnspan=3, sticky="w", pady=(0, 8)
+        )
+        ttk.Label(sequence, text="Recipe", style="Panel.TLabel").grid(row=1, column=0, sticky="w", padx=(0, 6))
+        self.wb_seq_recipe_var = tk.StringVar(value="")
+        seq_recipe_entry = ttk.Entry(sequence, textvariable=self.wb_seq_recipe_var)
+        seq_recipe_entry.grid(row=1, column=1, sticky="ew", padx=(0, 5), pady=3)
+        seq_recipe_entry.bind("<FocusOut>", lambda _event: self._refresh_workbench_state())
+        ttk.Button(sequence, text="찾기", command=self._browse_workbench_seq_recipe).grid(row=1, column=2, pady=3)
+
+        ttk.Label(sequence, text="Rig Package", style="Panel.TLabel").grid(
+            row=2, column=0, sticky="w", padx=(0, 6)
+        )
+        self.wb_seq_package_var = tk.StringVar(value="")
+        seq_package_entry = ttk.Entry(sequence, textvariable=self.wb_seq_package_var)
+        seq_package_entry.grid(row=2, column=1, sticky="ew", padx=(0, 5), pady=3)
+        seq_package_entry.bind("<FocusOut>", lambda _event: self._refresh_workbench_state())
+        ttk.Button(sequence, text="찾기", command=self._browse_workbench_seq_package).grid(row=2, column=2, pady=3)
+
+        ttk.Label(sequence, text="SEQ 도구 폴더", style="Panel.TLabel").grid(
+            row=3, column=0, sticky="w", padx=(0, 6)
+        )
+        self.wb_seq_tool_var = tk.StringVar(value="")
+        ttk.Entry(sequence, textvariable=self.wb_seq_tool_var).grid(
+            row=3, column=1, sticky="ew", padx=(0, 5), pady=3
+        )
+        ttk.Button(sequence, text="찾기", command=self._browse_workbench_seq_tool).grid(row=3, column=2, pady=3)
+
+        seq_actions = ttk.Frame(sequence, style="Panel.TFrame")
+        seq_actions.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(8, 8))
+        for column in range(3):
+            seq_actions.columnconfigure(column, weight=1)
+        ttk.Button(seq_actions, text="생성기 열기", command=self._open_sequence_generator).grid(
+            row=0, column=0, sticky="ew", padx=(0, 4)
+        )
+        ttk.Button(seq_actions, text="오류 검사", command=self._validate_sequence_recipe).grid(
+            row=0, column=1, sticky="ew", padx=4
+        )
+        ttk.Button(
+            seq_actions,
+            text="Rig 패키지 빌드",
+            command=self._build_sequence_package,
+            style="Primary.TButton",
+        ).grid(row=0, column=2, sticky="ew", padx=(4, 0))
+        self.wb_seq_status_var = tk.StringVar(value="Recipe와 Rig 패키지를 선택하세요.")
+        self.wb_seq_badge = tk.Label(
+            sequence,
+            text="대기",
+            background="#64748b",
+            foreground="#ffffff",
+            padx=9,
+            pady=4,
+            font=("TkDefaultFont", 9, "bold"),
+        )
+        self.wb_seq_badge.grid(row=5, column=0, sticky="nw", padx=(0, 8))
+        ttk.Label(
+            sequence,
+            textvariable=self.wb_seq_status_var,
+            style="Panel.TLabel",
+            wraplength=420,
+            justify="left",
+        ).grid(row=5, column=1, columnspan=2, sticky="ew")
+        self.wb_seq_report_text = tk.Text(
+            sequence,
+            height=7,
+            wrap="word",
+            state="disabled",
+            background="#f8fafc",
+            foreground="#111827",
+            insertbackground="#111827",
+            relief="flat",
+            borderwidth=0,
+            highlightthickness=1,
+            highlightbackground="#cbd5e1",
+            highlightcolor="#2563eb",
+            padx=9,
+            pady=7,
+        )
+        self.wb_seq_report_text.grid(row=6, column=0, columnspan=3, sticky="nsew", pady=(8, 0))
+        body.add(sequence, weight=1)
+
+        macro = ttk.Frame(body, padding=(12, 10), style="Panel.TFrame")
+        macro.columnconfigure(1, weight=1)
+        macro.rowconfigure(6, weight=1)
+        ttk.Label(macro, text="Scratch 매크로", style="PanelTitle.TLabel").grid(
+            row=0, column=0, columnspan=3, sticky="w", pady=(0, 8)
+        )
+        ttk.Label(macro, text="Project", style="Panel.TLabel").grid(row=1, column=0, sticky="w", padx=(0, 6))
+        self.wb_macro_project_var = tk.StringVar(value="")
+        macro_entry = ttk.Entry(macro, textvariable=self.wb_macro_project_var)
+        macro_entry.grid(row=1, column=1, sticky="ew", padx=(0, 5), pady=3)
+        macro_entry.bind("<FocusOut>", lambda _event: self._refresh_workbench_state())
+        ttk.Button(macro, text="찾기", command=self._browse_workbench_macro).grid(row=1, column=2, pady=3)
+
+        macro_actions = ttk.Frame(macro, style="Panel.TFrame")
+        macro_actions.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(7, 5))
+        for column in range(4):
+            macro_actions.columnconfigure(column, weight=1)
+        ttk.Button(macro_actions, text="새 매크로", command=self._new_workbench_macro).grid(
+            row=0, column=0, sticky="ew", padx=(0, 4)
+        )
+        ttk.Button(
+            macro_actions,
+            text="Scratch 편집",
+            command=self._open_workbench_macro_editor,
+            style="Primary.TButton",
+        ).grid(row=0, column=1, sticky="ew", padx=4)
+        ttk.Button(macro_actions, text="구성 검사", command=self._validate_workbench_macro).grid(
+            row=0, column=2, sticky="ew", padx=4
+        )
+        ttk.Button(macro_actions, text="Python 내보내기", command=self._export_workbench_macro).grid(
+            row=0, column=3, sticky="ew", padx=(4, 0)
+        )
+
+        ttk.Label(macro, text="로컬 시험값", style="Panel.TLabel").grid(
+            row=3, column=0, sticky="w", padx=(0, 6), pady=(4, 0)
+        )
+        self.wb_macro_values_var = tk.StringVar(value="{}")
+        ttk.Entry(macro, textvariable=self.wb_macro_values_var).grid(
+            row=3, column=1, sticky="ew", padx=(0, 5), pady=(4, 0)
+        )
+        test_actions = ttk.Frame(macro, style="Panel.TFrame")
+        test_actions.grid(row=3, column=2, sticky="e", pady=(4, 0))
+        self.wb_macro_test_button = ttk.Button(
+            test_actions,
+            text="시험",
+            command=self._test_workbench_macro,
+            style="Primary.TButton",
+        )
+        self.wb_macro_test_button.pack(side="left", padx=(0, 4))
+        self.wb_macro_stop_button = ttk.Button(
+            test_actions,
+            text="중지",
+            command=self._stop_workbench_macro,
+            state="disabled",
+        )
+        self.wb_macro_stop_button.pack(side="left")
+
+        ttk.Label(macro, text="Python", style="Panel.TLabel").grid(
+            row=4, column=0, sticky="w", padx=(0, 6), pady=(6, 0)
+        )
+        self.wb_macro_export_var = tk.StringVar(value="")
+        ttk.Entry(macro, textvariable=self.wb_macro_export_var).grid(
+            row=4, column=1, columnspan=2, sticky="ew", pady=(6, 0)
+        )
+        self.wb_macro_status_var = tk.StringVar(value="매크로 프로젝트를 선택하세요.")
+        self.wb_macro_badge = tk.Label(
+            macro,
+            text="대기",
+            background="#64748b",
+            foreground="#ffffff",
+            padx=9,
+            pady=4,
+            font=("TkDefaultFont", 9, "bold"),
+        )
+        self.wb_macro_badge.grid(row=5, column=0, sticky="nw", padx=(0, 8), pady=(8, 0))
+        ttk.Label(
+            macro,
+            textvariable=self.wb_macro_status_var,
+            style="Panel.TLabel",
+            wraplength=420,
+            justify="left",
+        ).grid(row=5, column=1, columnspan=2, sticky="ew", pady=(8, 0))
+        self.wb_macro_report_text = tk.Text(
+            macro,
+            height=7,
+            wrap="word",
+            state="disabled",
+            background="#f8fafc",
+            foreground="#111827",
+            insertbackground="#111827",
+            relief="flat",
+            borderwidth=0,
+            highlightthickness=1,
+            highlightbackground="#cbd5e1",
+            highlightcolor="#2563eb",
+            padx=9,
+            pady=7,
+        )
+        self.wb_macro_report_text.grid(row=6, column=0, columnspan=3, sticky="nsew", pady=(8, 0))
+        body.add(macro, weight=1)
+
+        shortcuts = ttk.Frame(parent, padding=(12, 9), style="Panel.TFrame")
+        shortcuts.grid(row=3, column=0, sticky="ew", pady=(0, 8))
+        shortcuts.columnconfigure(1, weight=1)
+        ttk.Label(shortcuts, text="매크로 버튼", style="PanelTitle.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, 12)
+        )
+        self.wb_shortcut_frame = ttk.Frame(shortcuts, style="Panel.TFrame")
+        self.wb_shortcut_frame.grid(row=0, column=1, sticky="ew")
+        ttk.Button(shortcuts, text="현재 매크로 버튼 만들기", command=self._add_workbench_shortcut).grid(
+            row=0, column=2, padx=(8, 5)
+        )
+        ttk.Button(shortcuts, text="선택 버튼 삭제", command=self._remove_workbench_shortcut).grid(
+            row=0, column=3
+        )
+
+        footer = ttk.Frame(parent, padding=(12, 9), style="Panel.TFrame")
+        footer.grid(row=4, column=0, sticky="ew")
+        footer.columnconfigure(1, weight=1)
+        self.wb_ready_badge = tk.Label(
+            footer,
+            text="준비 전",
+            background="#64748b",
+            foreground="#ffffff",
+            padx=10,
+            pady=5,
+            font=("TkDefaultFont", 9, "bold"),
+        )
+        self.wb_ready_badge.grid(row=0, column=0, padx=(0, 9))
+        self.wb_ready_var = tk.StringVar(value="SEQ와 매크로를 준비하세요.")
+        ttk.Label(footer, textvariable=self.wb_ready_var, style="Panel.TLabel").grid(
+            row=0, column=1, sticky="ew"
+        )
+        ttk.Button(footer, text="전체 사전 점검", command=self._refresh_workbench_state).grid(
+            row=0, column=2, padx=(8, 5)
+        )
+        self.wb_upload_button = ttk.Button(
+            footer,
+            text="SEQ + 매크로 업로드",
+            command=self._upload_workbench_artifacts,
+            state="disabled",
+            style="Primary.TButton",
+        )
+        self.wb_upload_button.grid(row=0, column=3, padx=(0, 5))
+        ttk.Button(footer, text="실행표 열기", command=self._open_workbench_run_table).grid(row=0, column=4)
 
     def _build_settings_tab(self, parent: ttk.Frame) -> None:
         for column in (1, 3):
@@ -1005,6 +1304,11 @@ class RigFtpApp(tk.Tk):
         detail_frame.columnconfigure(0, weight=1)
         self.package_detail_text = tk.Text(detail_frame, height=8, wrap="word")
         self.package_detail_text.grid(row=0, column=0, sticky="nsew")
+        ttk.Button(
+            detail_frame,
+            text="선택 FLOW를 Scratch에서 수정",
+            command=self._edit_selected_remote_macro,
+        ).grid(row=1, column=0, sticky="e", pady=(6, 0))
 
         monitor = ttk.Labelframe(monitor_page, text="PC 상태와 실행 이력", padding=10)
         monitor.grid(row=0, column=0, sticky="nsew", pady=(0, 8))
@@ -3481,6 +3785,8 @@ class RigFtpApp(tk.Tk):
                 kind, payload = self._queue.get_nowait()
             except queue.Empty:
                 break
+            if self._handle_workbench_queue(kind, payload):
+                continue
             if kind == "log":
                 self._append_master_log(str(payload))
             elif kind == "slave_log":

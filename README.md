@@ -10,6 +10,7 @@ A Windows UI Automation macro studio with a real nested block workspace, Python 
 
 | File | Purpose |
 | --- | --- |
+| [AEWorkbench.exe](https://github.com/stpcoder/win-automation-picker/releases/latest/download/AEWorkbench.exe) | Integrated SEQ, Scratch macro, validation, FTP deployment, and monitoring workspace |
 | [WinAutomationPicker.exe](https://github.com/stpcoder/win-automation-picker/releases/latest/download/WinAutomationPicker.exe) | Build, run, and export block macros |
 | [RigFtpCommander.exe](https://github.com/stpcoder/win-automation-picker/releases/latest/download/RigFtpCommander.exe) | FTP master/slave GUI |
 | [RigFtpCli.exe](https://github.com/stpcoder/win-automation-picker/releases/latest/download/RigFtpCli.exe) | Advanced FTP CLI |
@@ -19,6 +20,10 @@ The executables are not code-signed, so Windows SmartScreen may show a warning.
 
 ## Highlights
 
+- Keeps the active SEQ recipe/package, Scratch source/Python export, and named macro buttons in one `*.aework.json` project.
+- Opens Test Sequence Generator on the active recipe and calls `SeqTool.exe` in the background for validation and Rig-package builds.
+- Treats temperature as a user-selected SEQ target rendered into `@TF set/run`, not as automatic measured-temperature collection.
+- Opens the real Scratch editor from Rig, runs/stops a local test, and uploads the validated SEQ and current macro together.
 - Continuously records external-app clicks, grouped text input, and common keys between explicit Start/Stop actions.
 - Reads the final UIA field value so IME composition and paste become one input block; password values are never stored.
 - Drags click, type, key, wait, repeat, if, and monitor blocks from a palette into the workspace.
@@ -44,7 +49,9 @@ The executables are not code-signed, so Windows SmartScreen may show a warning.
 
 ## Macro quick start
 
-1. Start `WinAutomationPicker.exe`.
+For the complete flow, use the [AE Workbench guide](https://stpcoder.github.io/win-automation-picker/ae-workbench/). For macro-only work:
+
+1. Start `AEWorkbench.exe` and click `새 매크로`, or start `WinAutomationPicker.exe` directly.
 2. Keep `입력값을 PC별 변수로` enabled and click `연속 녹화 시작`.
 3. Use the target application normally: click fields, type values, and click buttons.
 4. Return to the Picker and click `녹화 정지`; the stop click itself is excluded.
@@ -124,7 +131,7 @@ With `--backend auto`, Windows/PowerShell hosts use PowerShell remoting and othe
 
 ## CI and releases
 
-Every push to `main` runs tests, builds all four Windows executables, and updates the `latest` release assets. Documentation changes deploy to `gh-pages`.
+Every push to `main` runs tests, builds all five Windows executables, and updates the `latest` release assets. Documentation changes deploy to `gh-pages`.
 
 ## Limitations
 

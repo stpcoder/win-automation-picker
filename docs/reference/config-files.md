@@ -1,5 +1,34 @@
 # 설정 파일 예시
 
+## ae-workbench.aework.json
+
+```json
+{
+  "format": "rig-ae-workbench",
+  "version": 1,
+  "name": "RH 4-corner",
+  "sequence_recipe_path": "D:/ae/RH_4C.hseq.json",
+  "sequence_package_path": "D:/ae/RH_4C.rigseq.zip",
+  "sequence_tool_path": "D:/tools/TestSeqGenerator",
+  "macro_project_path": "D:/ae/sk-launcher.macro.json",
+  "macro_export_path": "D:/ae/sk-launcher.py",
+  "macro_export_source_sha256": "...",
+  "macro_buttons": [
+    {
+      "name": "시험 시작",
+      "project_path": "D:/ae/sk-launcher.macro.json",
+      "export_path": "D:/ae/sk-launcher.py",
+      "source_sha256": "...",
+      "notes": ""
+    }
+  ]
+}
+```
+
+이 파일은 작업 artifact 경로와 매크로 버튼만 저장합니다. FTP 비밀번호와 slave
+설정은 `rig-ftp.info`에 분리됩니다. `macro_export_source_sha256`은 Workbench가 export
+시 자동으로 기록하므로 직접 수정하지 않습니다.
+
 ## rig-ftp.info
 
 ```json

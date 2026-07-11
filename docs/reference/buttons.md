@@ -1,5 +1,24 @@
 # 버튼/메뉴 사전
 
+## AE 작업대
+
+| 버튼 | 설명 |
+| --- | --- |
+| `열기` / `저장` | `*.aework.json` 작업 파일을 열거나 저장 |
+| `SEQ > 찾기` | `*.hseq.json` recipe 또는 `*.rigseq.zip` package 선택 |
+| `생성기 열기` | 현재 recipe를 Test Sequence Generator에서 열기 |
+| `오류 검사` | SeqTool로 Grid/command/compatibility 규칙 검사 |
+| `Rig 패키지 빌드` | 검사를 통과한 recipe를 checksummed package로 생성 |
+| `새 매크로` | 빈 Scratch source project 생성 후 편집기 열기 |
+| `Scratch 편집` | 현재 매크로를 같은 앱 프로세스의 편집 창에서 열기 |
+| `구성 검사` | 빈 selector, 빈 container 등 Scratch 구조 검사 |
+| `시험` / `중지` | 이 PC에서 실제 매크로를 실행하거나 중단 |
+| `Python 내보내기` | 현재 Scratch source를 slave 내장 엔진용 FLOW로 export |
+| `현재 매크로 버튼 만들기` | 이름 붙인 빠른 선택 버튼 등록 |
+| `전체 사전 점검` | SEQ/source와 Scratch/export 일치 여부 검사 |
+| `SEQ + 매크로 업로드` | FLOW와 Rig SEQ를 순서대로 FTP package 폴더에 업로드 |
+| `실행표 열기` | PC/slot/CH별 실행표로 이동 |
+
 ## 상단
 
 | 버튼 | 설명 |
@@ -35,6 +54,7 @@
 | `선택 입력을 PC별 변수로` | 타임라인 입력을 `${변수}`로 변경 |
 | `선택 입력을 고정값으로` | 타임라인 입력을 녹화 문자열로 고정 |
 | `목록 비우기` | 타임라인 표시만 비움; 생성 블록은 유지 |
+| `Rig 버튼으로 등록` | AE Workbench에서 연 편집 창의 현재 project를 빠른 버튼으로 등록 |
 
 ## 모니터링
 
@@ -64,6 +84,7 @@
 | `서버 초기 설정` | `서버 폴더 초기화` | FTP spool 폴더 초기화 |
 | `서버 초기 설정 > 더보기` | `Slave .info 내보내기` | slave별 config 생성 |
 | `매크로 업로드` | `매크로 업로드` | workflow 또는 Python package 업로드 |
+| `선택 파일 정보` | `선택 FLOW를 Scratch에서 수정` | 서버 FLOW를 안전하게 source project로 복원해 편집 |
 | `빠른 실행` | `선택 매크로 전송` | 선택 macro 실행 요청 |
 | `빠른 실행` | `상태 규칙 1회` | 클릭/입력 없이 선택 workflow의 monitor 블록만 평가 |
 | `PC별 매크로 실행표` | `설정 PC 불러오기` | config의 slave를 실행 행으로 추가 |

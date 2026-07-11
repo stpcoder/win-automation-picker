@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .ftp_cli import main
+from win_automation_picker.ftp_cli import main
 
 
 if __name__ == "__main__":
