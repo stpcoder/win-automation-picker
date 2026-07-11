@@ -11,6 +11,8 @@ rig-ftp.info
 
 `rig-ftp.info`의 `runtime.node_id`는 slave마다 고유해야 합니다.
 
+Master에서 `CH 관리`로 입력한 이 PC의 SoC, binary, 자재, Test/SEQ 초기값도 같은 `.info`에 포함됩니다. Slave는 자신의 Node ID와 일치하는 CH 목록을 heartbeat에 싣습니다.
+
 ## Agent 시작
 
 1. slave PC에서 `RigFtpCommander.exe`를 실행합니다.

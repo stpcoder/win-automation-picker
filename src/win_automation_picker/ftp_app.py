@@ -15,8 +15,10 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any, Callable
 
+from .binary_exchange import read_binary_release_metadata
 from .exporter import read_exported_variables
 from .ftp_spool import (
+    ChannelInfo,
     FtpSpoolConfig,
     FtpSpoolError,
     PackageInfo,
@@ -40,7 +42,7 @@ from .ftp_spool import (
     submit_job,
     write_example_spool_config,
 )
-from .xlsx_export import write_xlsx
+from .xlsx_export import write_xlsx_workbook
 from .sequence_bundle import RigSequenceBundleError, read_rig_sequence_bundle
 
 
@@ -286,13 +288,19 @@ class RigFtpApp(tk.Tk):
         slaves_frame.rowconfigure(0, weight=1)
         self.settings_slave_tree = ttk.Treeview(
             slaves_frame,
-            columns=("alias", "node", "host", "variables"),
+            columns=("alias", "node", "host", "channels", "variables"),
             show="headings",
             height=7,
         )
-        slave_headings = {"alias": "별명", "node": "Node ID", "host": "IP", "variables": "PC별 변수"}
-        slave_widths = {"alias": 80, "node": 120, "host": 120, "variables": 220}
-        for column in ("alias", "node", "host", "variables"):
+        slave_headings = {
+            "alias": "별명",
+            "node": "Node ID",
+            "host": "IP",
+            "channels": "CH / 슬롯",
+            "variables": "PC별 변수",
+        }
+        slave_widths = {"alias": 75, "node": 110, "host": 105, "channels": 130, "variables": 160}
+        for column in ("alias", "node", "host", "channels", "variables"):
             self.settings_slave_tree.heading(column, text=slave_headings[column])
             self.settings_slave_tree.column(column, width=slave_widths[column], anchor="w")
         self.settings_slave_tree.grid(row=0, column=0, columnspan=3, sticky="nsew")
@@ -306,8 +314,11 @@ class RigFtpApp(tk.Tk):
         ttk.Button(slaves_frame, text="수정", command=self._edit_settings_slave).grid(
             row=1, column=1, sticky="w", padx=(5, 0), pady=(6, 0)
         )
+        ttk.Button(slaves_frame, text="CH 관리", command=self._manage_settings_channels).grid(
+            row=1, column=2, sticky="w", padx=(5, 0), pady=(6, 0)
+        )
         ttk.Button(slaves_frame, text="삭제", command=self._delete_settings_slave).grid(
-            row=1, column=2, sticky="e", pady=(6, 0)
+            row=1, column=3, sticky="e", pady=(6, 0)
         )
 
     def _entry_row(
@@ -439,6 +450,12 @@ class RigFtpApp(tk.Tk):
         self.settings_slave_tree.delete(*self.settings_slave_tree.get_children())
         for index, row in enumerate(self._settings_slaves):
             variables = row.get("variables") if isinstance(row.get("variables"), dict) else {}
+            channels = row.get("channels") if isinstance(row.get("channels"), list) else []
+            channel_labels = [
+                str(channel.get("channel_id") or channel.get("name") or channel.get("slot_id") or "")
+                for channel in channels
+                if isinstance(channel, dict)
+            ]
             self.settings_slave_tree.insert(
                 "",
                 "end",
@@ -447,6 +464,7 @@ class RigFtpApp(tk.Tk):
                     row.get("alias", ""),
                     row.get("node_id", ""),
                     row.get("host", ""),
+                    ", ".join(label for label in channel_labels if label),
                     self._format_settings_variables(variables),
                 ),
             )
@@ -499,6 +517,11 @@ class RigFtpApp(tk.Tk):
             "port": port,
             "notes": values["notes"],
             "variables": parsed_variables,
+            "channels": [
+                dict(channel)
+                for channel in (row.get("channels") or [])
+                if isinstance(channel, dict)
+            ],
         }
         duplicate = next(
             (
@@ -523,6 +546,271 @@ class RigFtpApp(tk.Tk):
             return
         self._settings_slaves.pop(index)
         self._refresh_settings_slaves()
+
+    def _manage_settings_channels(self) -> None:
+        slave_index = self._selected_settings_slave_index()
+        if slave_index is None:
+            self._show_error(FtpSpoolError("CH를 관리할 Slave PC를 먼저 선택하세요."))
+            return
+        slave = self._settings_slaves[slave_index]
+        raw_channels = slave.get("channels") if isinstance(slave.get("channels"), list) else []
+        channels = [dict(channel) for channel in raw_channels if isinstance(channel, dict)]
+
+        dialog = tk.Toplevel(self)
+        dialog.title(f"CH / 자재 / Binary - {slave.get('alias') or slave.get('node_id')}")
+        dialog.transient(self)
+        dialog.geometry("1080x520")
+        dialog.minsize(860, 420)
+        dialog.columnconfigure(0, weight=1)
+        dialog.rowconfigure(0, weight=1)
+
+        columns = (
+            "channel",
+            "name",
+            "slot",
+            "com",
+            "soc",
+            "binary",
+            "material",
+            "test",
+            "sequence",
+        )
+        tree = ttk.Treeview(dialog, columns=columns, show="headings", selectmode="browse")
+        headings = {
+            "channel": "CH",
+            "name": "이름",
+            "slot": "Slot",
+            "com": "COM",
+            "soc": "SoC",
+            "binary": "Binary",
+            "material": "DRAM / Lot",
+            "test": "현재 Test",
+            "sequence": "SEQ",
+        }
+        widths = {
+            "channel": 75,
+            "name": 90,
+            "slot": 70,
+            "com": 70,
+            "soc": 130,
+            "binary": 160,
+            "material": 170,
+            "test": 120,
+            "sequence": 150,
+        }
+        for column in columns:
+            tree.heading(column, text=headings[column])
+            tree.column(column, width=widths[column], anchor="w")
+        tree.grid(row=0, column=0, sticky="nsew", padx=(12, 0), pady=(12, 0))
+        scroll_y = ttk.Scrollbar(dialog, orient="vertical", command=tree.yview)
+        scroll_y.grid(row=0, column=1, sticky="ns", pady=(12, 0))
+        scroll_x = ttk.Scrollbar(dialog, orient="horizontal", command=tree.xview)
+        scroll_x.grid(row=1, column=0, sticky="ew", padx=(12, 0))
+        tree.configure(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
+
+        def refresh() -> None:
+            tree.delete(*tree.get_children())
+            for index, channel in enumerate(channels):
+                tree.insert(
+                    "",
+                    "end",
+                    iid=str(index),
+                    values=(
+                        channel.get("channel_id", ""),
+                        channel.get("name", ""),
+                        channel.get("slot_id", ""),
+                        channel.get("com_port", ""),
+                        " ".join(
+                            part
+                            for part in (
+                                str(channel.get("soc_vendor", "")).upper(),
+                                str(channel.get("soc_model", "")),
+                            )
+                            if part
+                        ),
+                        " ".join(
+                            part
+                            for part in (
+                                str(channel.get("binary_name", "")),
+                                str(channel.get("binary_version", "")),
+                            )
+                            if part
+                        ),
+                        " / ".join(
+                            part
+                            for part in (
+                                str(channel.get("dram_part", "")),
+                                str(channel.get("lot_id", "")),
+                            )
+                            if part
+                        ),
+                        channel.get("current_test", ""),
+                        channel.get("sequence_name", ""),
+                    ),
+                )
+
+        def selected_index() -> int | None:
+            selection = tree.selection()
+            return int(selection[0]) if selection and selection[0].isdigit() else None
+
+        def add_channel() -> None:
+            values = self._ask_channel_values({}, parent=dialog)
+            if values is not None:
+                channels.append(values)
+                refresh()
+                tree.selection_set(str(len(channels) - 1))
+
+        def edit_channel() -> None:
+            index = selected_index()
+            if index is None:
+                return
+            values = self._ask_channel_values(channels[index], parent=dialog)
+            if values is not None:
+                channels[index] = values
+                refresh()
+                tree.selection_set(str(index))
+
+        def delete_channel() -> None:
+            index = selected_index()
+            if index is None:
+                return
+            channels.pop(index)
+            refresh()
+
+        def import_binary_metadata() -> None:
+            index = selected_index()
+            if index is None:
+                messagebox.showerror("Binary 정보", "적용할 CH 행을 먼저 선택하세요.", parent=dialog)
+                return
+            path = filedialog.askopenfilename(
+                title="Seq Generator Binary Metadata",
+                filetypes=[
+                    ("Rig Binary Metadata", "*.rigbinary.json"),
+                    ("JSON", "*.json"),
+                    ("All files", "*.*"),
+                ],
+                parent=dialog,
+            )
+            if not path:
+                return
+            try:
+                metadata = read_binary_release_metadata(path)
+            except BaseException as exc:
+                messagebox.showerror("Binary 정보", str(exc), parent=dialog)
+                return
+            channels[index].update(metadata.channel_values())
+            refresh()
+            tree.selection_set(str(index))
+
+        def save() -> None:
+            slave["channels"] = channels
+            self._settings_slaves[slave_index] = slave
+            self._refresh_settings_slaves()
+            dialog.destroy()
+
+        controls = ttk.Frame(dialog, padding=12)
+        controls.grid(row=2, column=0, columnspan=2, sticky="ew")
+        ttk.Button(controls, text="CH 추가", command=add_channel).pack(side="left")
+        ttk.Button(controls, text="수정", command=edit_channel).pack(side="left", padx=(6, 0))
+        ttk.Button(controls, text="삭제", command=delete_channel).pack(side="left", padx=(6, 0))
+        ttk.Button(controls, text="Binary 정보 불러오기", command=import_binary_metadata).pack(
+            side="left", padx=(12, 0)
+        )
+        ttk.Button(controls, text="취소", command=dialog.destroy).pack(side="right")
+        ttk.Button(controls, text="저장", command=save, style="Primary.TButton").pack(
+            side="right", padx=(0, 6)
+        )
+        tree.bind("<Double-1>", lambda _event: edit_channel())
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
+        refresh()
+        dialog.grab_set()
+        self.wait_window(dialog)
+
+    def _ask_channel_values(
+        self,
+        initial: dict[str, Any],
+        *,
+        parent: tk.Misc,
+    ) -> dict[str, Any] | None:
+        fields = [
+            ("channel_id", "CH (없으면 비움)"),
+            ("name", "표시 이름"),
+            ("slot_id", "Slot ID"),
+            ("com_port", "COM"),
+            ("soc_vendor", "SoC Vendor"),
+            ("soc_model", "SoC Model"),
+            ("binary_name", "Binary 이름"),
+            ("binary_version", "Binary 버전"),
+            ("binary_source_path", "Binary 원본 폴더"),
+            ("binary_updated_at", "Binary 최신 시각"),
+            ("dram_part", "DRAM 자재"),
+            ("lot_id", "Lot"),
+            ("sample_id", "Sample"),
+            ("current_test", "현재 Test"),
+            ("sequence_name", "현재 SEQ"),
+            ("notes", "메모"),
+        ]
+        dialog = tk.Toplevel(parent)
+        dialog.title("CH 정보")
+        dialog.transient(parent)
+        dialog.resizable(True, False)
+        for column in (1, 3):
+            dialog.columnconfigure(column, weight=1)
+        variables: dict[str, tk.StringVar] = {}
+        result: dict[str, Any] | None = None
+        for index, (key, label) in enumerate(fields):
+            row = index // 2
+            pair = index % 2
+            label_column = pair * 2
+            entry_column = label_column + 1
+            ttk.Label(dialog, text=label).grid(
+                row=row,
+                column=label_column,
+                sticky="w",
+                padx=(12 if pair == 0 else 18, 6),
+                pady=6,
+            )
+            variable = tk.StringVar(value=str(initial.get(key, "") or ""))
+            variables[key] = variable
+            ttk.Entry(dialog, textvariable=variable, width=34).grid(
+                row=row,
+                column=entry_column,
+                sticky="ew",
+                padx=(0, 12),
+                pady=6,
+            )
+
+        def save() -> None:
+            nonlocal result
+            mapped = {key: variable.get().strip() for key, variable in variables.items()}
+            mapped.update(
+                {
+                    "state": str(initial.get("state") or "idle"),
+                    "current_grid": str(initial.get("current_grid") or ""),
+                    "completed_grids": int(initial.get("completed_grids") or 0),
+                    "total_grids": int(initial.get("total_grids") or 0),
+                    "updated_at": str(initial.get("updated_at") or ""),
+                }
+            )
+            try:
+                result = ChannelInfo.from_mapping(mapped).to_mapping()
+            except (ValueError, FtpSpoolError) as exc:
+                messagebox.showerror("CH 정보", str(exc), parent=dialog)
+                result = None
+                return
+            dialog.destroy()
+
+        controls = ttk.Frame(dialog, padding=(12, 8, 12, 12))
+        controls.grid(row=(len(fields) + 1) // 2, column=0, columnspan=4, sticky="e")
+        ttk.Button(controls, text="취소", command=dialog.destroy).pack(side="right")
+        ttk.Button(controls, text="저장", command=save, style="Primary.TButton").pack(
+            side="right", padx=(0, 6)
+        )
+        dialog.bind("<Return>", lambda _event: save())
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
+        dialog.grab_set()
+        self.wait_window(dialog)
+        return result
 
     def _build_master_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -742,8 +1030,19 @@ class RigFtpApp(tk.Tk):
         self.status_loaded_var = tk.StringVar(value="마지막 상태 조회: -")
         self.results_loaded_var = tk.StringVar(value="마지막 결과 조회: -")
 
+        status_views = ttk.Notebook(monitor)
+        status_views.grid(row=1, column=0, columnspan=7, sticky="nsew", pady=(8, 0))
+        pc_status_page = ttk.Frame(status_views)
+        channel_status_page = ttk.Frame(status_views)
+        status_views.add(pc_status_page, text="PC 상태")
+        status_views.add(channel_status_page, text="CH / 자재 / Binary")
+        pc_status_page.columnconfigure(0, weight=1)
+        pc_status_page.rowconfigure(0, weight=1)
+        channel_status_page.columnconfigure(0, weight=1)
+        channel_status_page.rowconfigure(0, weight=1)
+
         columns = ("alias", "node", "state", "job", "updated", "message")
-        self.status_tree = ttk.Treeview(monitor, columns=columns, show="headings", height=6)
+        self.status_tree = ttk.Treeview(pc_status_page, columns=columns, show="headings", height=6)
         headings = {
             "alias": "별명",
             "node": "Node",
@@ -760,12 +1059,96 @@ class RigFtpApp(tk.Tk):
         self.status_tree.tag_configure("running", background="#eff6ff", foreground="#1d4ed8")
         self.status_tree.tag_configure("error", background="#fef2f2", foreground="#b91c1c")
         self.status_tree.tag_configure("online", background="#f0fdf4", foreground="#166534")
-        self.status_tree.grid(row=1, column=0, columnspan=6, sticky="nsew", pady=(8, 0))
+        self.status_tree.grid(row=0, column=0, sticky="nsew")
         self.status_tree.bind("<Double-1>", lambda _event: self._request_selected_screenshot())
         self.status_tree.bind("<<TreeviewSelect>>", self._status_selection_changed)
-        status_scroll = ttk.Scrollbar(monitor, orient="vertical", command=self.status_tree.yview)
-        status_scroll.grid(row=1, column=6, sticky="ns", pady=(8, 0))
+        status_scroll = ttk.Scrollbar(pc_status_page, orient="vertical", command=self.status_tree.yview)
+        status_scroll.grid(row=0, column=1, sticky="ns")
         self.status_tree.configure(yscrollcommand=status_scroll.set)
+
+        channel_columns = (
+            "alias",
+            "node",
+            "channel",
+            "slot",
+            "soc",
+            "binary",
+            "binary_updated",
+            "source",
+            "material",
+            "lot_sample",
+            "test",
+            "sequence",
+            "state",
+            "grid",
+        )
+        self.channel_status_tree = ttk.Treeview(
+            channel_status_page,
+            columns=channel_columns,
+            show="headings",
+            height=6,
+        )
+        channel_headings = {
+            "alias": "PC",
+            "node": "Node",
+            "channel": "CH / 이름",
+            "slot": "Slot",
+            "soc": "SoC",
+            "binary": "Binary",
+            "binary_updated": "Binary 최신 시각",
+            "source": "원본 폴더",
+            "material": "DRAM 자재",
+            "lot_sample": "Lot / Sample",
+            "test": "현재 Test",
+            "sequence": "SEQ",
+            "state": "상태",
+            "grid": "Grid 진행",
+        }
+        channel_widths = {
+            "alias": 75,
+            "node": 110,
+            "channel": 90,
+            "slot": 65,
+            "soc": 130,
+            "binary": 170,
+            "binary_updated": 155,
+            "source": 260,
+            "material": 140,
+            "lot_sample": 150,
+            "test": 130,
+            "sequence": 160,
+            "state": 85,
+            "grid": 150,
+        }
+        for column in channel_columns:
+            self.channel_status_tree.heading(column, text=channel_headings[column])
+            self.channel_status_tree.column(column, width=channel_widths[column], anchor="w")
+        for tag, background, foreground in (
+            ("offline", "#f3f4f6", "#6b7280"),
+            ("running", "#eff6ff", "#1d4ed8"),
+            ("error", "#fef2f2", "#b91c1c"),
+            ("pass", "#f0fdf4", "#166534"),
+            ("online", "#ffffff", "#111827"),
+        ):
+            self.channel_status_tree.tag_configure(tag, background=background, foreground=foreground)
+        self.channel_status_tree.grid(row=0, column=0, sticky="nsew")
+        self.channel_status_tree.bind("<<TreeviewSelect>>", self._channel_status_selection_changed)
+        channel_scroll_y = ttk.Scrollbar(
+            channel_status_page,
+            orient="vertical",
+            command=self.channel_status_tree.yview,
+        )
+        channel_scroll_y.grid(row=0, column=1, sticky="ns")
+        channel_scroll_x = ttk.Scrollbar(
+            channel_status_page,
+            orient="horizontal",
+            command=self.channel_status_tree.xview,
+        )
+        channel_scroll_x.grid(row=1, column=0, sticky="ew")
+        self.channel_status_tree.configure(
+            yscrollcommand=channel_scroll_y.set,
+            xscrollcommand=channel_scroll_x.set,
+        )
         ttk.Label(monitor, textvariable=self.status_loaded_var).grid(
             row=2,
             column=0,
@@ -1281,21 +1664,40 @@ class RigFtpApp(tk.Tk):
         except BaseException as exc:
             self._show_error(exc)
             return
-        existing = {str(row.get("target", "")) for row in self._run_profiles}
-        for slave in config.slaves:
-            if slave.node_id in existing:
-                continue
-            variables = dict(base_variables)
-            variables.update(slave.variables)
-            self._run_profiles.append(
-                {
-                    "enabled": True,
-                    "alias": slave.label(),
-                    "target": slave.node_id,
-                    "package": package.name if package else "",
-                    "variables": variables,
-                }
+        existing = {
+            (
+                str(row.get("target", "")),
+                str(row.get("variables", {}).get("channel", "")),
+                str(row.get("variables", {}).get("slot_id", "")),
             )
+            for row in self._run_profiles
+        }
+        for slave in config.slaves:
+            channels: tuple[ChannelInfo | None, ...] = slave.channels or (None,)
+            for channel in channels:
+                channel_variables = self._channel_run_variables(channel)
+                key = (
+                    slave.node_id,
+                    channel_variables.get("channel", ""),
+                    channel_variables.get("slot_id", ""),
+                )
+                if key in existing:
+                    continue
+                variables = dict(base_variables)
+                variables.update(slave.variables)
+                variables.update(channel_variables)
+                channel_label = channel.label() if channel else ""
+                alias = f"{slave.label()} / {channel_label}" if channel_label else slave.label()
+                self._run_profiles.append(
+                    {
+                        "enabled": True,
+                        "alias": alias,
+                        "target": slave.node_id,
+                        "package": package.name if package else "",
+                        "variables": variables,
+                    }
+                )
+                existing.add(key)
         self._refresh_run_profile_columns()
 
     def _add_run_profile_target(self) -> None:
@@ -1310,21 +1712,48 @@ class RigFtpApp(tk.Tk):
         except BaseException as exc:
             self._show_error(exc)
             return
-        aliases = {slave.node_id: slave.label() for slave in config.slaves}
-        slave_variables = {slave.node_id: dict(slave.variables) for slave in config.slaves}
+        slave_by_node = {slave.node_id: slave for slave in config.slaves}
         for target in targets:
-            variables = dict(base_variables)
-            variables.update(slave_variables.get(target, {}))
-            self._run_profiles.append(
-                {
-                    "enabled": True,
-                    "alias": aliases.get(target, target),
-                    "target": target,
-                    "package": package.name if package else "",
-                    "variables": variables,
-                }
-            )
+            slave = slave_by_node.get(target)
+            channels: tuple[ChannelInfo | None, ...] = slave.channels if slave and slave.channels else (None,)
+            for channel in channels:
+                variables = dict(base_variables)
+                if slave:
+                    variables.update(slave.variables)
+                variables.update(self._channel_run_variables(channel))
+                channel_label = channel.label() if channel else ""
+                base_alias = slave.label() if slave else target
+                alias = f"{base_alias} / {channel_label}" if channel_label else base_alias
+                self._run_profiles.append(
+                    {
+                        "enabled": True,
+                        "alias": alias,
+                        "target": target,
+                        "package": package.name if package else "",
+                        "variables": variables,
+                    }
+                )
         self._refresh_run_profile_columns()
+
+    def _channel_run_variables(self, channel: ChannelInfo | None) -> dict[str, str]:
+        if channel is None:
+            return {}
+        return {
+            "channel": channel.channel_id or channel.name,
+            "slot_id": channel.slot_id,
+            "com_port": channel.com_port,
+            "soc_vendor": channel.soc_vendor,
+            "soc_model": channel.soc_model,
+            "binary_name": channel.binary_name,
+            "binary_version": channel.binary_version,
+            "binary_source_path": channel.binary_source_path,
+            "binary_updated_at": channel.binary_updated_at,
+            "dram_part": channel.dram_part,
+            "lot_id": channel.lot_id,
+            "sample_id": channel.sample_id,
+            "test_name": channel.current_test,
+            "sequence_name": channel.sequence_name,
+        }
 
     def _delete_run_profiles(self) -> None:
         selected = sorted((int(iid) for iid in self.run_profile_tree.selection()), reverse=True)
@@ -1345,8 +1774,23 @@ class RigFtpApp(tk.Tk):
                 source = self._run_profiles[index]
                 copy = dict(source)
                 copy["variables"] = dict(source.get("variables", {}))
-                copy["variables"]["channel"] = ""
-                copy["variables"]["slot_id"] = ""
+                for key in (
+                    "channel",
+                    "slot_id",
+                    "com_port",
+                    "soc_vendor",
+                    "soc_model",
+                    "binary_name",
+                    "binary_version",
+                    "binary_source_path",
+                    "binary_updated_at",
+                    "dram_part",
+                    "lot_id",
+                    "sample_id",
+                    "test_name",
+                    "sequence_name",
+                ):
+                    copy["variables"][key] = ""
                 copies.append(copy)
         self._run_profiles.extend(copies)
         self._refresh_run_profile_columns()
@@ -1683,8 +2127,14 @@ class RigFtpApp(tk.Tk):
 
     def _set_status_rows(self, rows: list[dict[str, Any]]) -> None:
         self._last_status_rows = rows
+        channel_count = sum(
+            len(row.get("channels") or [])
+            for row in rows
+            if isinstance(row.get("channels"), list)
+        )
         self.status_loaded_var.set(
-            f"마지막 상태 조회: {time.strftime('%Y-%m-%d %H:%M:%S')} ({len(rows)}대)"
+            f"마지막 상태 조회: {time.strftime('%Y-%m-%d %H:%M:%S')} "
+            f"({len(rows)}대 / {channel_count} CH)"
         )
         try:
             config = self._config_from_fields()
@@ -1711,11 +2161,108 @@ class RigFtpApp(tk.Tk):
         for item in previous_selection:
             if self.status_tree.exists(item):
                 self.status_tree.selection_add(item)
+        self._set_channel_status_rows(rows, config)
+
+    def _set_channel_status_rows(
+        self,
+        rows: list[dict[str, Any]],
+        config: FtpSpoolConfig | None,
+    ) -> None:
+        self.channel_status_tree.delete(*self.channel_status_tree.get_children())
+        for row_index, row in enumerate(rows):
+            node = str(row.get("node_id") or "")
+            alias = self._slave_label(node, config)
+            parent_health = str(row.get("health") or "online").casefold()
+            channels = row.get("channels") if isinstance(row.get("channels"), list) else []
+            for channel_index, channel in enumerate(channels):
+                if not isinstance(channel, dict):
+                    continue
+                state = str(channel.get("state") or "").strip()
+                total = int(channel.get("total_grids") or 0)
+                completed = int(channel.get("completed_grids") or 0)
+                current_grid = str(channel.get("current_grid") or "").strip()
+                progress = f"{completed}/{total}" if total else "-"
+                if current_grid:
+                    progress = f"{progress} {current_grid}"
+                channel_label = str(
+                    channel.get("channel_id")
+                    or channel.get("name")
+                    or channel.get("slot_id")
+                    or "-"
+                )
+                soc = " ".join(
+                    part
+                    for part in (
+                        str(channel.get("soc_vendor") or "").upper(),
+                        str(channel.get("soc_model") or ""),
+                    )
+                    if part
+                )
+                binary = " ".join(
+                    part
+                    for part in (
+                        str(channel.get("binary_name") or ""),
+                        str(channel.get("binary_version") or ""),
+                    )
+                    if part
+                )
+                lot_sample = " / ".join(
+                    part
+                    for part in (
+                        str(channel.get("lot_id") or ""),
+                        str(channel.get("sample_id") or ""),
+                    )
+                    if part
+                )
+                values = (
+                    alias,
+                    node,
+                    channel_label,
+                    channel.get("slot_id", ""),
+                    soc,
+                    binary,
+                    channel.get("binary_updated_at", ""),
+                    channel.get("binary_source_path", ""),
+                    channel.get("dram_part", ""),
+                    lot_sample,
+                    channel.get("current_test", ""),
+                    channel.get("sequence_name", ""),
+                    state,
+                    progress,
+                )
+                tag = self._channel_state_tag(state, parent_health)
+                self.channel_status_tree.insert(
+                    "",
+                    "end",
+                    iid=f"channel-{row_index}-{channel_index}",
+                    values=values,
+                    tags=(tag,),
+                )
+
+    def _channel_state_tag(self, state: str, parent_health: str) -> str:
+        if parent_health == "offline":
+            return "offline"
+        normalized = state.strip().casefold()
+        if normalized in {"fail", "failed", "error", "red"}:
+            return "error"
+        if normalized in {"pass", "passed", "done", "complete", "completed", "green"}:
+            return "pass"
+        if normalized in {"running", "run", "busy", "blue"}:
+            return "running"
+        return "online"
 
     def _status_selection_changed(self, _event: Any | None = None) -> None:
         node = self._selected_status_node()
         if node:
             self.result_node_var.set(node)
+
+    def _channel_status_selection_changed(self, _event: Any | None = None) -> None:
+        selection = self.channel_status_tree.selection()
+        if not selection:
+            return
+        values = self.channel_status_tree.item(selection[0], "values")
+        if len(values) > 1 and values[1]:
+            self.result_node_var.set(str(values[1]))
 
     def _export_state_excel(self) -> None:
         path = filedialog.asksaveasfilename(
@@ -1742,14 +2289,41 @@ class RigFtpApp(tk.Tk):
             except BaseException as exc:
                 self._show_error(exc)
                 return
-        table: list[list[Any]] = [
+        pc_table: list[list[Any]] = [
             ["Alias", "Node", "State", "Current job", "Updated", "Last result", "Last finished", "Message"]
+        ]
+        channel_table: list[list[Any]] = [
+            [
+                "Alias",
+                "Node",
+                "CH / Name",
+                "Slot",
+                "COM",
+                "SoC Vendor",
+                "SoC Model",
+                "Binary Name",
+                "Binary Version",
+                "Binary Updated",
+                "Binary Source Folder",
+                "DRAM Part",
+                "Lot",
+                "Sample",
+                "Current Test",
+                "Sequence",
+                "State",
+                "Current Grid",
+                "Completed Grids",
+                "Total Grids",
+                "Channel Updated",
+                "Notes",
+            ]
         ]
         for row in rows:
             node = str(row.get("node_id") or "")
-            table.append(
+            alias = self._slave_label(node, config)
+            pc_table.append(
                 [
-                    self._slave_label(node, config),
+                    alias,
                     node,
                     row.get("state", ""),
                     row.get("current_job") or "",
@@ -1759,8 +2333,44 @@ class RigFtpApp(tk.Tk):
                     row.get("message", ""),
                 ]
             )
+            channels = row.get("channels") if isinstance(row.get("channels"), list) else []
+            for channel in channels:
+                if not isinstance(channel, dict):
+                    continue
+                channel_table.append(
+                    [
+                        alias,
+                        node,
+                        channel.get("channel_id") or channel.get("name") or "",
+                        channel.get("slot_id", ""),
+                        channel.get("com_port", ""),
+                        channel.get("soc_vendor", ""),
+                        channel.get("soc_model", ""),
+                        channel.get("binary_name", ""),
+                        channel.get("binary_version", ""),
+                        channel.get("binary_updated_at", ""),
+                        channel.get("binary_source_path", ""),
+                        channel.get("dram_part", ""),
+                        channel.get("lot_id", ""),
+                        channel.get("sample_id", ""),
+                        channel.get("current_test", ""),
+                        channel.get("sequence_name", ""),
+                        channel.get("state", ""),
+                        channel.get("current_grid", ""),
+                        channel.get("completed_grids", 0),
+                        channel.get("total_grids", 0),
+                        channel.get("updated_at", ""),
+                        channel.get("notes", ""),
+                    ]
+                )
         try:
-            write_xlsx(path, table, sheet_name="Slave State")
+            write_xlsx_workbook(
+                path,
+                [
+                    ("PC State", pc_table),
+                    ("CH Inventory", channel_table),
+                ],
+            )
             self._append_master_log(f"Exported state Excel: {path}")
         except BaseException as exc:
             self._show_error(exc)

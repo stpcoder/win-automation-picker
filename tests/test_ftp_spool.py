@@ -11,6 +11,7 @@ import pytest
 
 from win_automation_picker.exporter import generate_python_script
 from win_automation_picker.ftp_spool import (
+    ChannelInfo,
     FtpSpoolConfig,
     FtpSpoolError,
     LocalSpoolBackend,
@@ -29,6 +30,7 @@ from win_automation_picker.ftp_spool import (
     run_slave_once,
     submit_job,
     _prune_staged_sequence_dirs,
+    _monitor_grid_progress,
 )
 from win_automation_picker.recipe import AutomationRecipe, AutomationStep
 from win_automation_picker.sequence_bundle import RigSequenceBundleError, read_rig_sequence_bundle
@@ -130,6 +132,20 @@ def test_config_supports_slave_roster() -> None:
                     "port": 0,
                     "notes": "line A ch4",
                     "variables": {"channel": "ch4"},
+                    "channels": [
+                        {
+                            "channel_id": "CH11",
+                            "slot_id": "S3",
+                            "soc_vendor": "mediatek",
+                            "soc_model": "MTK25D",
+                            "dram_part": "LPDDR5X-A",
+                        },
+                        {
+                            "name": "Main",
+                            "soc_vendor": "qualcomm",
+                            "soc_model": "SM8850",
+                        },
+                    ],
                 }
             ],
             "run_profiles": [
@@ -152,9 +168,24 @@ def test_config_supports_slave_roster() -> None:
             port=0,
             notes="line A ch4",
             variables={"channel": "ch4"},
+            channels=(
+                ChannelInfo(
+                    channel_id="CH11",
+                    slot_id="S3",
+                    soc_vendor="mediatek",
+                    soc_model="MTK25D",
+                    dram_part="LPDDR5X-A",
+                ),
+                ChannelInfo(
+                    name="Main",
+                    soc_vendor="qualcomm",
+                    soc_model="SM8850",
+                ),
+            ),
         ),
     )
     assert config.to_mapping()["slaves"][0]["alias"] == "PC04"
+    assert config.to_mapping()["slaves"][0]["channels"][0]["channel_id"] == "CH11"
     assert config.run_profiles == (
         RunProfile(
             target="rig-pc-04",
@@ -168,6 +199,16 @@ def test_config_supports_slave_roster() -> None:
     assert config.min_screenshot_interval_seconds == 45
     assert config.to_mapping()["runtime"]["poll_jitter_seconds"] == 2.5
     assert config.to_mapping()["runtime"]["min_screenshot_interval_seconds"] == 45
+
+
+def test_slave_channel_inventory_has_heartbeat_size_limit() -> None:
+    with pytest.raises(FtpSpoolError, match="64-item limit"):
+        SlaveInfo.from_mapping(
+            {
+                "node_id": "rig-pc-oversized",
+                "channels": [{"channel_id": f"CH{index}"} for index in range(65)],
+            }
+        )
 
 
 def test_slave_runs_node_shell_job_and_publishes_result(tmp_path) -> None:
@@ -344,11 +385,20 @@ def test_slave_stages_sequence_and_runs_picker_launcher(tmp_path) -> None:
     )[0]
 
     assert result.ok
+    assert result.details["channel_id"] == "CH11"
+    assert result.details["sequence_name"] == "DRAM Four Corner"
+    assert result.details["total_grids"] == 1
     assert "DRAM Four Corner" in result.stdout
     assert "channel='CH11' slot='S3'" in result.stdout
     staged = list((work_dir / "sequences").glob("*/sequence.seq"))
     assert len(staged) == 1
     assert staged[0].read_bytes() == b"#SMOKE\nreset;\n"
+    status = list_status(backend)[0]
+    assert status["channels"][0]["channel_id"] == "CH11"
+    assert status["channels"][0]["slot_id"] == "S3"
+    assert status["channels"][0]["state"] == "running"
+    assert status["channels"][0]["sequence_name"] == "DRAM Four Corner"
+    assert status["channels"][0]["total_grids"] == 1
 
 
 def test_staged_sequence_cleanup_only_removes_owned_hash_directories(tmp_path) -> None:
@@ -409,7 +459,7 @@ def test_exported_workflow_uses_embedded_runner_without_external_python(tmp_path
 def test_embedded_workflow_publishes_structured_monitor_results(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
         "win_automation_picker.recipe.get_element_text",
-        lambda selector, timeout=1.0: "CH11 PASS",
+        lambda selector, timeout=1.0: "CH11 PASS 3/12",
     )
     monkeypatch.setattr(
         "win_automation_picker.recipe.click",
@@ -425,7 +475,7 @@ def test_embedded_workflow_publishes_structured_monitor_results(tmp_path, monkey
                 operator="contains",
                 monitor_tab="SK Commander",
                 monitor_channel="CH11",
-                monitor_state="PASS",
+                monitor_state="GRID_PROGRESS",
             )
         ],
         monitor_view={"name": "Line A", "tab_order": ["SK Commander"]},
@@ -450,7 +500,26 @@ def test_embedded_workflow_publishes_structured_monitor_results(tmp_path, monkey
     assert result.monitor_view["name"] == "Line A"
     assert result.monitor_results[0]["monitor_channel"] == "CH11"
     published = list_results(backend, "rig-pc-01")[0]
-    assert published["monitor_results"][0]["monitor_state"] == "PASS"
+    assert published["monitor_results"][0]["monitor_state"] == "GRID_PROGRESS"
+    status = list_status(backend)[0]
+    assert status["channels"][0]["channel_id"] == "CH11"
+    assert status["channels"][0]["state"] == "GRID_PROGRESS"
+    assert status["channels"][0]["completed_grids"] == 3
+    assert status["channels"][0]["total_grids"] == 12
+
+
+def test_condition_group_ratio_is_not_mistaken_for_grid_progress() -> None:
+    assert (
+        _monitor_grid_progress(
+            {
+                "kind": "monitor_group",
+                "block_name": "Pass conditions",
+                "monitor_state": "PASS",
+                "actual": "1/2 matched",
+            }
+        )
+        is None
+    )
 
 
 def test_classify_status_rows_keeps_missing_and_stale_slaves_visible() -> None:
@@ -467,6 +536,7 @@ def test_classify_status_rows_keeps_missing_and_stale_slaves_visible() -> None:
             "state": "running",
             "message": "step 2",
             "updated_at": (now - timedelta(seconds=2)).isoformat(),
+            "channels": [{"channel_id": "CH11", "state": "running", "completed_grids": 2}],
         },
     ]
 
@@ -474,8 +544,22 @@ def test_classify_status_rows_keeps_missing_and_stale_slaves_visible() -> None:
         rows,
         slaves=(
             SlaveInfo(node_id="rig-pc-01", alias="PC01"),
-            SlaveInfo(node_id="rig-pc-02", alias="PC02"),
-            SlaveInfo(node_id="rig-pc-03", alias="PC03"),
+            SlaveInfo(
+                node_id="rig-pc-02",
+                alias="PC02",
+                channels=(
+                    ChannelInfo(
+                        channel_id="CH11",
+                        soc_model="MTK25D",
+                        total_grids=12,
+                    ),
+                ),
+            ),
+            SlaveInfo(
+                node_id="rig-pc-03",
+                alias="PC03",
+                channels=(ChannelInfo(name="Main", soc_model="SM8850"),),
+            ),
         ),
         stale_after_seconds=30,
         now=now,
@@ -487,6 +571,12 @@ def test_classify_status_rows_keeps_missing_and_stale_slaves_visible() -> None:
         "rig-pc-02": ("running", "running"),
         "rig-pc-03": ("offline", "offline"),
     }
+    by_node = {row["node_id"]: row for row in classified}
+    assert by_node["rig-pc-02"]["channels"][0]["soc_model"] == "MTK25D"
+    assert by_node["rig-pc-02"]["channels"][0]["completed_grids"] == 2
+    assert by_node["rig-pc-02"]["channels"][0]["total_grids"] == 12
+    assert by_node["rig-pc-03"]["channels"][0]["name"] == "Main"
+    assert by_node["rig-pc-03"]["channels"][0]["state"] == "offline"
 
 
 def test_status_and_results_are_listed(tmp_path) -> None:

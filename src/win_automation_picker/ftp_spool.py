@@ -9,6 +9,7 @@ import os
 from pathlib import Path, PurePosixPath
 import posixpath
 import random
+import re
 import subprocess
 import sys
 import tempfile
@@ -35,10 +36,96 @@ SPOOL_DIRS = (
     "screenshots",
 )
 MAX_STAGED_SEQUENCE_BUNDLES = 50
+MAX_CHANNELS_PER_SLAVE = 64
 
 
 class FtpSpoolError(RuntimeError):
     """Raised when FTP spool orchestration cannot continue."""
+
+
+@dataclass(frozen=True)
+class ChannelInfo:
+    channel_id: str = ""
+    name: str = ""
+    slot_id: str = ""
+    com_port: str = ""
+    soc_vendor: str = ""
+    soc_model: str = ""
+    binary_name: str = ""
+    binary_version: str = ""
+    binary_source_path: str = ""
+    binary_updated_at: str = ""
+    dram_part: str = ""
+    lot_id: str = ""
+    sample_id: str = ""
+    current_test: str = ""
+    sequence_name: str = ""
+    state: str = "idle"
+    current_grid: str = ""
+    completed_grids: int = 0
+    total_grids: int = 0
+    notes: str = ""
+    updated_at: str = ""
+
+    @classmethod
+    def from_mapping(cls, data: dict[str, Any]) -> "ChannelInfo":
+        channel = cls(
+            channel_id=str(data.get("channel_id") or data.get("channel") or "").strip(),
+            name=str(data.get("name") or data.get("alias") or "").strip(),
+            slot_id=str(data.get("slot_id") or data.get("slot") or "").strip(),
+            com_port=str(data.get("com_port") or data.get("com") or "").strip(),
+            soc_vendor=str(data.get("soc_vendor") or data.get("vendor") or "").strip(),
+            soc_model=str(data.get("soc_model") or data.get("soc") or "").strip(),
+            binary_name=str(data.get("binary_name") or "").strip(),
+            binary_version=str(data.get("binary_version") or "").strip(),
+            binary_source_path=str(data.get("binary_source_path") or "").strip(),
+            binary_updated_at=str(data.get("binary_updated_at") or "").strip(),
+            dram_part=str(data.get("dram_part") or data.get("material") or "").strip(),
+            lot_id=str(data.get("lot_id") or "").strip(),
+            sample_id=str(data.get("sample_id") or "").strip(),
+            current_test=str(data.get("current_test") or data.get("test") or "").strip(),
+            sequence_name=str(data.get("sequence_name") or data.get("seq") or "").strip(),
+            state=str(data.get("state") or "idle").strip(),
+            current_grid=str(data.get("current_grid") or data.get("grid") or "").strip(),
+            completed_grids=max(0, int(data.get("completed_grids") or 0)),
+            total_grids=max(0, int(data.get("total_grids") or 0)),
+            notes=str(data.get("notes") or "").strip(),
+            updated_at=str(data.get("updated_at") or "").strip(),
+        )
+        if not channel.key():
+            raise FtpSpoolError("Channel entry requires channel_id, slot_id, or name.")
+        return channel
+
+    def key(self) -> str:
+        return (self.channel_id or self.slot_id or self.name).strip().casefold()
+
+    def label(self) -> str:
+        return self.channel_id or self.name or self.slot_id
+
+    def to_mapping(self) -> dict[str, Any]:
+        return {
+            "channel_id": self.channel_id,
+            "name": self.name,
+            "slot_id": self.slot_id,
+            "com_port": self.com_port,
+            "soc_vendor": self.soc_vendor,
+            "soc_model": self.soc_model,
+            "binary_name": self.binary_name,
+            "binary_version": self.binary_version,
+            "binary_source_path": self.binary_source_path,
+            "binary_updated_at": self.binary_updated_at,
+            "dram_part": self.dram_part,
+            "lot_id": self.lot_id,
+            "sample_id": self.sample_id,
+            "current_test": self.current_test,
+            "sequence_name": self.sequence_name,
+            "state": self.state,
+            "current_grid": self.current_grid,
+            "completed_grids": self.completed_grids,
+            "total_grids": self.total_grids,
+            "notes": self.notes,
+            "updated_at": self.updated_at,
+        }
 
 
 @dataclass(frozen=True)
@@ -49,12 +136,20 @@ class SlaveInfo:
     port: int = 0
     notes: str = ""
     variables: dict[str, str] = field(default_factory=dict)
+    channels: tuple[ChannelInfo, ...] = ()
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> "SlaveInfo":
         variables = data.get("variables") or {}
         if not isinstance(variables, dict):
             raise FtpSpoolError("Slave variables must be an object.")
+        channels = data.get("channels") or []
+        if not isinstance(channels, list):
+            raise FtpSpoolError("Slave channels must be a list.")
+        if len(channels) > MAX_CHANNELS_PER_SLAVE:
+            raise FtpSpoolError(
+                f"Slave channels exceed the {MAX_CHANNELS_PER_SLAVE}-item limit."
+            )
         node_id = str(data.get("node_id") or data.get("id") or "").strip()
         if not node_id:
             raise FtpSpoolError("Slave entry requires node_id.")
@@ -65,6 +160,9 @@ class SlaveInfo:
             port=int(data.get("port") or 0),
             notes=str(data.get("notes") or "").strip(),
             variables={str(key): str(value) for key, value in variables.items()},
+            channels=tuple(
+                ChannelInfo.from_mapping(item) for item in channels if isinstance(item, dict)
+            ),
         )
 
     def to_mapping(self) -> dict[str, Any]:
@@ -75,6 +173,7 @@ class SlaveInfo:
             "port": self.port,
             "notes": self.notes,
             "variables": dict(self.variables),
+            "channels": [channel.to_mapping() for channel in self.channels],
         }
 
     def label(self) -> str:
@@ -263,6 +362,15 @@ def example_spool_config() -> dict[str, Any]:
                 port=0,
                 notes="Line A channel 4",
                 variables={"channel": "ch4"},
+                channels=(
+                    ChannelInfo(
+                        channel_id="CH4",
+                        slot_id="A4",
+                        soc_vendor="qualcomm",
+                        soc_model="SM8850",
+                        state="idle",
+                    ),
+                ),
             ),
         ),
     ).to_mapping()
@@ -475,6 +583,7 @@ class JobResult:
     stderr: str = ""
     monitor_results: list[dict[str, Any]] = field(default_factory=list)
     monitor_view: dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
 
     def to_mapping(self) -> dict[str, Any]:
         return {
@@ -489,6 +598,7 @@ class JobResult:
             "stderr": self.stderr,
             "monitor_results": list(self.monitor_results),
             "monitor_view": dict(self.monitor_view),
+            "details": dict(self.details),
         }
 
 
@@ -740,6 +850,11 @@ def run_slave_once(
         raise FtpSpoolError("Slave node_id is required.")
     if ensure_directories:
         ensure_node_dirs(backend, node)
+    active_status = status_context if status_context is not None else {}
+    active_status.setdefault(
+        "channels",
+        [channel.to_mapping() for channel in _configured_channels(config, node)],
+    )
     results: list[JobResult] = []
     processed_broadcast = False
     for path in pending_job_paths(backend, node):
@@ -759,7 +874,14 @@ def run_slave_once(
                 stderr=f"Invalid job file {path}: {exc}",
             )
         else:
-            write_status(backend, node, state="running", message=job.kind, current_job=job.job_id)
+            write_status(
+                backend,
+                node,
+                state="running",
+                message=job.kind,
+                current_job=job.job_id,
+                details=active_status,
+            )
             result = execute_job(backend, config, job, node_id=node)
             if config.capture_on_error and not result.ok:
                 try:
@@ -778,27 +900,27 @@ def run_slave_once(
             backend.delete(path)
         cleanup_node_files(backend, node, config)
         results.append(result)
-        if status_context is not None:
-            status_context.update(
-                {
-                    "last_job": result.job_id,
-                    "last_ok": result.ok,
-                    "last_finished_at": result.finished_at,
-                }
-            )
+        active_status.update(
+            {
+                "last_job": result.job_id,
+                "last_ok": result.ok,
+                "last_finished_at": result.finished_at,
+            }
+        )
+        _update_channel_status(active_status, job, result)
     if processed_broadcast and config.slaves:
         cleanup_completed_broadcast_jobs(backend, [slave.node_id for slave in config.slaves])
     final_message = "waiting"
-    if status_context and status_context.get("last_job"):
-        outcome = "PASS" if status_context.get("last_ok") else "FAIL"
-        final_message = f"waiting | last {outcome}: {status_context['last_job']}"
+    if active_status.get("last_job"):
+        outcome = "PASS" if active_status.get("last_ok") else "FAIL"
+        final_message = f"waiting | last {outcome}: {active_status['last_job']}"
     write_status(
         backend,
         node,
         state="idle",
         message=final_message,
         current_job="",
-        details=status_context,
+        details=active_status,
     )
     return results
 
@@ -993,6 +1115,170 @@ def write_status(
     backend.write_bytes(f"status/{_clean_node_id(node_id)}.json", json.dumps(status, indent=2).encode("utf-8"))
 
 
+def _configured_channels(config: FtpSpoolConfig, node_id: str) -> tuple[ChannelInfo, ...]:
+    node = _clean_node_id(node_id)
+    for slave in config.slaves:
+        if _clean_node_id(slave.node_id) == node:
+            return slave.channels
+    return ()
+
+
+def _channel_key(data: dict[str, Any]) -> str:
+    return str(
+        data.get("channel_id")
+        or data.get("channel")
+        or data.get("slot_id")
+        or data.get("slot")
+        or data.get("name")
+        or ""
+    ).strip().casefold()
+
+
+def merge_channel_rows(
+    configured: Sequence[ChannelInfo | dict[str, Any]],
+    reported: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    indexes: dict[str, int] = {}
+    for item in configured:
+        if len(merged) >= MAX_CHANNELS_PER_SLAVE:
+            break
+        row = item.to_mapping() if isinstance(item, ChannelInfo) else dict(item)
+        key = _channel_key(row)
+        if not key:
+            continue
+        indexes[key] = len(merged)
+        merged.append(row)
+    for item in reported:
+        if not isinstance(item, dict):
+            continue
+        row = dict(item)
+        key = _channel_key(row)
+        if not key:
+            continue
+        if key in indexes:
+            merged[indexes[key]].update(row)
+        elif len(merged) < MAX_CHANNELS_PER_SLAVE:
+            indexes[key] = len(merged)
+            merged.append(row)
+    return merged
+
+
+def _update_channel_status(
+    status_context: dict[str, Any],
+    job: SpoolJob,
+    result: JobResult,
+) -> None:
+    raw_channels = status_context.get("channels")
+    channels = [dict(item) for item in raw_channels if isinstance(item, dict)] if isinstance(raw_channels, list) else []
+
+    def upsert(channel_id: str = "", slot_id: str = "", name: str = "") -> dict[str, Any] | None:
+        target_keys = {
+            value.strip().casefold() for value in (channel_id, slot_id, name) if value.strip()
+        }
+        if not target_keys:
+            return None
+        for channel in channels:
+            aliases = {
+                str(channel.get(field) or "").strip().casefold()
+                for field in ("channel_id", "slot_id", "name")
+                if str(channel.get(field) or "").strip()
+            }
+            if target_keys & aliases:
+                return channel
+        if len(channels) >= MAX_CHANNELS_PER_SLAVE:
+            return None
+        created = {
+            "channel_id": channel_id,
+            "name": name,
+            "slot_id": slot_id,
+            "state": "idle",
+        }
+        channels.append(created)
+        return created
+
+    details = result.details if isinstance(result.details, dict) else {}
+    job_channel = str(details.get("channel_id") or job.variables.get("channel") or "").strip()
+    job_slot = str(details.get("slot_id") or job.variables.get("slot_id") or "").strip()
+    if job.kind == "sequence":
+        channel = upsert(job_channel, job_slot)
+        if channel is not None:
+            _apply_nonempty_channel_values(
+                channel,
+                {
+                    "soc_vendor": job.variables.get("soc_vendor", ""),
+                    "soc_model": job.variables.get("soc_model", ""),
+                    "binary_name": job.variables.get("binary_name", ""),
+                    "binary_version": job.variables.get("binary_version", ""),
+                    "binary_source_path": job.variables.get("binary_source_path", ""),
+                    "binary_updated_at": job.variables.get("binary_updated_at", ""),
+                    "dram_part": job.variables.get("dram_part", ""),
+                    "lot_id": job.variables.get("lot_id", ""),
+                    "sample_id": job.variables.get("sample_id", ""),
+                    "current_test": details.get("current_test", ""),
+                    "sequence_name": details.get("sequence_name", ""),
+                },
+            )
+            channel["state"] = "running" if result.ok else "error"
+            channel["current_grid"] = ""
+            channel["completed_grids"] = int(details.get("completed_grids") or 0)
+            channel["total_grids"] = int(details.get("total_grids") or 0)
+            channel["updated_at"] = result.finished_at
+
+    for monitor in result.monitor_results:
+        if not isinstance(monitor, dict):
+            continue
+        monitor_channel = str(monitor.get("monitor_channel") or job_channel).strip()
+        monitor_slot = str(monitor.get("slot_id") or job_slot).strip()
+        channel = upsert(monitor_channel, monitor_slot)
+        if channel is None:
+            continue
+        expected_state = str(monitor.get("monitor_state") or "").strip()
+        channel["state"] = expected_state if monitor.get("ok") and expected_state else "fail"
+        current_grid = str(monitor.get("grid_name") or "").strip()
+        block_name = str(monitor.get("block_name") or "").strip()
+        if not current_grid and block_name.startswith("#"):
+            current_grid = block_name
+        if current_grid:
+            channel["current_grid"] = current_grid
+        progress = _monitor_grid_progress(monitor)
+        if progress is not None:
+            channel["completed_grids"], channel["total_grids"] = progress
+        channel["updated_at"] = result.finished_at
+
+    status_context["channels"] = channels
+
+
+def _apply_nonempty_channel_values(target: dict[str, Any], values: dict[str, Any]) -> None:
+    for key, value in values.items():
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            target[key] = text
+
+
+def _monitor_grid_progress(monitor: dict[str, Any]) -> tuple[int, int] | None:
+    details = monitor.get("details") if isinstance(monitor.get("details"), dict) else {}
+    completed = monitor.get("completed_grids", details.get("completed_grids"))
+    total = monitor.get("total_grids", details.get("total_grids"))
+    if completed is not None and total is not None:
+        try:
+            return max(0, int(completed)), max(0, int(total))
+        except (TypeError, ValueError):
+            pass
+    marker = " ".join(
+        str(monitor.get(key) or "") for key in ("monitor_state", "block_name", "grid_name")
+    ).casefold()
+    if not any(token in marker for token in ("grid", "progress", "그리드", "진행")):
+        return None
+    for value in (monitor.get("actual"), monitor.get("expected"), monitor.get("block_name")):
+        match = re.search(r"(?<!\d)(\d+)\s*/\s*(\d+)(?!\d)", str(value or ""))
+        if match:
+            return int(match.group(1)), int(match.group(2))
+    return None
+
+
 def list_status(backend: SpoolBackend) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for name in backend.list_files("status"):
@@ -1023,6 +1309,7 @@ def classify_status_rows(
         for row in rows
         if str(row.get("node_id") or "").strip()
     }
+    configured_by_node = {slave.node_id: slave for slave in slaves}
     for slave in slaves:
         by_node.setdefault(
             slave.node_id,
@@ -1032,6 +1319,7 @@ def classify_status_rows(
                 "message": "No heartbeat received",
                 "current_job": "",
                 "updated_at": "",
+                "channels": [channel.to_mapping() for channel in slave.channels],
             },
         )
 
@@ -1040,6 +1328,10 @@ def classify_status_rows(
     for node_id, original in by_node.items():
         row = dict(original)
         row["node_id"] = node_id
+        configured_slave = configured_by_node.get(node_id)
+        configured_channels = configured_slave.channels if configured_slave else ()
+        reported_channels = row.get("channels") if isinstance(row.get("channels"), list) else []
+        row["channels"] = merge_channel_rows(configured_channels, reported_channels)
         reported_state = str(row.get("state") or "unknown").strip().casefold()
         updated_at = str(row.get("updated_at") or "").strip()
         age_seconds: float | None = None
@@ -1060,6 +1352,9 @@ def classify_status_rows(
                 previous = str(row.get("message") or "").strip()
                 stale_message = f"Last heartbeat {int(age_seconds)}s ago"
                 row["message"] = f"{stale_message} | {previous}" if previous else stale_message
+            for channel in row["channels"]:
+                channel["reported_state"] = channel.get("state", "")
+                channel["state"] = "offline"
         elif reported_state == "running":
             row["health"] = "running"
         elif reported_state in {"error", "failed", "fail"} or row.get("last_ok") is False:
@@ -1342,7 +1637,21 @@ def _execute_sequence(
         f"slot={variables.get('slot_id', '')!r}"
     )
     stdout = prefix if not result.stdout else f"{prefix}\n{result.stdout}"
-    return _limit_result(replace(result, stdout=stdout), max_output_chars=max_output_chars)
+    package_details = bundle.package_details()
+    details = {
+        **result.details,
+        "channel_id": variables.get("channel", ""),
+        "slot_id": variables.get("slot_id", ""),
+        "sequence_name": bundle.recipe_name,
+        "sequence_bundle_id": bundle.bundle_id,
+        "current_test": variables.get("test_name", "") or package_details.get("purpose", ""),
+        "total_grids": int(package_details.get("block_count") or 0),
+        "completed_grids": 0,
+    }
+    return _limit_result(
+        replace(result, stdout=stdout, details=details),
+        max_output_chars=max_output_chars,
+    )
 
 
 def _prune_staged_sequence_dirs(
@@ -1718,6 +2027,7 @@ def _append_stderr(result: JobResult, message: str) -> JobResult:
         stderr=stderr,
         monitor_results=list(result.monitor_results),
         monitor_view=dict(result.monitor_view),
+        details=dict(result.details),
     )
 
 
@@ -1735,6 +2045,7 @@ def _limit_result(result: JobResult, *, max_output_chars: int) -> JobResult:
         stderr=_limit_text(result.stderr, limit),
         monitor_results=list(result.monitor_results),
         monitor_view=dict(result.monitor_view),
+        details=dict(result.details),
     )
 
 

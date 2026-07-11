@@ -34,7 +34,7 @@ Slave PC
 | `packages/` | master가 업로드한 workflow, 고급 Python, 검증된 Rig SEQ package |
 | `commands/{node}/pending/` | 특정 slave용 job |
 | `commands/all/pending/` | 전체 slave broadcast job |
-| `status/` | slave heartbeat |
+| `status/` | slave heartbeat와 PC별 CH/SoC/binary/자재/Test/SEQ/Grid 상태 |
 | `results/{node}/` | job 결과 JSON |
 | `logs/{node}/` | stdout/stderr log |
 | `screenshots/{node}/` | 화면 캡처 PNG |
@@ -53,3 +53,5 @@ Slave PC
 Win Automation Picker가 export한 workflow는 slave EXE의 내장 엔진으로 실행됩니다. 별도 Python 설치는 필요하지 않습니다. 사용자가 직접 만든 일반 Python 파일을 업로드할 때만 slave의 `외부 Python (고급)` 경로와 모듈 설치가 필요합니다.
 
 Test Sequence Generator가 내보낸 `.rigseq.zip`은 Slave가 체크섬과 validation 상태를 다시 확인한 뒤 로컬에 저장합니다. 이후 Picker에서 만든 SK Commander 런처 workflow에 `${seq_path}`, `${channel}`, `${slot_id}`를 전달합니다. 전체 절차는 [SEQ Generator와 SK Commander 연동](seq-integration.md)을 따릅니다.
+
+`.rigbinary.json`은 FTP package가 아니라 Master 설정용 metadata 교환 파일입니다. `CH 관리`에서 읽은 뒤 `.info`와 heartbeat에 필요한 provenance만 저장하며 실제 binary payload는 FTP spool로 올리지 않습니다.
