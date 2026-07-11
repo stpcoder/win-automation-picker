@@ -27,6 +27,8 @@ Bob	Hello Bob	CH2
 | `${col2}` | 두 번째 열 |
 | `${row}` | 현재 행 번호 |
 
+같은 변수는 selector의 창 이름, AutomationId, class name, 창 marker에도 사용할 수 있습니다. 예를 들어 창 안의 CH component marker를 `${channel}`로 두면 하나의 workflow가 CH9, CH10, CH11, CH12 창을 실행 행별로 구별합니다. 모니터 tab/channel/state 이름도 런타임 변수로 치환됩니다.
+
 ## Headers 옵션
 
 첫 줄이 헤더이면 `첫 행을 열 이름으로 사용`을 켭니다.

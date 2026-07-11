@@ -5,11 +5,12 @@ from win_automation_picker.recipe import (
     DataSet,
     evaluate_condition,
     monitor_only_recipe,
+    render_selector,
     render_template,
     run_recipe,
     validate_recipe,
 )
-from win_automation_picker.selector import SelectorSegment, UISelector
+from win_automation_picker.selector import SelectorSegment, UISelector, WindowMarker
 
 
 def test_dataset_parses_excel_tsv_with_headers_and_col_aliases() -> None:
@@ -72,6 +73,71 @@ def test_render_template_replaces_known_variables_only() -> None:
     )
 
     assert rendered == "Dear Alice, row 3: ${missing}"
+
+
+def test_selector_and_monitor_metadata_use_runtime_channel_variables(monkeypatch) -> None:
+    captured: list[UISelector] = []
+    selector = UISelector(
+        root=SelectorSegment(control_type="Window", name="SK Commander ${channel}"),
+        path=[SelectorSegment(control_type="Text", automation_id="status_${slot_id}")],
+        window_marker=WindowMarker(name_regex=r"\b${channel}\b"),
+    )
+    monkeypatch.setattr(
+        "win_automation_picker.recipe.get_element_text",
+        lambda rendered, timeout=1.0: captured.append(rendered) or "PASS",
+    )
+    step = AutomationStep.monitor_text(
+        selector,
+        "PASS",
+        monitor_tab="${node_id}",
+        monitor_channel="${channel}",
+        monitor_state="PASS",
+        block_name="${channel} result",
+    )
+
+    result = evaluate_condition(
+        step,
+        row={"node_id": "PC04", "channel": "CH11", "slot_id": "S3"},
+    )
+
+    assert result.ok
+    assert result.label == "CH11 result"
+    assert result.monitor_tab == "PC04"
+    assert result.monitor_channel == "CH11"
+    assert captured[0].root.name == "SK Commander CH11"
+    assert captured[0].path[0].automation_id == "status_S3"
+    assert captured[0].window_marker
+    assert captured[0].window_marker.name_regex == r"\bCH11\b"
+
+
+def test_render_selector_keeps_unknown_placeholders_visible() -> None:
+    selector = UISelector(root=SelectorSegment(control_type="Window", name="${missing}"))
+
+    rendered = render_selector(selector, {"channel": "CH9"})
+
+    assert rendered.root.name == "${missing}"
+
+
+def test_run_callback_receives_rendered_runtime_label(monkeypatch) -> None:
+    seen: list[str] = []
+    monkeypatch.setattr("win_automation_picker.recipe.press_keys", lambda *args, **kwargs: None)
+    recipe = AutomationRecipe(
+        steps=[
+            AutomationStep.key(
+                "{ENTER}",
+                block_name="Start ${channel}",
+                element_id="start_${slot_id}",
+            )
+        ]
+    )
+
+    run_recipe(
+        recipe,
+        row={"channel": "CH11", "slot_id": "S3"},
+        on_step=lambda _index, step: seen.append(f"{step.display_label()}:{step.element_id}"),
+    )
+
+    assert seen == ["Start CH11:start_S3"]
 
 
 def test_recipe_round_trip_json() -> None:

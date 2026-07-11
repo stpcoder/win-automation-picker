@@ -35,6 +35,7 @@ The executables are not code-signed, so Windows SmartScreen may show a warning.
 - Exports the complete nested workflow as runnable Python.
 - Runs exported workflows inside the slave executable without requiring a separate Python installation.
 - Distributes jobs and collects status, results, and screenshots through an FTP spool.
+- Verifies Test Sequence Generator `.rigseq.zip` artifacts and assigns them to SK Commander launchers by PC, slot, and CH.
 - Keeps configured but stale PCs visible as offline and matches screenshots to their exact request job.
 
 ## Macro quick start
@@ -73,11 +74,11 @@ The FTP tools use a configured root directory as a shared spool when inbound por
 3. Initialize the dedicated folders.
 4. Export one `.info` file per slave and place it next to the executable on that PC.
 5. Start `이 PC Agent` on each slave.
-6. Load the configured PCs into the run matrix, edit per-PC macro values, and submit the table.
+6. Load configured PCs into the PC/slot/CH run matrix, assign each macro or SEQ, and submit the table.
 
 Connections are opened only for transfers. Poll jitter, screenshot rate limits, retention limits, stale-heartbeat classification, and agent reconnect backoff reduce server load and false status. The tool stays under its configured FTP root and does not touch unrelated folders.
 
-See the [FTP overview](https://stpcoder.github.io/win-automation-picker/rig-ftp/overview/).
+See the [FTP overview](https://stpcoder.github.io/win-automation-picker/rig-ftp/overview/) and [SEQ Generator / SK Commander workflow](https://stpcoder.github.io/win-automation-picker/rig-ftp/seq-integration/).
 
 ## Install from source
 

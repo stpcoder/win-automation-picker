@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from ftplib import FTP, FTP_TLS, error_perm
 import io
@@ -18,9 +18,10 @@ from contextlib import redirect_stderr, redirect_stdout
 from typing import Any, Iterable, Protocol, Sequence
 
 from . import rig_cli
-from .exporter import parse_exported_workflow, read_exported_workflow
+from .exporter import parse_exported_workflow
 from .recipe import ConditionResult, DataSet, monitor_only_recipe, run_recipe
 from .rig import RigConfigError, RigExecutionError, powershell_argv
+from .sequence_bundle import RigSequenceBundleError, parse_rig_sequence_bundle
 
 
 SPOOL_DIRS = (
@@ -33,6 +34,7 @@ SPOOL_DIRS = (
     "archive",
     "screenshots",
 )
+MAX_STAGED_SEQUENCE_BUNDLES = 50
 
 
 class FtpSpoolError(RuntimeError):
@@ -499,13 +501,17 @@ class PackageInfo:
     uploaded_at: str = ""
     runner: str = "python"
     variables: dict[str, str] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any], *, fallback_name: str = "") -> "PackageInfo":
         name = _safe_name(str(data.get("name") or fallback_name))
         variables = data.get("variables") or {}
+        details = data.get("details") or {}
         if not isinstance(variables, dict):
             variables = {}
+        if not isinstance(details, dict):
+            details = {}
         return cls(
             name=name,
             path=str(data.get("path") or f"packages/{name}"),
@@ -514,6 +520,7 @@ class PackageInfo:
             uploaded_at=str(data.get("uploaded_at") or ""),
             runner=str(data.get("runner") or "python").strip().casefold(),
             variables={str(key): str(value) for key, value in variables.items()},
+            details=dict(details),
         )
 
     def to_mapping(self) -> dict[str, Any]:
@@ -525,6 +532,7 @@ class PackageInfo:
             "uploaded_at": self.uploaded_at,
             "runner": self.runner,
             "variables": dict(self.variables),
+            "details": dict(self.details),
         }
 
 
@@ -567,31 +575,59 @@ def deploy_package(
     source_path = Path(source)
     if not source_path.exists():
         raise FtpSpoolError(f"Package source not found: {source_path}")
+    source_bytes = source_path.read_bytes()
     package_name = name or source_path.name
     safe_package_name = _safe_name(package_name)
     resolved_runner = runner.strip().casefold() or "auto"
     resolved_variables = {str(key): str(value) for key, value in (variables or {}).items()}
+    bundle = None
     if resolved_runner == "auto":
-        try:
-            exported = read_exported_workflow(source_path)
-        except (OSError, SyntaxError, ValueError, json.JSONDecodeError):
-            resolved_runner = "python"
+        if source_path.name.casefold().endswith(".rigseq.zip"):
+            try:
+                bundle = parse_rig_sequence_bundle(source_bytes)
+            except RigSequenceBundleError as exc:
+                raise FtpSpoolError(str(exc)) from exc
+            resolved_runner = "sequence"
         else:
-            resolved_runner = "workflow"
-            if not resolved_variables:
-                resolved_variables = dict(exported.recipe.variables)
-    if resolved_runner not in {"python", "workflow"}:
+            try:
+                exported = parse_exported_workflow(
+                    source_bytes.decode("utf-8"),
+                    filename=source_path.name,
+                )
+            except (UnicodeDecodeError, SyntaxError, ValueError, json.JSONDecodeError):
+                resolved_runner = "python"
+            else:
+                resolved_runner = "workflow"
+                if not resolved_variables:
+                    resolved_variables = dict(exported.recipe.variables)
+    elif resolved_runner == "sequence":
+        try:
+            bundle = parse_rig_sequence_bundle(source_bytes)
+        except RigSequenceBundleError as exc:
+            raise FtpSpoolError(str(exc)) from exc
+    if resolved_runner not in {"python", "workflow", "sequence"}:
         raise FtpSpoolError(f"Unsupported package runner: {runner}")
+    package_details: dict[str, Any] = {}
+    if bundle is not None:
+        sequence_variables = {
+            "channel": "",
+            "slot_id": "",
+            "launcher_package": "",
+        }
+        sequence_variables.update(resolved_variables)
+        resolved_variables = sequence_variables
+        package_details = bundle.package_details()
     remote_path = f"packages/{safe_package_name}"
-    backend.write_bytes(remote_path, source_path.read_bytes())
+    backend.write_bytes(remote_path, source_bytes)
     package = PackageInfo(
         name=safe_package_name,
         path=remote_path,
-        title=title or source_path.stem,
-        notes=notes,
+        title=title or (bundle.recipe_name if bundle is not None else source_path.stem),
+        notes=notes or (str(package_details.get("purpose") or "") if bundle is not None else ""),
         uploaded_at=_utc_now(),
         runner=resolved_runner,
         variables=resolved_variables,
+        details=package_details,
     )
     backend.write_bytes(
         f"packages/{safe_package_name}.meta.json",
@@ -601,7 +637,11 @@ def deploy_package(
 
 
 def package_job_kind(package: PackageInfo) -> str:
-    return "workflow" if package.runner == "workflow" else "python"
+    if package.runner == "workflow":
+        return "workflow"
+    if package.runner == "sequence":
+        return "sequence"
+    return "python"
 
 
 def list_packages(backend: SpoolBackend) -> list[PackageInfo]:
@@ -858,6 +898,17 @@ def execute_job(
                 started_at=started,
                 max_output_chars=config.max_output_chars,
                 monitor_only=job.kind == "monitor",
+            )
+        if job.kind == "sequence":
+            return _execute_sequence(
+                backend,
+                config,
+                job,
+                variables,
+                timeout=timeout,
+                node_id=node_id,
+                started_at=started,
+                max_output_chars=config.max_output_chars,
             )
         if job.kind == "rig":
             return _limit_result(
@@ -1206,6 +1257,128 @@ class _RemoteWorkflowStopEvent:
             self.last_remote_check = now
             self.remote_stopped = stop_requested(self.backend, self.node_id, job_id=self.job_id)
         return self.remote_stopped
+
+
+def _execute_sequence(
+    backend: SpoolBackend,
+    config: FtpSpoolConfig,
+    job: SpoolJob,
+    variables: dict[str, str],
+    *,
+    timeout: float,
+    node_id: str,
+    started_at: str,
+    max_output_chars: int,
+) -> JobResult:
+    package = str(job.payload.get("package", "") or "")
+    if not package:
+        raise FtpSpoolError("Sequence job requires a Rig SEQ package.")
+    package_name = _safe_name(_render_placeholders(package, variables))
+    try:
+        bundle = parse_rig_sequence_bundle(backend.read_bytes(f"packages/{package_name}"))
+    except RigSequenceBundleError as exc:
+        raise FtpSpoolError(str(exc)) from exc
+
+    launcher_value = str(job.payload.get("launcher_package", "") or "")
+    launcher_value = launcher_value or variables.get("launcher_package", "")
+    launcher_name = _safe_name(_render_placeholders(launcher_value, variables)) if launcher_value else ""
+    if not launcher_name:
+        raise FtpSpoolError(
+            "Sequence job requires launcher_package: select an exported SK Commander workflow."
+        )
+
+    try:
+        launcher_metadata = json.loads(
+            backend.read_bytes(f"packages/{launcher_name}.meta.json").decode("utf-8")
+        )
+    except Exception as exc:
+        raise FtpSpoolError(f"SK Commander launcher metadata was not found: {launcher_name}") from exc
+    if not isinstance(launcher_metadata, dict) or launcher_metadata.get("runner") != "workflow":
+        raise FtpSpoolError("SK Commander launcher must be a Picker-exported workflow package.")
+
+    work_dir = Path(_render_placeholders(config.work_dir, variables))
+    sequence_dir = work_dir / "sequences" / bundle.bundle_id
+    sequence_dir.mkdir(parents=True, exist_ok=True)
+    sequence_path = sequence_dir / "sequence.seq"
+    if not sequence_path.exists() or sequence_path.read_bytes() != bundle.sequence_bytes:
+        sequence_path.write_bytes(bundle.sequence_bytes)
+    os.utime(sequence_dir, None)
+    _prune_staged_sequence_dirs(
+        work_dir / "sequences",
+        preserve=bundle.bundle_id,
+        max_directories=MAX_STAGED_SEQUENCE_BUNDLES,
+    )
+
+    execution_variables = {
+        **variables,
+        "seq_path": str(sequence_path.resolve()),
+        "seq_bundle": package_name,
+        "seq_bundle_id": bundle.bundle_id,
+        "seq_recipe": bundle.recipe_name,
+        "seq_command_set": bundle.command_set,
+    }
+    launcher_job = SpoolJob(
+        job_id=job.job_id,
+        kind="sequence",
+        payload={
+            "package": launcher_name,
+            "timeout_seconds": timeout,
+        },
+        variables=execution_variables,
+        created_at=job.created_at,
+    )
+    result = _execute_workflow(
+        backend,
+        launcher_job,
+        execution_variables,
+        timeout=timeout,
+        node_id=node_id,
+        started_at=started_at,
+        max_output_chars=max_output_chars,
+    )
+    prefix = (
+        f"Staged SEQ {bundle.recipe_name!r} ({bundle.bundle_id}) at {sequence_path.resolve()}\n"
+        f"Launcher: {launcher_name} | channel={variables.get('channel', '')!r} "
+        f"slot={variables.get('slot_id', '')!r}"
+    )
+    stdout = prefix if not result.stdout else f"{prefix}\n{result.stdout}"
+    return _limit_result(replace(result, stdout=stdout), max_output_chars=max_output_chars)
+
+
+def _prune_staged_sequence_dirs(
+    root: Path,
+    *,
+    preserve: str,
+    max_directories: int,
+) -> None:
+    if max_directories < 1 or not root.is_dir():
+        return
+
+    def is_owned_sequence_dir(path: Path) -> bool:
+        if (
+            not path.is_dir()
+            or path.is_symlink()
+            or len(path.name) != 16
+            or not all(character in "0123456789abcdef" for character in path.name.casefold())
+        ):
+            return False
+        members = list(path.iterdir())
+        return bool(members) and all(
+            member.is_file() and not member.is_symlink() and member.name == "sequence.seq"
+            for member in members
+        )
+
+    candidates = [
+        path
+        for path in root.iterdir()
+        if path.name != preserve and is_owned_sequence_dir(path)
+    ]
+    candidates.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    keep_other_count = max(0, max_directories - 1)
+    for directory in candidates[keep_other_count:]:
+        for member in directory.iterdir():
+            member.unlink()
+        directory.rmdir()
 
 
 def _execute_workflow(

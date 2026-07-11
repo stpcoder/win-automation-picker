@@ -41,6 +41,7 @@ from .ftp_spool import (
     write_example_spool_config,
 )
 from .xlsx_export import write_xlsx
+from .sequence_bundle import RigSequenceBundleError, read_rig_sequence_bundle
 
 
 DEFAULT_CONFIG = "rig-ftp.info"
@@ -559,7 +560,7 @@ class RigFtpApp(tk.Tk):
         server_more.add_command(label="상태 새로고침", command=self._refresh_status)
         server_more_button["menu"] = server_more
 
-        package = ttk.Labelframe(run_page, text="매크로 업로드", padding=10)
+        package = ttk.Labelframe(run_page, text="자동화 / SEQ 업로드", padding=10)
         package.grid(row=1, column=0, sticky="nsew", padx=(0, 8), pady=(0, 8))
         package.columnconfigure(1, weight=1)
         ttk.Label(package, text="파일").grid(row=0, column=0, sticky="w", padx=(0, 6), pady=3)
@@ -587,7 +588,7 @@ class RigFtpApp(tk.Tk):
         ttk.Label(package, text="설명").grid(row=3, column=0, sticky="nw", padx=(0, 6), pady=3)
         self.package_notes_text = tk.Text(package, height=4, wrap="word", undo=True)
         self.package_notes_text.grid(row=3, column=1, columnspan=2, sticky="ew", pady=3)
-        ttk.Button(package, text="매크로 업로드", command=self._upload_package, style="Primary.TButton").grid(
+        ttk.Button(package, text="파일 업로드", command=self._upload_package, style="Primary.TButton").grid(
             row=4,
             column=1,
             sticky="e",
@@ -607,50 +608,58 @@ class RigFtpApp(tk.Tk):
         ttk.Label(jobs, text="대상 PC").grid(row=0, column=0, sticky="w", padx=(0, 6), pady=3)
         self.job_target_var = tk.StringVar(value="all")
         ttk.Entry(jobs, textvariable=self.job_target_var).grid(row=0, column=1, sticky="ew", pady=3)
-        ttk.Label(jobs, text="고급 인자").grid(row=1, column=0, sticky="w", padx=(0, 6), pady=3)
+        ttk.Label(jobs, text="SK Commander 런처").grid(row=1, column=0, sticky="w", padx=(0, 6), pady=3)
+        self.sequence_launcher_var = tk.StringVar(value="")
+        self.sequence_launcher_combo = ttk.Combobox(
+            jobs,
+            textvariable=self.sequence_launcher_var,
+            state="readonly",
+        )
+        self.sequence_launcher_combo.grid(row=1, column=1, sticky="ew", pady=3)
+        ttk.Label(jobs, text="고급 인자").grid(row=2, column=0, sticky="w", padx=(0, 6), pady=3)
         self.job_args_var = tk.StringVar(value="")
-        ttk.Entry(jobs, textvariable=self.job_args_var).grid(row=1, column=1, sticky="ew", pady=3)
-        ttk.Label(jobs, text="입력값").grid(row=2, column=0, sticky="w", padx=(0, 6), pady=3)
+        ttk.Entry(jobs, textvariable=self.job_args_var).grid(row=2, column=1, sticky="ew", pady=3)
+        ttk.Label(jobs, text="입력값").grid(row=3, column=0, sticky="w", padx=(0, 6), pady=3)
         self.job_vars_var = tk.StringVar(value="")
-        ttk.Entry(jobs, textvariable=self.job_vars_var).grid(row=2, column=1, sticky="ew", pady=3)
-        ttk.Label(jobs, text="제한 시간(초)").grid(row=3, column=0, sticky="w", padx=(0, 6), pady=3)
+        ttk.Entry(jobs, textvariable=self.job_vars_var).grid(row=3, column=1, sticky="ew", pady=3)
+        ttk.Label(jobs, text="제한 시간(초)").grid(row=4, column=0, sticky="w", padx=(0, 6), pady=3)
         self.job_timeout_var = tk.StringVar(value="0")
-        ttk.Entry(jobs, textvariable=self.job_timeout_var, width=10).grid(row=3, column=1, sticky="w", pady=3)
-        ttk.Button(jobs, text="선택 매크로 전송", command=self._submit_selected_package, style="Primary.TButton").grid(
-            row=4,
+        ttk.Entry(jobs, textvariable=self.job_timeout_var, width=10).grid(row=4, column=1, sticky="w", pady=3)
+        ttk.Button(jobs, text="선택 파일 전송", command=self._submit_selected_package, style="Primary.TButton").grid(
+            row=5,
             column=0,
             sticky="ew",
             pady=(8, 0),
             padx=(0, 6),
         )
         ttk.Button(jobs, text="긴급 중단", command=self._request_stop, style="Danger.TButton").grid(
-            row=5,
+            row=6,
             column=0,
             sticky="ew",
             pady=(6, 0),
             padx=(0, 6),
         )
         ttk.Button(jobs, text="상태 규칙 1회", command=self._submit_selected_monitor).grid(
-            row=5,
+            row=6,
             column=1,
             sticky="w",
             pady=(6, 0),
         )
         job_more_button = ttk.Menubutton(jobs, text="더보기")
-        job_more_button.grid(row=4, column=1, sticky="w", pady=(8, 0))
+        job_more_button.grid(row=5, column=1, sticky="w", pady=(8, 0))
         job_more = tk.Menu(job_more_button, tearoff=False)
         job_more.add_command(label="전체 화면 요청", command=self._submit_screenshot)
         job_more.add_command(label="중단 신호 해제", command=self._clear_stop)
         job_more_button["menu"] = job_more
         self.monitor_interval_var = tk.StringVar(value="30")
 
-        profiles = ttk.Labelframe(run_page, text="PC별 매크로 실행표", padding=10)
+        profiles = ttk.Labelframe(run_page, text="PC / 슬롯 / CH별 실행표", padding=10)
         profiles.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         profiles.columnconfigure(0, weight=1)
         profile_toolbar = ttk.Frame(profiles)
         profile_toolbar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
         profile_toolbar.columnconfigure(0, weight=1)
-        ttk.Label(profile_toolbar, text="셀을 더블클릭해 PC별 매크로와 입력값을 변경합니다.").grid(
+        ttk.Label(profile_toolbar, text="같은 PC도 슬롯/CH마다 한 행씩 추가해 SEQ와 런처를 배정합니다.").grid(
             row=0, column=0, sticky="w"
         )
         ttk.Button(profile_toolbar, text="설정 PC 불러오기", command=self._load_run_profiles_from_config).grid(
@@ -659,15 +668,18 @@ class RigFtpApp(tk.Tk):
         ttk.Button(profile_toolbar, text="대상 추가", command=self._add_run_profile_target).grid(
             row=0, column=2, padx=(0, 5)
         )
-        ttk.Button(profile_toolbar, text="선택 삭제", command=self._delete_run_profiles).grid(
+        ttk.Button(profile_toolbar, text="행 복제", command=self._duplicate_run_profiles).grid(
             row=0, column=3, padx=(0, 5)
+        )
+        ttk.Button(profile_toolbar, text="선택 삭제", command=self._delete_run_profiles).grid(
+            row=0, column=4, padx=(0, 5)
         )
         ttk.Button(
             profile_toolbar,
             text="실행표 전송",
             command=self._submit_run_profiles,
             style="Primary.TButton",
-        ).grid(row=0, column=4)
+        ).grid(row=0, column=5)
         self.run_profile_tree = ttk.Treeview(profiles, show="headings", height=5, selectmode="extended")
         self.run_profile_tree.grid(row=1, column=0, sticky="ew")
         run_profile_scroll = ttk.Scrollbar(profiles, orient="vertical", command=self.run_profile_tree.yview)
@@ -682,7 +694,7 @@ class RigFtpApp(tk.Tk):
         self.run_profile_tree.bind("<Button-1>", self._toggle_run_profile, add="+")
         self._refresh_run_profile_columns()
 
-        packages_frame = ttk.Labelframe(run_page, text="매크로 목록", padding=10)
+        packages_frame = ttk.Labelframe(run_page, text="자동화 / SEQ 목록", padding=10)
         packages_frame.grid(row=3, column=0, sticky="nsew", padx=(0, 8), pady=(0, 8))
         packages_frame.rowconfigure(0, weight=1)
         packages_frame.columnconfigure(0, weight=1)
@@ -693,7 +705,7 @@ class RigFtpApp(tk.Tk):
         package_scroll.grid(row=0, column=1, sticky="ns")
         self.package_list.configure(yscrollcommand=package_scroll.set)
 
-        detail_frame = ttk.Labelframe(run_page, text="선택 매크로 정보", padding=10)
+        detail_frame = ttk.Labelframe(run_page, text="선택 파일 정보", padding=10)
         detail_frame.grid(row=3, column=1, sticky="nsew", pady=(0, 8))
         detail_frame.rowconfigure(0, weight=1)
         detail_frame.columnconfigure(0, weight=1)
@@ -877,15 +889,32 @@ class RigFtpApp(tk.Tk):
 
     def _browse_package(self) -> None:
         path = filedialog.askopenfilename(
-            title="Select macro package",
-            filetypes=[("Python", "*.py"), ("All files", "*.*")],
+            title="Select automation or Rig SEQ package",
+            filetypes=[
+                ("Automation / Rig SEQ", "*.py *.rigseq.zip"),
+                ("Rig SEQ package", "*.rigseq.zip"),
+                ("Python workflow", "*.py"),
+                ("All files", "*.*"),
+            ],
         )
         if path:
             self.package_file_var.set(path)
-            if not self.package_name_var.get().strip():
-                self.package_name_var.set(Path(path).name)
-            if not self.package_title_var.get().strip():
-                self.package_title_var.set(Path(path).stem)
+            self.package_name_var.set(Path(path).name)
+            title = Path(path).stem
+            notes = ""
+            if Path(path).name.casefold().endswith(".rigseq.zip"):
+                try:
+                    bundle = read_rig_sequence_bundle(path)
+                except (OSError, RigSequenceBundleError):
+                    pass
+                else:
+                    title = bundle.recipe_name
+                    details = bundle.package_details()
+                    notes = str(details.get("purpose") or details.get("product") or "")
+            self.package_title_var.set(title)
+            self.package_notes_text.delete("1.0", "end")
+            if notes:
+                self.package_notes_text.insert("1.0", notes)
 
     def _create_example_config(self) -> None:
         path = Path(self.config_path_var.get().strip() or DEFAULT_CONFIG)
@@ -1185,11 +1214,17 @@ class RigFtpApp(tk.Tk):
                 variables.setdefault(name, row_package.variables.get(name, "") if row_package else "")
         columns = ("enabled", "alias", "target", "package", *[f"var::{name}" for name in variable_names])
         self.run_profile_tree.configure(columns=columns)
-        base_headings = {"enabled": "실행", "alias": "별명", "target": "PC / Node", "package": "매크로"}
+        base_headings = {"enabled": "실행", "alias": "별명", "target": "PC / Node", "package": "SEQ / 매크로"}
         base_widths = {"enabled": 54, "alias": 90, "target": 130, "package": 170}
+        variable_headings = {
+            "channel": "CH",
+            "slot_id": "슬롯",
+            "launcher_package": "SK Commander 런처",
+        }
         for column in columns:
             if column.startswith("var::"):
-                heading = column.removeprefix("var::")
+                variable_name = column.removeprefix("var::")
+                heading = variable_headings.get(variable_name, variable_name)
                 width = 150
             else:
                 heading = base_headings[column]
@@ -1224,7 +1259,17 @@ class RigFtpApp(tk.Tk):
     def _profile_base_variables(self, package: PackageInfo | None) -> dict[str, str]:
         variables = dict(package.variables if package else {})
         variables.update(self._parse_vars(self.job_vars_var.get()))
+        if package and package.runner == "sequence" and not variables.get("launcher_package"):
+            variables["launcher_package"] = self.sequence_launcher_var.get().strip()
         return variables
+
+    def _require_sequence_launcher(self, launcher_name: str) -> PackageInfo:
+        launcher = next((item for item in self._packages if item.name == launcher_name), None)
+        if launcher is None:
+            raise FtpSpoolError(f"SK Commander 런처를 찾을 수 없습니다: {launcher_name or '(미선택)'}")
+        if launcher.runner != "workflow":
+            raise FtpSpoolError("SK Commander 런처는 Picker에서 export한 workflow여야 합니다.")
+        return launcher
 
     def _load_run_profiles_from_config(self) -> None:
         try:
@@ -1288,6 +1333,24 @@ class RigFtpApp(tk.Tk):
                 self._run_profiles.pop(index)
         self._refresh_run_profile_columns()
 
+    def _duplicate_run_profiles(self) -> None:
+        selected = [int(iid) for iid in self.run_profile_tree.selection() if iid.isdigit()]
+        if not selected:
+            raise_message = "복제할 실행표 행을 먼저 선택하세요."
+            self._show_error(FtpSpoolError(raise_message))
+            return
+        copies: list[dict[str, Any]] = []
+        for index in selected:
+            if 0 <= index < len(self._run_profiles):
+                source = self._run_profiles[index]
+                copy = dict(source)
+                copy["variables"] = dict(source.get("variables", {}))
+                copy["variables"]["channel"] = ""
+                copy["variables"]["slot_id"] = ""
+                copies.append(copy)
+        self._run_profiles.extend(copies)
+        self._refresh_run_profile_columns()
+
     def _toggle_run_profile(self, event: Any) -> str | None:
         row_id = self.run_profile_tree.identify_row(event.y)
         column_id = self.run_profile_tree.identify_column(event.x)
@@ -1345,6 +1408,17 @@ class RigFtpApp(tk.Tk):
             for row in rows:
                 if not str(row.get("target", "")).strip() or not str(row.get("package", "")).strip():
                     raise FtpSpoolError("모든 실행 행에 PC / Node와 매크로를 입력하세요.")
+                package = next(
+                    (item for item in self._packages if item.name == str(row["package"])),
+                    None,
+                )
+                if package is None:
+                    raise FtpSpoolError(f"업로드 목록에 없는 파일입니다: {row['package']}")
+                if package.runner == "sequence":
+                    launcher_name = str(row.get("variables", {}).get("launcher_package", "")).strip()
+                    launcher_name = launcher_name or self.sequence_launcher_var.get().strip()
+                    self._require_sequence_launcher(launcher_name)
+                    row.setdefault("variables", {})["launcher_package"] = launcher_name
         except BaseException as exc:
             self._show_error(exc)
             return
@@ -1360,6 +1434,7 @@ class RigFtpApp(tk.Tk):
                     kind=package_job_kind(package) if package else "python",
                     payload={
                         "package": str(row["package"]),
+                        "launcher_package": str(row.get("variables", {}).get("launcher_package", "")),
                         "args": args,
                         "timeout_seconds": timeout,
                         "pass_variables": bool(package and package.runner == "python" and package.variables),
@@ -1419,10 +1494,16 @@ class RigFtpApp(tk.Tk):
         args = shlex.split(self.job_args_var.get(), posix=False) if self.job_args_var.get().strip() else []
         variables = self._parse_vars(self.job_vars_var.get())
         targets = self._targets(self.job_target_var.get(), config=_config) or ["all"]
+        launcher_name = ""
+        if package.runner == "sequence":
+            launcher_name = variables.get("launcher_package", "") or self.sequence_launcher_var.get().strip()
+            self._require_sequence_launcher(launcher_name)
+            variables["launcher_package"] = launcher_name
         job = SpoolJob.create(
             kind=package_job_kind(package),
             payload={
                 "package": package.name,
+                "launcher_package": launcher_name,
                 "args": args,
                 "timeout_seconds": timeout,
                 "pass_variables": bool(package.runner == "python" and package.variables),
@@ -2105,7 +2186,7 @@ class RigFtpApp(tk.Tk):
         lines = [
             f"Name: {package.name}",
             f"Title: {package.title or '-'}",
-            f"Runner: {'내장 워크플로 엔진' if package.runner == 'workflow' else '외부 Python'}",
+            f"Runner: {self._runner_label(package.runner)}",
             f"Uploaded: {package.uploaded_at or '-'}",
             f"Path: {package.path}",
             "",
@@ -2113,15 +2194,51 @@ class RigFtpApp(tk.Tk):
         ]
         if package.variables:
             lines.extend(["", "PC별 입력값", *[f"- {key}: {value}" for key, value in package.variables.items()]])
+        if package.details:
+            lines.extend(["", "SEQ 검증 정보"])
+            detail_labels = {
+                "bundle_id": "Bundle ID",
+                "recipe_name": "Recipe",
+                "command_set": "Command Set",
+                "compatibility_level": "Compatibility",
+                "field_verified": "Field Verified",
+                "block_count": "Blocks",
+                "command_count": "Commands",
+                "corners": "Corners",
+                "purpose": "Purpose",
+                "product": "Product",
+            }
+            for key, value in package.details.items():
+                if value not in ("", None, []):
+                    rendered = ", ".join(value) if isinstance(value, list) else value
+                    lines.append(f"- {detail_labels.get(key, key)}: {rendered}")
         self.package_detail_text.insert("1.0", "\n".join(lines))
         self._refresh_run_profile_columns()
 
+    @staticmethod
+    def _runner_label(runner: str) -> str:
+        return {
+            "workflow": "내장 워크플로 엔진",
+            "sequence": "검증된 Rig SEQ + SK Commander 런처",
+            "python": "외부 Python",
+        }.get(runner, runner)
+
     def _set_packages(self, packages: list[PackageInfo]) -> None:
         self._packages = packages
+        launchers = [package.name for package in packages if package.runner == "workflow"]
+        current_launcher = self.sequence_launcher_var.get().strip()
+        self.sequence_launcher_combo.configure(values=launchers)
+        if current_launcher in launchers:
+            self.sequence_launcher_var.set(current_launcher)
+        elif launchers:
+            self.sequence_launcher_var.set(launchers[0])
+        else:
+            self.sequence_launcher_var.set("")
         self.package_list.delete(0, "end")
         for package in packages:
             title = package.title or package.name
-            self.package_list.insert("end", f"{title}  [{package.name}]")
+            badge = {"sequence": "SEQ", "workflow": "FLOW", "python": "PY"}.get(package.runner, package.runner.upper())
+            self.package_list.insert("end", f"[{badge}] {title}  [{package.name}]")
         if packages:
             self.package_list.selection_set(0)
             self.package_list.activate(0)

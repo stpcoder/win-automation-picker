@@ -1,8 +1,11 @@
 import json
+from hashlib import sha256
+import os
 import sys
 import threading
 import time
 from datetime import datetime, timedelta, timezone
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
 
@@ -25,9 +28,53 @@ from win_automation_picker.ftp_spool import (
     request_stop,
     run_slave_once,
     submit_job,
+    _prune_staged_sequence_dirs,
 )
 from win_automation_picker.recipe import AutomationRecipe, AutomationStep
+from win_automation_picker.sequence_bundle import RigSequenceBundleError, read_rig_sequence_bundle
 from win_automation_picker.selector import SelectorSegment, UISelector
+
+
+def _write_rig_sequence_bundle(
+    path,
+    *,
+    sequence: bytes = b"#SMOKE\nreset;\n",
+    declared_sequence_sha: str = "",
+) -> None:
+    recipe = (json.dumps({"name": "DRAM Four Corner", "command_set": "hdiag64_default"}) + "\n").encode()
+    validation = {
+        "ok": True,
+        "compatibility_level": "structural",
+        "block_count": 1,
+        "command_count": 1,
+        "issues": [],
+    }
+    validation_bytes = (json.dumps(validation) + "\n").encode()
+    manifest = {
+        "schema": "rig-sequence-bundle/v1",
+        "bundle_id": sha256(sequence).hexdigest()[:16],
+        "sequence": {
+            "path": "sequence.seq",
+            "sha256": declared_sequence_sha or sha256(sequence).hexdigest(),
+            "block_count": 1,
+            "command_count": 1,
+        },
+        "recipe": {
+            "path": "recipe.hseq.json",
+            "sha256": sha256(recipe).hexdigest(),
+            "name": "DRAM Four Corner",
+            "command_set": "hdiag64_default",
+        },
+        "validation": {"path": "validation.json", **validation},
+        "compatibility": {"level": "structural", "field_verified": False},
+        "coverage": {"corners": ["HH", "HL", "CH", "CL"]},
+        "metadata": {"purpose": "Row Hammer", "product": "LPDDR"},
+    }
+    with ZipFile(path, "w", compression=ZIP_DEFLATED) as archive:
+        archive.writestr("manifest.json", json.dumps(manifest))
+        archive.writestr("sequence.seq", sequence)
+        archive.writestr("recipe.hseq.json", recipe)
+        archive.writestr("validation.json", validation_bytes)
 
 
 def test_initialize_spool_creates_node_folders(tmp_path) -> None:
@@ -234,6 +281,98 @@ def test_deploy_package_writes_metadata(tmp_path) -> None:
     assert packages[0].runner == "python"
     assert packages[0].variables == {"sequence": "Seq 1"}
     assert (tmp_path / "packages" / "smoke.py.meta.json").exists()
+
+
+def test_deploy_rig_sequence_bundle_detects_runner_and_metadata(tmp_path) -> None:
+    backend = LocalSpoolBackend(tmp_path / "spool")
+    source = tmp_path / "four-corner.rigseq.zip"
+    _write_rig_sequence_bundle(source)
+
+    deploy_package(backend, source)
+    package = list_packages(backend)[0]
+
+    assert package.runner == "sequence"
+    assert package.title == "DRAM Four Corner"
+    assert package.variables == {"channel": "", "slot_id": "", "launcher_package": ""}
+    assert package.details["command_set"] == "hdiag64_default"
+    assert package.details["corners"] == ["HH", "HL", "CH", "CL"]
+    assert package.details["field_verified"] is False
+
+
+def test_rig_sequence_bundle_rejects_checksum_mismatch(tmp_path) -> None:
+    source = tmp_path / "bad.rigseq.zip"
+    _write_rig_sequence_bundle(source, declared_sequence_sha="0" * 64)
+
+    with pytest.raises(RigSequenceBundleError, match="checksum"):
+        read_rig_sequence_bundle(source)
+
+
+def test_slave_stages_sequence_and_runs_picker_launcher(tmp_path) -> None:
+    backend = LocalSpoolBackend(tmp_path / "spool")
+    sequence_package = tmp_path / "four-corner.rigseq.zip"
+    _write_rig_sequence_bundle(sequence_package)
+    launcher = tmp_path / "sk-launcher.py"
+    launcher.write_text(
+        generate_python_script(AutomationRecipe(steps=[AutomationStep.wait(0)])),
+        encoding="utf-8",
+    )
+    deploy_package(backend, sequence_package)
+    deploy_package(backend, launcher)
+    initialize_spool(backend, nodes=["rig-pc-04"])
+    work_dir = tmp_path / "work"
+    submit_job(
+        backend,
+        SpoolJob.create(
+            kind="sequence",
+            payload={
+                "package": "four-corner.rigseq.zip",
+                "launcher_package": "sk-launcher.py",
+            },
+            variables={"channel": "CH11", "slot_id": "S3"},
+            job_id="sequence-job",
+        ),
+        ["rig-pc-04"],
+    )
+
+    result = run_slave_once(
+        backend,
+        FtpSpoolConfig(
+            node_id="rig-pc-04",
+            work_dir=str(work_dir),
+            capture_on_error=False,
+        ),
+    )[0]
+
+    assert result.ok
+    assert "DRAM Four Corner" in result.stdout
+    assert "channel='CH11' slot='S3'" in result.stdout
+    staged = list((work_dir / "sequences").glob("*/sequence.seq"))
+    assert len(staged) == 1
+    assert staged[0].read_bytes() == b"#SMOKE\nreset;\n"
+
+
+def test_staged_sequence_cleanup_only_removes_owned_hash_directories(tmp_path) -> None:
+    root = tmp_path / "sequences"
+    for index in range(4):
+        directory = root / f"{index:016x}"
+        directory.mkdir(parents=True)
+        (directory / "sequence.seq").write_text(f"#{index}\n", encoding="utf-8")
+        os.utime(directory, (index + 1, index + 1))
+    protected = root / "user-folder"
+    protected.mkdir()
+    (protected / "notes.txt").write_text("keep", encoding="utf-8")
+    unexpected = root / "ffffffffffffffff"
+    unexpected.mkdir()
+    (unexpected / "notes.txt").write_text("keep", encoding="utf-8")
+
+    _prune_staged_sequence_dirs(root, preserve="0000000000000003", max_directories=2)
+
+    assert (root / "0000000000000003" / "sequence.seq").exists()
+    assert (root / "0000000000000002" / "sequence.seq").exists()
+    assert not (root / "0000000000000000").exists()
+    assert not (root / "0000000000000001").exists()
+    assert (protected / "notes.txt").exists()
+    assert (unexpected / "notes.txt").exists()
 
 
 def test_exported_workflow_uses_embedded_runner_without_external_python(tmp_path) -> None:

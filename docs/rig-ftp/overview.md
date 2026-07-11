@@ -14,7 +14,7 @@ Master PC
 
 FTP Server
   /win_automation_macros
-    ├─ packages/
+    ├─ packages/  (workflow, Python, .rigseq.zip)
     ├─ commands/
     ├─ status/
     ├─ results/
@@ -31,7 +31,7 @@ Slave PC
 
 | 폴더 | 역할 |
 | --- | --- |
-| `packages/` | master가 업로드한 workflow 또는 고급 Python package |
+| `packages/` | master가 업로드한 workflow, 고급 Python, 검증된 Rig SEQ package |
 | `commands/{node}/pending/` | 특정 slave용 job |
 | `commands/all/pending/` | 전체 slave broadcast job |
 | `status/` | slave heartbeat |
@@ -51,3 +51,5 @@ Slave PC
 7. `상태 모니터링`에서 상태, 결과와 요청한 전체 화면을 확인합니다.
 
 Win Automation Picker가 export한 workflow는 slave EXE의 내장 엔진으로 실행됩니다. 별도 Python 설치는 필요하지 않습니다. 사용자가 직접 만든 일반 Python 파일을 업로드할 때만 slave의 `외부 Python (고급)` 경로와 모듈 설치가 필요합니다.
+
+Test Sequence Generator가 내보낸 `.rigseq.zip`은 Slave가 체크섬과 validation 상태를 다시 확인한 뒤 로컬에 저장합니다. 이후 Picker에서 만든 SK Commander 런처 workflow에 `${seq_path}`, `${channel}`, `${slot_id}`를 전달합니다. 전체 절차는 [SEQ Generator와 SK Commander 연동](seq-integration.md)을 따릅니다.
