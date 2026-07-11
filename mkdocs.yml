@@ -47,6 +47,7 @@ nav:
       - Python export: macro-builder/python-export.md
   - 원격 운영:
       - FTP master/slave 개요: rig-ftp/overview.md
+      - AE 캠페인 운영: rig-ftp/ae-campaign.md
       - SEQ Generator와 SK Commander: rig-ftp/seq-integration.md
       - Master 세팅: rig-ftp/master-setup.md
       - Slave 세팅: rig-ftp/slave-setup.md

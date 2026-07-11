@@ -59,6 +59,14 @@
 3. `.xlsx` 저장 위치를 선택합니다.
 
 파일에는 `PC State`와 `CH Inventory` 두 시트가 생성됩니다. 두 번째 시트는 SoC, binary provenance, 자재, test/SEQ, 현재/완료/전체 Grid를 행 단위로 내보냅니다.
+Campaign ID/제목/attempt, acceptance와 failure class도 같은 CH 행에 포함됩니다.
+
+## AE 실패 분류
+
+결과 행을 선택하고 `더보기 > 선택 결과 분류`를 누르면 자동 분류를 검토하고 담당자,
+재시험/보류/종결 조치와 근거를 남길 수 있습니다. 기록은 원본 result JSON이 아니라
+`triage/{node}/{job}.json`에 별도로 저장됩니다. 자세한 흐름은
+[AE 캠페인 운영](ae-campaign.md)을 참고합니다.
 
 ## 오래된 파일 정리
 

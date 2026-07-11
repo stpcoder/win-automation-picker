@@ -28,6 +28,7 @@ from win_automation_picker.ftp_spool import (
     list_status,
     request_stop,
     run_slave_once,
+    save_triage_record,
     submit_job,
     _prune_staged_sequence_dirs,
     _monitor_grid_progress,
@@ -42,6 +43,8 @@ def _write_rig_sequence_bundle(
     *,
     sequence: bytes = b"#SMOKE\nreset;\n",
     declared_sequence_sha: str = "",
+    campaign: bool = False,
+    campaign_snapshot_sha: str = "",
 ) -> None:
     recipe = (json.dumps({"name": "DRAM Four Corner", "command_set": "hdiag64_default"}) + "\n").encode()
     validation = {
@@ -72,6 +75,42 @@ def _write_rig_sequence_bundle(
         "coverage": {"corners": ["HH", "HL", "CH", "CL"]},
         "metadata": {"purpose": "Row Hammer", "product": "LPDDR"},
     }
+    if campaign:
+        snapshot = {
+            "schema": "ae-test-campaign/v1",
+            "campaign_id": "AE-20260711-001",
+            "title": "LPDDR qualification",
+            "owner": "mobile-dram-ae",
+            "status": "ready",
+            "priority": "high",
+            "test_type": "Qualification",
+            "objective": "Verify four-corner behavior.",
+            "hypothesis": "Every Grid completes without a critical failure.",
+            "expected_result": "PASS",
+            "acceptance_criteria": "All targets pass",
+            "stop_condition": "Stop affected target on critical fail",
+            "repeat_count": 2,
+            "purpose": "Qualification",
+            "product": "LPDDR5X",
+        }
+        canonical = json.dumps(
+            snapshot,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode()
+        manifest["campaign"] = {
+            "schema": "ae-campaign-bundle/v1",
+            "snapshot": snapshot,
+            "snapshot_sha256": campaign_snapshot_sha or sha256(canonical).hexdigest(),
+            "preflight": {
+                "schema": "ae-campaign-preflight/v1",
+                "campaign_id": snapshot["campaign_id"],
+                "checked_at": "2026-07-11T12:00:00+00:00",
+                "ok": True,
+                "checks": [],
+            },
+        }
     with ZipFile(path, "w", compression=ZIP_DEFLATED) as archive:
         archive.writestr("manifest.json", json.dumps(manifest))
         archive.writestr("sequence.seq", sequence)
@@ -334,7 +373,12 @@ def test_deploy_rig_sequence_bundle_detects_runner_and_metadata(tmp_path) -> Non
 
     assert package.runner == "sequence"
     assert package.title == "DRAM Four Corner"
-    assert package.variables == {"channel": "", "slot_id": "", "launcher_package": ""}
+    assert package.variables == {
+        "channel": "",
+        "slot_id": "",
+        "launcher_package": "",
+        "campaign_attempt": "1",
+    }
     assert package.details["command_set"] == "hdiag64_default"
     assert package.details["corners"] == ["HH", "HL", "CH", "CL"]
     assert package.details["field_verified"] is False
@@ -348,10 +392,68 @@ def test_rig_sequence_bundle_rejects_checksum_mismatch(tmp_path) -> None:
         read_rig_sequence_bundle(source)
 
 
+def test_campaign_bundle_is_verified_and_exposed_as_package_metadata(tmp_path) -> None:
+    backend = LocalSpoolBackend(tmp_path / "spool")
+    source = tmp_path / "campaign.rigseq.zip"
+    _write_rig_sequence_bundle(source, campaign=True)
+
+    deploy_package(backend, source)
+    package = list_packages(backend)[0]
+
+    assert package.details["campaign_id"] == "AE-20260711-001"
+    assert package.details["campaign_title"] == "LPDDR qualification"
+    assert package.details["repeat_count"] == 2
+    assert package.details["preflight_ok"] is True
+    assert package.variables["campaign_id"] == "AE-20260711-001"
+
+
+def test_campaign_bundle_rejects_tampered_snapshot(tmp_path) -> None:
+    source = tmp_path / "tampered-campaign.rigseq.zip"
+    _write_rig_sequence_bundle(source, campaign=True, campaign_snapshot_sha="0" * 64)
+
+    with pytest.raises(RigSequenceBundleError, match="campaign snapshot checksum"):
+        read_rig_sequence_bundle(source)
+
+
+def test_campaign_attempt_must_fit_declared_repeat_count(tmp_path) -> None:
+    backend = LocalSpoolBackend(tmp_path / "spool")
+    sequence_package = tmp_path / "campaign.rigseq.zip"
+    _write_rig_sequence_bundle(sequence_package, campaign=True)
+    launcher = tmp_path / "sk-launcher.py"
+    launcher.write_text(
+        generate_python_script(AutomationRecipe(steps=[AutomationStep.wait(0)])),
+        encoding="utf-8",
+    )
+    deploy_package(backend, sequence_package)
+    deploy_package(backend, launcher)
+    initialize_spool(backend, nodes=["rig-pc-04"])
+    submit_job(
+        backend,
+        SpoolJob.create(
+            kind="sequence",
+            payload={
+                "package": "campaign.rigseq.zip",
+                "launcher_package": "sk-launcher.py",
+            },
+            variables={"campaign_attempt": "3", "channel": "CH11"},
+            job_id="invalid-attempt",
+        ),
+        ["rig-pc-04"],
+    )
+
+    result = run_slave_once(
+        backend,
+        FtpSpoolConfig(node_id="rig-pc-04", capture_on_error=False),
+    )[0]
+
+    assert not result.ok
+    assert "between 1 and 2" in result.stderr
+
+
 def test_slave_stages_sequence_and_runs_picker_launcher(tmp_path) -> None:
     backend = LocalSpoolBackend(tmp_path / "spool")
     sequence_package = tmp_path / "four-corner.rigseq.zip"
-    _write_rig_sequence_bundle(sequence_package)
+    _write_rig_sequence_bundle(sequence_package, campaign=True)
     launcher = tmp_path / "sk-launcher.py"
     launcher.write_text(
         generate_python_script(AutomationRecipe(steps=[AutomationStep.wait(0)])),
@@ -369,12 +471,13 @@ def test_slave_stages_sequence_and_runs_picker_launcher(tmp_path) -> None:
                 "package": "four-corner.rigseq.zip",
                 "launcher_package": "sk-launcher.py",
             },
-            variables={"channel": "CH11", "slot_id": "S3"},
+            variables={"channel": "CH11", "slot_id": "S3", "campaign_attempt": "2"},
             job_id="sequence-job",
         ),
         ["rig-pc-04"],
     )
 
+    status_context: dict = {}
     result = run_slave_once(
         backend,
         FtpSpoolConfig(
@@ -382,12 +485,16 @@ def test_slave_stages_sequence_and_runs_picker_launcher(tmp_path) -> None:
             work_dir=str(work_dir),
             capture_on_error=False,
         ),
+        status_context=status_context,
     )[0]
 
     assert result.ok
     assert result.details["channel_id"] == "CH11"
     assert result.details["sequence_name"] == "DRAM Four Corner"
     assert result.details["total_grids"] == 1
+    assert result.details["campaign_id"] == "AE-20260711-001"
+    assert result.details["campaign_attempt"] == 2
+    assert result.details["acceptance_result"] == "pending"
     assert "DRAM Four Corner" in result.stdout
     assert "channel='CH11' slot='S3'" in result.stdout
     staged = list((work_dir / "sequences").glob("*/sequence.seq"))
@@ -399,6 +506,37 @@ def test_slave_stages_sequence_and_runs_picker_launcher(tmp_path) -> None:
     assert status["channels"][0]["state"] == "running"
     assert status["channels"][0]["sequence_name"] == "DRAM Four Corner"
     assert status["channels"][0]["total_grids"] == 1
+    assert status["channels"][0]["campaign_id"] == "AE-20260711-001"
+    assert status["channels"][0]["campaign_attempt"] == "2"
+    assert status["campaign_runs"][0]["campaign_attempt"] == 2
+
+    submit_job(
+        backend,
+        SpoolJob.create(
+            kind="sequence",
+            payload={
+                "package": "four-corner.rigseq.zip",
+                "launcher_package": "sk-launcher.py",
+            },
+            variables={"channel": "CH11", "slot_id": "S3", "campaign_attempt": "1"},
+            job_id="sequence-job-attempt-1",
+        ),
+        ["rig-pc-04"],
+    )
+    run_slave_once(
+        backend,
+        FtpSpoolConfig(
+            node_id="rig-pc-04",
+            work_dir=str(work_dir),
+            capture_on_error=False,
+        ),
+        status_context=status_context,
+    )
+    attempts = {
+        int(run["campaign_attempt"])
+        for run in list_status(backend)[0]["campaign_runs"]
+    }
+    assert attempts == {1, 2}
 
 
 def test_staged_sequence_cleanup_only_removes_owned_hash_directories(tmp_path) -> None:
@@ -607,6 +745,52 @@ def test_status_and_results_are_listed(tmp_path) -> None:
     assert status["last_ok"] is True
     assert "last PASS: job-list" in status["message"]
     assert list_results(backend, "rig-pc-01")[0]["job_id"] == "job-list"
+
+
+def test_triage_sidecar_preserves_result_and_merges_operator_disposition(tmp_path) -> None:
+    backend = LocalSpoolBackend(tmp_path)
+    config = FtpSpoolConfig(node_id="rig-pc-01", capture_on_error=False)
+    initialize_spool(backend, nodes=["rig-pc-01"])
+    submit_job(
+        backend,
+        SpoolJob.create(
+            kind="shell",
+            payload={"args": [sys.executable, "-c", "raise SystemExit(1)"]},
+            job_id="job-triage",
+        ),
+        ["rig-pc-01"],
+    )
+    result = run_slave_once(backend, config)[0]
+    original = (tmp_path / "results" / "rig-pc-01" / "job-triage.json").read_bytes()
+
+    path = save_triage_record(
+        backend,
+        "rig-pc-01",
+        result.job_id,
+        failure_class="setup",
+        disposition="retest",
+        owner="mobile-dram-ae",
+        notes="Correct the CH mapping and rerun.",
+    )
+    merged = list_results(backend, "rig-pc-01")[0]
+
+    assert path == "triage/rig-pc-01/job-triage.json"
+    assert merged["triage"]["failure_class"] == "setup"
+    assert merged["triage"]["disposition"] == "retest"
+    assert (tmp_path / "results" / "rig-pc-01" / "job-triage.json").read_bytes() == original
+
+
+def test_triage_rejects_unknown_classification(tmp_path) -> None:
+    backend = LocalSpoolBackend(tmp_path)
+
+    with pytest.raises(FtpSpoolError, match="failure class"):
+        save_triage_record(
+            backend,
+            "rig-pc-01",
+            "job-1",
+            failure_class="anything",
+            disposition="open",
+        )
 
 
 def test_broadcast_job_is_processed_once_per_slave(tmp_path) -> None:

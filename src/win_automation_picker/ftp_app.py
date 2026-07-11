@@ -39,6 +39,7 @@ from .ftp_spool import (
     package_job_kind,
     request_stop,
     run_slave_once,
+    save_triage_record,
     submit_job,
     write_example_spool_config,
 )
@@ -60,6 +61,7 @@ class RigFtpApp(tk.Tk):
 
         self._queue: queue.Queue[tuple[str, Any]] = queue.Queue()
         self._packages: list[PackageInfo] = []
+        self._campaign_choices: dict[str, PackageInfo] = {}
         self._run_profiles: list[dict[str, Any]] = []
         self._settings_variables: dict[str, str] = {}
         self._settings_slaves: list[dict[str, Any]] = []
@@ -817,12 +819,16 @@ class RigFtpApp(tk.Tk):
         parent.rowconfigure(0, weight=1)
 
         workspace = ttk.Notebook(parent)
+        self.master_workspace = workspace
         workspace.grid(row=0, column=0, sticky="nsew")
+        campaign_page = ttk.Frame(workspace, padding=8)
         run_page = ttk.Frame(workspace, padding=8)
         monitor_page = ttk.Frame(workspace, padding=8)
+        workspace.add(campaign_page, text="AE 캠페인")
         workspace.add(run_page, text="실행 및 배포")
         workspace.add(monitor_page, text="상태 모니터링")
 
+        self._build_campaign_page(campaign_page)
         run_page.columnconfigure(0, weight=1)
         run_page.columnconfigure(1, weight=1)
         run_page.rowconfigure(3, weight=1)
@@ -1024,6 +1030,7 @@ class RigFtpApp(tk.Tk):
         monitor_more_button.grid(row=0, column=6, sticky="w")
         monitor_more = tk.Menu(monitor_more_button, tearoff=False)
         monitor_more.add_command(label="선택 작업 긴급 중단", command=self._stop_selected_job)
+        monitor_more.add_command(label="선택 결과 분류", command=self._triage_selected_result)
         monitor_more.add_command(label="Excel 내보내기", command=self._export_state_excel)
         monitor_more.add_command(label="오래된 파일 정리", command=self._cleanup_node)
         monitor_more_button["menu"] = monitor_more
@@ -1079,8 +1086,12 @@ class RigFtpApp(tk.Tk):
             "lot_sample",
             "test",
             "sequence",
+            "campaign",
+            "attempt",
             "state",
             "grid",
+            "acceptance",
+            "failure",
         )
         self.channel_status_tree = ttk.Treeview(
             channel_status_page,
@@ -1101,8 +1112,12 @@ class RigFtpApp(tk.Tk):
             "lot_sample": "Lot / Sample",
             "test": "현재 Test",
             "sequence": "SEQ",
+            "campaign": "캠페인",
+            "attempt": "시도",
             "state": "상태",
             "grid": "Grid 진행",
+            "acceptance": "판정",
+            "failure": "실패 분류",
         }
         channel_widths = {
             "alias": 75,
@@ -1117,8 +1132,12 @@ class RigFtpApp(tk.Tk):
             "lot_sample": 150,
             "test": 130,
             "sequence": 160,
+            "campaign": 180,
+            "attempt": 55,
             "state": 85,
             "grid": 150,
+            "acceptance": 80,
+            "failure": 100,
         }
         for column in channel_columns:
             self.channel_status_tree.heading(column, text=channel_headings[column])
@@ -1164,16 +1183,26 @@ class RigFtpApp(tk.Tk):
             pady=(6, 0),
         )
 
-        result_columns = ("state", "job", "kind", "finished", "message")
+        result_columns = ("state", "job", "campaign", "kind", "finished", "failure", "message")
         self.result_tree = ttk.Treeview(monitor, columns=result_columns, show="headings", height=4)
         result_headings = {
             "state": "결과",
             "job": "작업 ID",
+            "campaign": "캠페인 / 시도",
             "kind": "유형",
             "finished": "완료 시각",
+            "failure": "실패 분류",
             "message": "요약",
         }
-        result_widths = {"state": 70, "job": 240, "kind": 90, "finished": 170, "message": 350}
+        result_widths = {
+            "state": 60,
+            "job": 150,
+            "campaign": 180,
+            "kind": 75,
+            "finished": 155,
+            "failure": 100,
+            "message": 280,
+        }
         for column in result_columns:
             self.result_tree.heading(column, text=result_headings[column])
             self.result_tree.column(column, width=result_widths[column], anchor="w")
@@ -1200,6 +1229,126 @@ class RigFtpApp(tk.Tk):
         log_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.master_log_text.yview)
         log_scroll.grid(row=0, column=1, sticky="ns")
         self.master_log_text.configure(yscrollcommand=log_scroll.set)
+
+    def _build_campaign_page(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(2, weight=1)
+
+        flow = ttk.Frame(parent, style="Panel.TFrame", padding=(10, 8))
+        flow.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        for column, label in enumerate(
+            ("1 계획", "2 준비", "3 사전 점검", "4 실행", "5 분석", "6 완료")
+        ):
+            flow.columnconfigure(column, weight=1)
+            ttk.Label(flow, text=label, style="Panel.TLabel", anchor="center").grid(
+                row=0, column=column, sticky="ew", padx=4
+            )
+
+        header = ttk.Labelframe(parent, text="캠페인 선택과 판정 기준", padding=10)
+        header.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        header.columnconfigure(1, weight=1)
+        header.columnconfigure(4, weight=2)
+        ttk.Label(header, text="캠페인").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        self.campaign_filter_var = tk.StringVar(value="")
+        self.campaign_filter_combo = ttk.Combobox(
+            header,
+            textvariable=self.campaign_filter_var,
+            state="readonly",
+        )
+        self.campaign_filter_combo.grid(row=0, column=1, sticky="ew", padx=(0, 8))
+        self.campaign_filter_combo.bind("<<ComboboxSelected>>", self._campaign_filter_changed)
+        ttk.Button(header, text="상태 새로고침", command=self._refresh_status).grid(
+            row=0, column=2, padx=(0, 6)
+        )
+        ttk.Button(header, text="실행표 열기", command=lambda: self.master_workspace.select(1)).grid(
+            row=0, column=3, padx=(0, 8)
+        )
+        self.campaign_board_loaded_var = tk.StringVar(value="마지막 상태 조회: -")
+        ttk.Label(header, textvariable=self.campaign_board_loaded_var).grid(
+            row=0, column=4, sticky="e"
+        )
+        self.campaign_summary_text = tk.Text(header, height=6, wrap="word")
+        self.campaign_summary_text.grid(
+            row=1, column=0, columnspan=5, sticky="ew", pady=(8, 0)
+        )
+        summary_font = ("Segoe UI", 10) if sys.platform.startswith("win") else ("TkDefaultFont", 10)
+        self.campaign_summary_text.configure(
+            state="disabled",
+            background="#ffffff",
+            foreground="#111827",
+            insertbackground="#111827",
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground="#d7dde6",
+            padx=8,
+            pady=6,
+            font=summary_font,
+        )
+
+        board = ttk.Labelframe(parent, text="PC / CH 실행 보드", padding=10)
+        board.grid(row=2, column=0, sticky="nsew")
+        board.columnconfigure(0, weight=1)
+        board.rowconfigure(0, weight=1)
+        columns = (
+            "pc",
+            "channel",
+            "slot",
+            "material",
+            "soc",
+            "binary",
+            "attempt",
+            "state",
+            "grid",
+            "acceptance",
+            "failure",
+            "updated",
+        )
+        self.campaign_tree = ttk.Treeview(board, columns=columns, show="headings")
+        headings = {
+            "pc": "PC",
+            "channel": "CH / 이름",
+            "slot": "Slot",
+            "material": "DRAM 자재",
+            "soc": "SoC",
+            "binary": "Binary",
+            "attempt": "시도",
+            "state": "실행 상태",
+            "grid": "Grid 진행",
+            "acceptance": "판정",
+            "failure": "실패 분류",
+            "updated": "마지막 갱신",
+        }
+        widths = {
+            "pc": 65,
+            "channel": 80,
+            "slot": 55,
+            "material": 110,
+            "soc": 100,
+            "binary": 125,
+            "attempt": 45,
+            "state": 75,
+            "grid": 120,
+            "acceptance": 70,
+            "failure": 90,
+            "updated": 135,
+        }
+        for column in columns:
+            self.campaign_tree.heading(column, text=headings[column])
+            self.campaign_tree.column(column, width=widths[column], anchor="w")
+        for tag, background, foreground in (
+            ("planned", "#f8fafc", "#475569"),
+            ("offline", "#f3f4f6", "#6b7280"),
+            ("running", "#eff6ff", "#1d4ed8"),
+            ("pass", "#f0fdf4", "#166534"),
+            ("error", "#fef2f2", "#b91c1c"),
+        ):
+            self.campaign_tree.tag_configure(tag, background=background, foreground=foreground)
+        self.campaign_tree.grid(row=0, column=0, sticky="nsew")
+        scroll_y = ttk.Scrollbar(board, orient="vertical", command=self.campaign_tree.yview)
+        scroll_y.grid(row=0, column=1, sticky="ns")
+        scroll_x = ttk.Scrollbar(board, orient="horizontal", command=self.campaign_tree.xview)
+        scroll_x.grid(row=1, column=0, sticky="ew")
+        self.campaign_tree.configure(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
 
     def _build_slave_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -1603,6 +1752,9 @@ class RigFtpApp(tk.Tk):
             "channel": "CH",
             "slot_id": "슬롯",
             "launcher_package": "SK Commander 런처",
+            "campaign_id": "캠페인 ID",
+            "campaign_title": "캠페인",
+            "campaign_attempt": "시도",
         }
         for column in columns:
             if column.startswith("var::"):
@@ -1635,6 +1787,7 @@ class RigFtpApp(tk.Tk):
             self.run_profile_tree.insert("", "end", iid=iid, values=values)
             if iid in selected:
                 self.run_profile_tree.selection_add(iid)
+        self._render_campaign_board()
 
     def _profile_package(self) -> PackageInfo | None:
         return self._selected_package()
@@ -1654,6 +1807,29 @@ class RigFtpApp(tk.Tk):
             raise FtpSpoolError("SK Commander 런처는 Picker에서 export한 workflow여야 합니다.")
         return launcher
 
+    def _apply_campaign_package_variables(
+        self,
+        package: PackageInfo,
+        variables: dict[str, str],
+    ) -> None:
+        campaign_id = str(package.details.get("campaign_id") or "")
+        if not campaign_id:
+            return
+        if package.details.get("preflight_ok") is not True:
+            raise FtpSpoolError(f"AE campaign preflight is not ready: {campaign_id}")
+        repeat_count = max(1, int(package.details.get("repeat_count") or 1))
+        try:
+            attempt = int(variables.get("campaign_attempt") or "1")
+        except ValueError as exc:
+            raise FtpSpoolError("캠페인 시도 값은 숫자여야 합니다.") from exc
+        if not 1 <= attempt <= repeat_count:
+            raise FtpSpoolError(
+                f"캠페인 시도 값은 1부터 {repeat_count} 사이여야 합니다: {attempt}"
+            )
+        variables["campaign_id"] = campaign_id
+        variables["campaign_title"] = str(package.details.get("campaign_title") or "")
+        variables["campaign_attempt"] = str(attempt)
+
     def _load_run_profiles_from_config(self) -> None:
         try:
             config = self._config_from_fields()
@@ -1669,35 +1845,42 @@ class RigFtpApp(tk.Tk):
                 str(row.get("target", "")),
                 str(row.get("variables", {}).get("channel", "")),
                 str(row.get("variables", {}).get("slot_id", "")),
+                str(row.get("variables", {}).get("campaign_attempt", "1")),
             )
             for row in self._run_profiles
         }
+        repeat_count = max(1, int((package.details if package else {}).get("repeat_count") or 1))
         for slave in config.slaves:
             channels: tuple[ChannelInfo | None, ...] = slave.channels or (None,)
             for channel in channels:
                 channel_variables = self._channel_run_variables(channel)
-                key = (
-                    slave.node_id,
-                    channel_variables.get("channel", ""),
-                    channel_variables.get("slot_id", ""),
-                )
-                if key in existing:
-                    continue
-                variables = dict(base_variables)
-                variables.update(slave.variables)
-                variables.update(channel_variables)
-                channel_label = channel.label() if channel else ""
-                alias = f"{slave.label()} / {channel_label}" if channel_label else slave.label()
-                self._run_profiles.append(
-                    {
-                        "enabled": True,
-                        "alias": alias,
-                        "target": slave.node_id,
-                        "package": package.name if package else "",
-                        "variables": variables,
-                    }
-                )
-                existing.add(key)
+                for attempt in range(1, repeat_count + 1):
+                    key = (
+                        slave.node_id,
+                        channel_variables.get("channel", ""),
+                        channel_variables.get("slot_id", ""),
+                        str(attempt),
+                    )
+                    if key in existing:
+                        continue
+                    variables = dict(base_variables)
+                    variables.update(slave.variables)
+                    variables.update(channel_variables)
+                    variables["campaign_attempt"] = str(attempt)
+                    channel_label = channel.label() if channel else ""
+                    alias = f"{slave.label()} / {channel_label}" if channel_label else slave.label()
+                    if repeat_count > 1:
+                        alias = f"{alias} / {attempt}/{repeat_count}"
+                    self._run_profiles.append(
+                        {
+                            "enabled": True,
+                            "alias": alias,
+                            "target": slave.node_id,
+                            "package": package.name if package else "",
+                            "variables": variables,
+                        }
+                    )
+                    existing.add(key)
         self._refresh_run_profile_columns()
 
     def _add_run_profile_target(self) -> None:
@@ -1713,26 +1896,31 @@ class RigFtpApp(tk.Tk):
             self._show_error(exc)
             return
         slave_by_node = {slave.node_id: slave for slave in config.slaves}
+        repeat_count = max(1, int((package.details if package else {}).get("repeat_count") or 1))
         for target in targets:
             slave = slave_by_node.get(target)
             channels: tuple[ChannelInfo | None, ...] = slave.channels if slave and slave.channels else (None,)
             for channel in channels:
-                variables = dict(base_variables)
-                if slave:
-                    variables.update(slave.variables)
-                variables.update(self._channel_run_variables(channel))
-                channel_label = channel.label() if channel else ""
-                base_alias = slave.label() if slave else target
-                alias = f"{base_alias} / {channel_label}" if channel_label else base_alias
-                self._run_profiles.append(
-                    {
-                        "enabled": True,
-                        "alias": alias,
-                        "target": target,
-                        "package": package.name if package else "",
-                        "variables": variables,
-                    }
-                )
+                for attempt in range(1, repeat_count + 1):
+                    variables = dict(base_variables)
+                    if slave:
+                        variables.update(slave.variables)
+                    variables.update(self._channel_run_variables(channel))
+                    variables["campaign_attempt"] = str(attempt)
+                    channel_label = channel.label() if channel else ""
+                    base_alias = slave.label() if slave else target
+                    alias = f"{base_alias} / {channel_label}" if channel_label else base_alias
+                    if repeat_count > 1:
+                        alias = f"{alias} / {attempt}/{repeat_count}"
+                    self._run_profiles.append(
+                        {
+                            "enabled": True,
+                            "alias": alias,
+                            "target": target,
+                            "package": package.name if package else "",
+                            "variables": variables,
+                        }
+                    )
         self._refresh_run_profile_columns()
 
     def _channel_run_variables(self, channel: ChannelInfo | None) -> dict[str, str]:
@@ -1863,6 +2051,7 @@ class RigFtpApp(tk.Tk):
                     launcher_name = launcher_name or self.sequence_launcher_var.get().strip()
                     self._require_sequence_launcher(launcher_name)
                     row.setdefault("variables", {})["launcher_package"] = launcher_name
+                    self._apply_campaign_package_variables(package, row["variables"])
         except BaseException as exc:
             self._show_error(exc)
             return
@@ -1943,6 +2132,7 @@ class RigFtpApp(tk.Tk):
             launcher_name = variables.get("launcher_package", "") or self.sequence_launcher_var.get().strip()
             self._require_sequence_launcher(launcher_name)
             variables["launcher_package"] = launcher_name
+            self._apply_campaign_package_variables(package, variables)
         job = SpoolJob.create(
             kind=package_job_kind(package),
             payload={
@@ -2088,6 +2278,232 @@ class RigFtpApp(tk.Tk):
 
         self._start_worker("Updating stop signal", worker)
 
+    def _selected_campaign_package(self) -> PackageInfo | None:
+        return self._campaign_choices.get(self.campaign_filter_var.get())
+
+    def _campaign_filter_changed(self, _event: Any | None = None) -> None:
+        package = self._selected_campaign_package()
+        self.campaign_summary_text.configure(state="normal")
+        self.campaign_summary_text.delete("1.0", "end")
+        if package is not None:
+            details = package.details
+            lines = [
+                f"{details.get('campaign_id', '-')} | {details.get('campaign_title', '-')}",
+                (
+                    f"Owner: {details.get('campaign_owner') or '-'} | "
+                    f"Priority: {details.get('campaign_priority') or '-'} | "
+                    f"Type: {details.get('test_type') or '-'} | "
+                    f"Repeat: {details.get('repeat_count') or 1}"
+                ),
+                f"Objective: {details.get('objective') or '-'}",
+                f"Hypothesis: {details.get('hypothesis') or '-'}",
+                f"Acceptance: {details.get('acceptance_criteria') or '-'}",
+                f"Stop: {details.get('stop_condition') or '-'}",
+            ]
+            self.campaign_summary_text.insert("1.0", "\n".join(lines))
+        self.campaign_summary_text.configure(state="disabled")
+        self._render_campaign_board()
+
+    def _render_campaign_board(self) -> None:
+        if not hasattr(self, "campaign_tree"):
+            return
+        package = self._selected_campaign_package()
+        self.campaign_tree.delete(*self.campaign_tree.get_children())
+        if package is None:
+            return
+        campaign_id = str(package.details.get("campaign_id") or "")
+        try:
+            config = self._config_from_fields()
+        except Exception:
+            config = None
+        package_by_name = {item.name: item for item in self._packages}
+        records: dict[tuple[str, str, str, int], dict[str, Any]] = {}
+
+        for row in self._run_profiles:
+            row_package = package_by_name.get(str(row.get("package") or ""))
+            if row_package is None or row_package.details.get("campaign_id") != campaign_id:
+                continue
+            variables = row.get("variables") if isinstance(row.get("variables"), dict) else {}
+            node = str(row.get("target") or "")
+            channel = str(variables.get("channel") or "")
+            slot = str(variables.get("slot_id") or "")
+            try:
+                attempt = max(1, int(variables.get("campaign_attempt") or 1))
+            except ValueError:
+                attempt = 1
+            key = (node, channel.casefold(), slot.casefold(), attempt)
+            records[key] = {
+                "pc": self._slave_label(node, config),
+                "node": node,
+                "channel": channel or "-",
+                "slot": slot,
+                "material": variables.get("dram_part", ""),
+                "soc": " ".join(
+                    part
+                    for part in (
+                        str(variables.get("soc_vendor") or "").upper(),
+                        str(variables.get("soc_model") or ""),
+                    )
+                    if part
+                ),
+                "binary": " ".join(
+                    part
+                    for part in (
+                        str(variables.get("binary_name") or ""),
+                        str(variables.get("binary_version") or ""),
+                    )
+                    if part
+                ),
+                "attempt": attempt,
+                "state": "planned",
+                "grid": "-",
+                "acceptance": "pending",
+                "failure": "",
+                "updated": "",
+                "tag": "planned",
+            }
+
+        for parent in self._last_status_rows:
+            node = str(parent.get("node_id") or "")
+            parent_health = str(parent.get("health") or "online").casefold()
+            campaign_runs = (
+                parent.get("campaign_runs")
+                if isinstance(parent.get("campaign_runs"), list)
+                else []
+            )
+            for run in campaign_runs:
+                if not isinstance(run, dict) or str(run.get("campaign_id") or "") != campaign_id:
+                    continue
+                channel = str(run.get("channel_id") or "")
+                slot = str(run.get("slot_id") or "")
+                try:
+                    attempt = max(1, int(run.get("campaign_attempt") or 1))
+                except (TypeError, ValueError):
+                    attempt = 1
+                key = (node, channel.casefold(), slot.casefold(), attempt)
+                existing = records.get(key, {})
+                state = "offline" if parent_health == "offline" else str(
+                    run.get("state") or "planned"
+                )
+                total = int(run.get("total_grids") or 0)
+                completed = int(run.get("completed_grids") or 0)
+                current_grid = str(run.get("current_grid") or "")
+                progress = f"{completed}/{total}" if total else "-"
+                if current_grid:
+                    progress = f"{progress} {current_grid}"
+                records[key] = {
+                    **existing,
+                    "pc": self._slave_label(node, config),
+                    "node": node,
+                    "channel": channel or existing.get("channel", "-"),
+                    "slot": slot or existing.get("slot", ""),
+                    "attempt": attempt,
+                    "state": state,
+                    "grid": progress,
+                    "acceptance": run.get("acceptance_result", "pending"),
+                    "failure": run.get("failure_class", ""),
+                    "updated": run.get("updated_at", parent.get("updated_at", "")),
+                    "tag": self._channel_state_tag(state, parent_health),
+                }
+            channels = parent.get("channels") if isinstance(parent.get("channels"), list) else []
+            for channel_row in channels:
+                if not isinstance(channel_row, dict):
+                    continue
+                row_campaign = str(channel_row.get("campaign_id") or "")
+                channel = str(
+                    channel_row.get("channel_id")
+                    or channel_row.get("name")
+                    or channel_row.get("slot_id")
+                    or ""
+                )
+                slot = str(channel_row.get("slot_id") or "")
+                try:
+                    attempt = max(1, int(channel_row.get("campaign_attempt") or 1))
+                except ValueError:
+                    attempt = 1
+                key = (node, channel.casefold(), slot.casefold(), attempt)
+                if row_campaign and row_campaign != campaign_id:
+                    continue
+                if not row_campaign and key not in records:
+                    continue
+                state = "offline" if parent_health == "offline" else str(
+                    channel_row.get("state") or "planned"
+                )
+                total = int(channel_row.get("total_grids") or 0)
+                completed = int(channel_row.get("completed_grids") or 0)
+                current_grid = str(channel_row.get("current_grid") or "")
+                progress = f"{completed}/{total}" if total else "-"
+                if current_grid:
+                    progress = f"{progress} {current_grid}"
+                existing = records.get(key, {})
+                records[key] = {
+                    **existing,
+                    "pc": self._slave_label(node, config),
+                    "node": node,
+                    "channel": channel or "-",
+                    "slot": slot,
+                    "material": channel_row.get("dram_part", existing.get("material", "")),
+                    "soc": " ".join(
+                        part
+                        for part in (
+                            str(channel_row.get("soc_vendor") or "").upper(),
+                            str(channel_row.get("soc_model") or ""),
+                        )
+                        if part
+                    )
+                    or existing.get("soc", ""),
+                    "binary": " ".join(
+                        part
+                        for part in (
+                            str(channel_row.get("binary_name") or ""),
+                            str(channel_row.get("binary_version") or ""),
+                        )
+                        if part
+                    )
+                    or existing.get("binary", ""),
+                    "attempt": attempt,
+                    "state": state,
+                    "grid": progress,
+                    "acceptance": channel_row.get("acceptance_result", "pending"),
+                    "failure": channel_row.get("failure_class", ""),
+                    "updated": channel_row.get("updated_at", parent.get("updated_at", "")),
+                    "tag": self._channel_state_tag(state, parent_health),
+                }
+
+        ordered = sorted(
+            records.values(),
+            key=lambda item: (
+                str(item.get("node") or ""),
+                str(item.get("channel") or ""),
+                int(item.get("attempt") or 1),
+            ),
+        )
+        for index, record in enumerate(ordered):
+            values = tuple(
+                record.get(key, "")
+                for key in (
+                    "pc",
+                    "channel",
+                    "slot",
+                    "material",
+                    "soc",
+                    "binary",
+                    "attempt",
+                    "state",
+                    "grid",
+                    "acceptance",
+                    "failure",
+                    "updated",
+                )
+            )
+            self.campaign_tree.insert(
+                "",
+                "end",
+                iid=f"campaign-{index}",
+                values=values,
+                tags=(str(record.get("tag") or "planned"),),
+            )
+
     def _refresh_status(self) -> None:
         try:
             config, backend, _local_root = self._snapshot_backend()
@@ -2162,6 +2578,10 @@ class RigFtpApp(tk.Tk):
             if self.status_tree.exists(item):
                 self.status_tree.selection_add(item)
         self._set_channel_status_rows(rows, config)
+        self.campaign_board_loaded_var.set(
+            f"마지막 상태 조회: {time.strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        self._render_campaign_board()
 
     def _set_channel_status_rows(
         self,
@@ -2227,8 +2647,19 @@ class RigFtpApp(tk.Tk):
                     lot_sample,
                     channel.get("current_test", ""),
                     channel.get("sequence_name", ""),
+                    " | ".join(
+                        part
+                        for part in (
+                            str(channel.get("campaign_id") or ""),
+                            str(channel.get("campaign_title") or ""),
+                        )
+                        if part
+                    ),
+                    channel.get("campaign_attempt", ""),
                     state,
                     progress,
+                    channel.get("acceptance_result", ""),
+                    channel.get("failure_class", ""),
                 )
                 tag = self._channel_state_tag(state, parent_health)
                 self.channel_status_tree.insert(
@@ -2310,10 +2741,15 @@ class RigFtpApp(tk.Tk):
                 "Sample",
                 "Current Test",
                 "Sequence",
+                "Campaign ID",
+                "Campaign Title",
+                "Campaign Attempt",
                 "State",
                 "Current Grid",
                 "Completed Grids",
                 "Total Grids",
+                "Acceptance",
+                "Failure Class",
                 "Channel Updated",
                 "Notes",
             ]
@@ -2355,10 +2791,15 @@ class RigFtpApp(tk.Tk):
                         channel.get("sample_id", ""),
                         channel.get("current_test", ""),
                         channel.get("sequence_name", ""),
+                        channel.get("campaign_id", ""),
+                        channel.get("campaign_title", ""),
+                        channel.get("campaign_attempt", 0),
                         channel.get("state", ""),
                         channel.get("current_grid", ""),
                         channel.get("completed_grids", 0),
                         channel.get("total_grids", 0),
+                        channel.get("acceptance_result", ""),
+                        channel.get("failure_class", ""),
                         channel.get("updated_at", ""),
                         channel.get("notes", ""),
                     ]
@@ -2492,6 +2933,8 @@ class RigFtpApp(tk.Tk):
         self.result_tree.delete(*self.result_tree.get_children())
         for index, row in enumerate(reversed(self._last_result_rows)):
             ok = bool(row.get("ok"))
+            details = row.get("details") if isinstance(row.get("details"), dict) else {}
+            triage = row.get("triage") if isinstance(row.get("triage"), dict) else {}
             monitor_results = row.get("monitor_results") if isinstance(row.get("monitor_results"), list) else []
             if monitor_results:
                 passed = sum(1 for item in monitor_results if isinstance(item, dict) and item.get("ok"))
@@ -2502,21 +2945,39 @@ class RigFtpApp(tk.Tk):
             values = (
                 "PASS" if ok else "FAIL",
                 row.get("job_id", ""),
+                " / ".join(
+                    part
+                    for part in (
+                        str(details.get("campaign_id") or ""),
+                        (
+                            f"{details.get('campaign_attempt')}/{details.get('campaign_repeat_count')}"
+                            if details.get("campaign_attempt")
+                            else ""
+                        ),
+                    )
+                    if part
+                ),
                 row.get("kind", ""),
                 row.get("finished_at", ""),
+                triage.get("failure_class") or details.get("failure_class", ""),
                 summary,
             )
             self.result_tree.insert("", "end", iid=str(index), values=values, tags=("ok" if ok else "fail",))
 
-    def _show_selected_result(self, _event: Any | None = None) -> None:
+    def _selected_result_row(self) -> dict[str, Any] | None:
         selection = self.result_tree.selection()
         if not selection:
-            return
+            return None
         display_index = int(selection[0])
         rows = list(reversed(self._last_result_rows))
         if not 0 <= display_index < len(rows):
+            return None
+        return rows[display_index]
+
+    def _show_selected_result(self, _event: Any | None = None) -> None:
+        row = self._selected_result_row()
+        if row is None:
             return
-        row = rows[display_index]
         window = tk.Toplevel(self)
         window.title(f"작업 결과 - {row.get('job_id', '')}")
         window.geometry("820x560")
@@ -2526,6 +2987,59 @@ class RigFtpApp(tk.Tk):
         text_widget.pack(fill="both", expand=True)
         text_widget.insert("1.0", json.dumps(row, indent=2, ensure_ascii=False))
         text_widget.configure(state="disabled")
+
+    def _triage_selected_result(self) -> None:
+        row = self._selected_result_row()
+        if row is None:
+            self._show_error(FtpSpoolError("분류할 결과 행을 먼저 선택하세요."))
+            return
+        details = row.get("details") if isinstance(row.get("details"), dict) else {}
+        triage = row.get("triage") if isinstance(row.get("triage"), dict) else {}
+        values = self._ask_field_values(
+            "AE 실패 분류와 조치",
+            [
+                (
+                    "failure_class",
+                    "분류 (test/setup/automation/infrastructure/material/product/unknown)",
+                    str(triage.get("failure_class") or details.get("failure_class") or "unknown"),
+                ),
+                (
+                    "disposition",
+                    "조치 (open/retest/blocked/accepted/closed)",
+                    str(triage.get("disposition") or "open"),
+                ),
+                ("owner", "담당자", str(triage.get("owner") or "")),
+                ("notes", "판정 근거 / 다음 작업", str(triage.get("notes") or "")),
+            ],
+            required={"failure_class", "disposition"},
+        )
+        if values is None:
+            return
+        try:
+            _config, backend, _local_root = self._snapshot_backend()
+            node = self._last_result_node or str(row.get("node_id") or "")
+            job_id = str(row.get("job_id") or "")
+            if not node or not job_id:
+                raise FtpSpoolError("결과의 Node ID 또는 작업 ID가 없습니다.")
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+
+        def worker() -> None:
+            path = save_triage_record(
+                backend,
+                node,
+                job_id,
+                failure_class=values["failure_class"],
+                disposition=values["disposition"],
+                owner=values["owner"],
+                notes=values["notes"],
+            )
+            rows = list_results(backend, node)
+            self._queue.put(("result_rows", {"node": node, "rows": rows}))
+            self._queue.put(("log", f"AE triage 저장: {path}"))
+
+        self._start_worker("Saving AE triage", worker)
 
     def _show_remote_monitor_board(self) -> None:
         try:
@@ -2817,6 +3331,20 @@ class RigFtpApp(tk.Tk):
                 "corners": "Corners",
                 "purpose": "Purpose",
                 "product": "Product",
+                "campaign_id": "Campaign ID",
+                "campaign_title": "Campaign",
+                "campaign_owner": "AE Owner",
+                "campaign_status": "Campaign Status",
+                "campaign_priority": "Priority",
+                "test_type": "Test Type",
+                "objective": "Objective",
+                "hypothesis": "Hypothesis",
+                "expected_result": "Expected Result",
+                "acceptance_criteria": "Acceptance",
+                "stop_condition": "Stop Condition",
+                "repeat_count": "Repeat",
+                "preflight_ok": "AE Preflight",
+                "preflight_checked_at": "Preflight Time",
             }
             for key, value in package.details.items():
                 if value not in ("", None, []):
@@ -2835,6 +3363,26 @@ class RigFtpApp(tk.Tk):
 
     def _set_packages(self, packages: list[PackageInfo]) -> None:
         self._packages = packages
+        previous_campaign = self.campaign_filter_var.get() if hasattr(self, "campaign_filter_var") else ""
+        self._campaign_choices = {}
+        for package in packages:
+            campaign_id = str(package.details.get("campaign_id") or "")
+            if not campaign_id:
+                continue
+            title = str(package.details.get("campaign_title") or package.title or package.name)
+            label = f"{campaign_id} | {title}"
+            if label in self._campaign_choices:
+                label = f"{label} [{package.name}]"
+            self._campaign_choices[label] = package
+        if hasattr(self, "campaign_filter_combo"):
+            choices = list(self._campaign_choices)
+            self.campaign_filter_combo.configure(values=choices)
+            if previous_campaign in self._campaign_choices:
+                self.campaign_filter_var.set(previous_campaign)
+            elif choices:
+                self.campaign_filter_var.set(choices[0])
+            else:
+                self.campaign_filter_var.set("")
         launchers = [package.name for package in packages if package.runner == "workflow"]
         current_launcher = self.sequence_launcher_var.get().strip()
         self.sequence_launcher_combo.configure(values=launchers)
@@ -2856,6 +3404,7 @@ class RigFtpApp(tk.Tk):
         else:
             self.package_detail_text.delete("1.0", "end")
             self._refresh_run_profile_columns()
+        self._campaign_filter_changed()
 
     def _targets(self, raw: str, *, config: FtpSpoolConfig | None = None) -> list[str]:
         tokens = self._target_tokens(raw)

@@ -47,7 +47,10 @@ class RigSequenceBundle:
         compatibility = self.manifest.get("compatibility") or {}
         coverage = self.manifest.get("coverage") or {}
         metadata = self.manifest.get("metadata") or {}
-        return {
+        campaign_bundle = self.manifest.get("campaign") or {}
+        campaign = campaign_bundle.get("snapshot") or {}
+        preflight = campaign_bundle.get("preflight") or {}
+        details = {
             "bundle_id": self.bundle_id,
             "recipe_name": self.recipe_name,
             "command_set": self.command_set,
@@ -56,13 +59,41 @@ class RigSequenceBundle:
             "block_count": int(self.validation.get("block_count") or 0),
             "command_count": int(self.validation.get("command_count") or 0),
             "corners": [str(value) for value in coverage.get("corners", [])],
-            "purpose": str(metadata.get("purpose") or ""),
-            "product": str(metadata.get("product") or ""),
+            "purpose": str(campaign.get("purpose") or metadata.get("purpose") or ""),
+            "product": str(campaign.get("product") or metadata.get("product") or ""),
         }
+        if campaign:
+            details.update(
+                {
+                    "campaign_id": str(campaign.get("campaign_id") or ""),
+                    "campaign_title": str(campaign.get("title") or ""),
+                    "campaign_owner": str(campaign.get("owner") or ""),
+                    "campaign_status": str(campaign.get("status") or ""),
+                    "campaign_priority": str(campaign.get("priority") or ""),
+                    "test_type": str(campaign.get("test_type") or ""),
+                    "objective": str(campaign.get("objective") or ""),
+                    "hypothesis": str(campaign.get("hypothesis") or ""),
+                    "expected_result": str(campaign.get("expected_result") or ""),
+                    "acceptance_criteria": str(campaign.get("acceptance_criteria") or ""),
+                    "stop_condition": str(campaign.get("stop_condition") or ""),
+                    "repeat_count": max(1, int(campaign.get("repeat_count") or 1)),
+                    "campaign_snapshot_sha256": str(
+                        campaign_bundle.get("snapshot_sha256") or ""
+                    ),
+                    "preflight_ok": bool(preflight.get("ok", False)),
+                    "preflight_checked_at": str(preflight.get("checked_at") or ""),
+                }
+            )
+        return details
 
 
 def _digest(data: bytes) -> str:
     return sha256(data).hexdigest()
+
+
+def _json_digest(value: dict[str, Any]) -> str:
+    canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return _digest(canonical.encode("utf-8"))
 
 
 def _read_json(archive: ZipFile, name: str) -> dict[str, Any]:
@@ -147,6 +178,31 @@ def parse_rig_sequence_bundle(data: bytes) -> RigSequenceBundle:
         raise RigSequenceBundleError(
             "Rig SEQ package bundle id does not match its sequence checksum."
         )
+
+    campaign_bundle = manifest.get("campaign")
+    if campaign_bundle is not None:
+        if (
+            not isinstance(campaign_bundle, dict)
+            or campaign_bundle.get("schema") != "ae-campaign-bundle/v1"
+        ):
+            raise RigSequenceBundleError("Unsupported AE campaign bundle schema.")
+        snapshot = campaign_bundle.get("snapshot")
+        preflight = campaign_bundle.get("preflight")
+        if not isinstance(snapshot, dict) or snapshot.get("schema") != "ae-test-campaign/v1":
+            raise RigSequenceBundleError("Rig SEQ package has an invalid AE campaign snapshot.")
+        if (
+            not isinstance(preflight, dict)
+            or preflight.get("schema") != "ae-campaign-preflight/v1"
+        ):
+            raise RigSequenceBundleError("Rig SEQ package has an invalid AE preflight report.")
+        campaign_id = str(snapshot.get("campaign_id") or "")
+        if not campaign_id or campaign_id != str(preflight.get("campaign_id") or ""):
+            raise RigSequenceBundleError("AE campaign and preflight IDs do not match.")
+        if preflight.get("ok") is not True:
+            raise RigSequenceBundleError("AE campaign preflight did not pass.")
+        expected_campaign_sha = str(campaign_bundle.get("snapshot_sha256") or "")
+        if not expected_campaign_sha or _json_digest(snapshot) != expected_campaign_sha:
+            raise RigSequenceBundleError("AE campaign snapshot checksum mismatch.")
 
     return RigSequenceBundle(
         manifest=manifest,

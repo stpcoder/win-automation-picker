@@ -31,12 +31,14 @@ SPOOL_DIRS = (
     "packages",
     "status",
     "results",
+    "triage",
     "logs",
     "archive",
     "screenshots",
 )
 MAX_STAGED_SEQUENCE_BUNDLES = 50
 MAX_CHANNELS_PER_SLAVE = 64
+MAX_CAMPAIGN_RUNS_PER_SLAVE = 256
 
 
 class FtpSpoolError(RuntimeError):
@@ -60,6 +62,11 @@ class ChannelInfo:
     sample_id: str = ""
     current_test: str = ""
     sequence_name: str = ""
+    campaign_id: str = ""
+    campaign_title: str = ""
+    campaign_attempt: int = 0
+    failure_class: str = ""
+    acceptance_result: str = ""
     state: str = "idle"
     current_grid: str = ""
     completed_grids: int = 0
@@ -85,6 +92,11 @@ class ChannelInfo:
             sample_id=str(data.get("sample_id") or "").strip(),
             current_test=str(data.get("current_test") or data.get("test") or "").strip(),
             sequence_name=str(data.get("sequence_name") or data.get("seq") or "").strip(),
+            campaign_id=str(data.get("campaign_id") or "").strip(),
+            campaign_title=str(data.get("campaign_title") or "").strip(),
+            campaign_attempt=max(0, int(data.get("campaign_attempt") or 0)),
+            failure_class=str(data.get("failure_class") or "").strip(),
+            acceptance_result=str(data.get("acceptance_result") or "").strip(),
             state=str(data.get("state") or "idle").strip(),
             current_grid=str(data.get("current_grid") or data.get("grid") or "").strip(),
             completed_grids=max(0, int(data.get("completed_grids") or 0)),
@@ -119,6 +131,11 @@ class ChannelInfo:
             "sample_id": self.sample_id,
             "current_test": self.current_test,
             "sequence_name": self.sequence_name,
+            "campaign_id": self.campaign_id,
+            "campaign_title": self.campaign_title,
+            "campaign_attempt": self.campaign_attempt,
+            "failure_class": self.failure_class,
+            "acceptance_result": self.acceptance_result,
             "state": self.state,
             "current_grid": self.current_grid,
             "completed_grids": self.completed_grids,
@@ -665,6 +682,7 @@ def ensure_node_dirs(backend: SpoolBackend, node_id: str) -> None:
         f"commands/{node}/pending",
         f"control/{node}",
         f"results/{node}",
+        f"triage/{node}",
         f"logs/{node}",
         f"archive/{node}",
         f"screenshots/{node}",
@@ -723,10 +741,18 @@ def deploy_package(
             "channel": "",
             "slot_id": "",
             "launcher_package": "",
+            "campaign_attempt": "1",
         }
         sequence_variables.update(resolved_variables)
         resolved_variables = sequence_variables
         package_details = bundle.package_details()
+        if package_details.get("campaign_id"):
+            sequence_variables.update(
+                {
+                    "campaign_id": str(package_details.get("campaign_id") or ""),
+                    "campaign_title": str(package_details.get("campaign_title") or ""),
+                }
+            )
     remote_path = f"packages/{safe_package_name}"
     backend.write_bytes(remote_path, source_bytes)
     package = PackageInfo(
@@ -1217,6 +1243,17 @@ def _update_channel_status(
                     "sample_id": job.variables.get("sample_id", ""),
                     "current_test": details.get("current_test", ""),
                     "sequence_name": details.get("sequence_name", ""),
+                    "campaign_id": details.get("campaign_id", job.variables.get("campaign_id", "")),
+                    "campaign_title": details.get(
+                        "campaign_title", job.variables.get("campaign_title", "")
+                    ),
+                    "campaign_attempt": details.get(
+                        "campaign_attempt", job.variables.get("campaign_attempt", "1")
+                    ),
+                    "failure_class": details.get("failure_class", "")
+                    or _classify_failure(result),
+                    "acceptance_result": details.get("acceptance_result", "")
+                    or ("pending" if result.ok else "fail"),
                 },
             )
             channel["state"] = "running" if result.ok else "error"
@@ -1235,6 +1272,15 @@ def _update_channel_status(
             continue
         expected_state = str(monitor.get("monitor_state") or "").strip()
         channel["state"] = expected_state if monitor.get("ok") and expected_state else "fail"
+        normalized_state = expected_state.casefold()
+        if not monitor.get("ok") or normalized_state in {"fail", "failed", "error", "red"}:
+            channel["acceptance_result"] = "fail"
+            channel["failure_class"] = "test"
+        elif normalized_state in {"pass", "passed", "done", "complete", "completed", "green"}:
+            channel["acceptance_result"] = "pass"
+            channel["failure_class"] = ""
+        else:
+            channel.setdefault("acceptance_result", "pending")
         current_grid = str(monitor.get("grid_name") or "").strip()
         block_name = str(monitor.get("block_name") or "").strip()
         if not current_grid and block_name.startswith("#"):
@@ -1247,6 +1293,110 @@ def _update_channel_status(
         channel["updated_at"] = result.finished_at
 
     status_context["channels"] = channels
+    _update_campaign_run_history(status_context, job, result, channels)
+
+
+def _update_campaign_run_history(
+    status_context: dict[str, Any],
+    job: SpoolJob,
+    result: JobResult,
+    channels: list[dict[str, Any]],
+) -> None:
+    raw_runs = status_context.get("campaign_runs")
+    runs = [dict(item) for item in raw_runs if isinstance(item, dict)] if isinstance(raw_runs, list) else []
+    details = result.details if isinstance(result.details, dict) else {}
+    campaign_id = str(details.get("campaign_id") or job.variables.get("campaign_id") or "").strip()
+    channel_id = str(details.get("channel_id") or job.variables.get("channel") or "").strip()
+    slot_id = str(details.get("slot_id") or job.variables.get("slot_id") or "").strip()
+    try:
+        attempt = max(1, int(details.get("campaign_attempt") or job.variables.get("campaign_attempt") or 1))
+    except (TypeError, ValueError):
+        attempt = 1
+
+    if job.kind == "sequence" and campaign_id:
+        run = _find_campaign_run(runs, campaign_id, channel_id, slot_id, attempt)
+        if run is None:
+            run = {}
+            runs.append(run)
+        run.update(
+            {
+                "campaign_id": campaign_id,
+                "campaign_title": str(
+                    details.get("campaign_title") or job.variables.get("campaign_title") or ""
+                ),
+                "campaign_attempt": attempt,
+                "channel_id": channel_id,
+                "slot_id": slot_id,
+                "state": "running" if result.ok else "error",
+                "acceptance_result": details.get("acceptance_result")
+                or ("pending" if result.ok else "fail"),
+                "failure_class": details.get("failure_class") or _classify_failure(result),
+                "sequence_name": details.get("sequence_name", ""),
+                "current_grid": details.get("current_grid", ""),
+                "completed_grids": int(details.get("completed_grids") or 0),
+                "total_grids": int(details.get("total_grids") or 0),
+                "updated_at": result.finished_at,
+            }
+        )
+
+    for channel in channels:
+        channel_campaign = str(channel.get("campaign_id") or "").strip()
+        if not channel_campaign:
+            continue
+        channel_id = str(channel.get("channel_id") or channel.get("name") or "").strip()
+        slot_id = str(channel.get("slot_id") or "").strip()
+        try:
+            attempt = max(1, int(channel.get("campaign_attempt") or 1))
+        except (TypeError, ValueError):
+            attempt = 1
+        run = _find_campaign_run(runs, channel_campaign, channel_id, slot_id, attempt)
+        if run is None:
+            continue
+        for key in (
+            "state",
+            "acceptance_result",
+            "failure_class",
+            "current_grid",
+            "completed_grids",
+            "total_grids",
+            "updated_at",
+        ):
+            if key in channel:
+                run[key] = channel[key]
+
+    if len(runs) > MAX_CAMPAIGN_RUNS_PER_SLAVE:
+        runs.sort(key=lambda item: str(item.get("updated_at") or ""))
+        runs = runs[-MAX_CAMPAIGN_RUNS_PER_SLAVE:]
+    status_context["campaign_runs"] = runs
+
+
+def _find_campaign_run(
+    runs: list[dict[str, Any]],
+    campaign_id: str,
+    channel_id: str,
+    slot_id: str,
+    attempt: int,
+) -> dict[str, Any] | None:
+    target = (
+        campaign_id.casefold(),
+        channel_id.casefold(),
+        slot_id.casefold(),
+        attempt,
+    )
+    for run in runs:
+        try:
+            run_attempt = int(run.get("campaign_attempt") or 1)
+        except (TypeError, ValueError):
+            run_attempt = 1
+        key = (
+            str(run.get("campaign_id") or "").casefold(),
+            str(run.get("channel_id") or "").casefold(),
+            str(run.get("slot_id") or "").casefold(),
+            run_attempt,
+        )
+        if key == target:
+            return run
+    return None
 
 
 def _apply_nonempty_channel_values(target: dict[str, Any], values: dict[str, Any]) -> None:
@@ -1256,6 +1406,40 @@ def _apply_nonempty_channel_values(target: dict[str, Any], values: dict[str, Any
         text = str(value).strip()
         if text:
             target[key] = text
+
+
+def _classify_failure(result: JobResult) -> str:
+    if result.ok:
+        return ""
+    if result.returncode == 130:
+        return "stopped"
+    if result.returncode == 124:
+        return "timeout"
+    text = f"{result.stderr}\n{result.stdout}".casefold()
+    if any(token in text for token in ("checksum", "package", "launcher", "preflight")):
+        return "setup"
+    if any(token in text for token in ("selector", "window", "component", "automation")):
+        return "automation"
+    if any(token in text for token in ("ftp", "network", "permission", "access denied")):
+        return "infrastructure"
+    if "monitor condition" in text:
+        return "test"
+    return "unknown"
+
+
+def _monitor_acceptance(result: JobResult) -> str:
+    saw_pass = False
+    for monitor in result.monitor_results:
+        if not isinstance(monitor, dict):
+            continue
+        state = str(monitor.get("monitor_state") or "").strip().casefold()
+        if not monitor.get("ok") or state in {"fail", "failed", "error", "red"}:
+            return "fail"
+        if state in {"pass", "passed", "done", "complete", "completed", "green"}:
+            saw_pass = True
+    if saw_pass:
+        return "pass"
+    return "pending" if result.ok else "fail"
 
 
 def _monitor_grid_progress(monitor: dict[str, Any]) -> tuple[int, int] | None:
@@ -1377,8 +1561,74 @@ def list_results(backend: SpoolBackend, node_id: str) -> list[dict[str, Any]]:
         except Exception:
             continue
         if isinstance(data, dict):
+            job_id = str(data.get("job_id") or Path(name).stem)
+            try:
+                triage = json.loads(
+                    backend.read_bytes(f"triage/{node}/{_safe_name(job_id)}.json").decode("utf-8")
+                )
+            except Exception:
+                triage = None
+            if (
+                isinstance(triage, dict)
+                and triage.get("schema") == "rig-ae-triage/v1"
+                and str(triage.get("node_id") or "") == node
+                and str(triage.get("job_id") or "") == _safe_name(job_id)
+            ):
+                data["triage"] = triage
             rows.append(data)
     return sorted(rows, key=lambda item: str(item.get("finished_at", "")))
+
+
+def save_triage_record(
+    backend: SpoolBackend,
+    node_id: str,
+    job_id: str,
+    *,
+    failure_class: str,
+    disposition: str,
+    owner: str = "",
+    notes: str = "",
+) -> str:
+    allowed_classes = {
+        "test",
+        "setup",
+        "automation",
+        "infrastructure",
+        "material",
+        "product",
+        "stopped",
+        "timeout",
+        "unknown",
+    }
+    allowed_dispositions = {"open", "retest", "blocked", "accepted", "closed"}
+    normalized_class = str(failure_class or "unknown").strip().casefold()
+    normalized_disposition = str(disposition or "open").strip().casefold()
+    if normalized_class not in allowed_classes:
+        raise FtpSpoolError(f"Unsupported failure class: {failure_class}")
+    if normalized_disposition not in allowed_dispositions:
+        raise FtpSpoolError(f"Unsupported triage disposition: {disposition}")
+    node = _clean_node_id(node_id)
+    raw_job_id = str(job_id or "").strip()
+    if not node or not raw_job_id:
+        raise FtpSpoolError("Node ID and job ID are required for triage.")
+    safe_job_id = _safe_name(raw_job_id)
+    payload = {
+        "schema": "rig-ae-triage/v1",
+        "node_id": node,
+        "job_id": safe_job_id,
+        "failure_class": normalized_class,
+        "disposition": normalized_disposition,
+        "owner": str(owner or "").strip(),
+        "notes": str(notes or "").strip(),
+        "updated_at": _utc_now(),
+    }
+    path = f"triage/{node}/{safe_job_id}.json"
+    backend.ensure_dir(f"triage/{node}")
+    backend.write_bytes(
+        path,
+        (json.dumps(payload, indent=2, ensure_ascii=True) + "\n").encode("utf-8"),
+    )
+    return path
 
 
 def archive_job(backend: SpoolBackend, node_id: str, source_path: str, job: SpoolJob) -> None:
@@ -1591,6 +1841,18 @@ def _execute_sequence(
     if not isinstance(launcher_metadata, dict) or launcher_metadata.get("runner") != "workflow":
         raise FtpSpoolError("SK Commander launcher must be a Picker-exported workflow package.")
 
+    package_details = bundle.package_details()
+    campaign_id = str(package_details.get("campaign_id") or "")
+    repeat_count = max(1, int(package_details.get("repeat_count") or 1))
+    try:
+        campaign_attempt = int(variables.get("campaign_attempt") or 1)
+    except ValueError as exc:
+        raise FtpSpoolError("campaign_attempt must be an integer.") from exc
+    if campaign_attempt < 1 or campaign_attempt > repeat_count:
+        raise FtpSpoolError(
+            f"campaign_attempt must be between 1 and {repeat_count} for this package."
+        )
+
     work_dir = Path(_render_placeholders(config.work_dir, variables))
     sequence_dir = work_dir / "sequences" / bundle.bundle_id
     sequence_dir.mkdir(parents=True, exist_ok=True)
@@ -1612,6 +1874,15 @@ def _execute_sequence(
         "seq_recipe": bundle.recipe_name,
         "seq_command_set": bundle.command_set,
     }
+    if campaign_id:
+        execution_variables.update(
+            {
+                "campaign_id": campaign_id,
+                "campaign_title": str(package_details.get("campaign_title") or ""),
+                "campaign_attempt": str(campaign_attempt),
+                "campaign_repeat_count": str(repeat_count),
+            }
+        )
     launcher_job = SpoolJob(
         job_id=job.job_id,
         kind="sequence",
@@ -1637,7 +1908,10 @@ def _execute_sequence(
         f"slot={variables.get('slot_id', '')!r}"
     )
     stdout = prefix if not result.stdout else f"{prefix}\n{result.stdout}"
-    package_details = bundle.package_details()
+    acceptance_result = _monitor_acceptance(result)
+    failure_class = _classify_failure(result)
+    if acceptance_result == "fail" and not failure_class:
+        failure_class = "test"
     details = {
         **result.details,
         "channel_id": variables.get("channel", ""),
@@ -1647,6 +1921,16 @@ def _execute_sequence(
         "current_test": variables.get("test_name", "") or package_details.get("purpose", ""),
         "total_grids": int(package_details.get("block_count") or 0),
         "completed_grids": 0,
+        "campaign_id": campaign_id,
+        "campaign_title": str(package_details.get("campaign_title") or ""),
+        "campaign_attempt": campaign_attempt,
+        "campaign_repeat_count": repeat_count,
+        "campaign_snapshot_sha256": str(
+            package_details.get("campaign_snapshot_sha256") or ""
+        ),
+        "acceptance_criteria": str(package_details.get("acceptance_criteria") or ""),
+        "acceptance_result": acceptance_result,
+        "failure_class": failure_class,
     }
     return _limit_result(
         replace(result, stdout=stdout, details=details),
@@ -1956,6 +2240,7 @@ def _latest_screenshot_time(backend: SpoolBackend, node_id: str) -> datetime | N
 def cleanup_node_files(backend: SpoolBackend, node_id: str, config: FtpSpoolConfig) -> None:
     node = _clean_node_id(node_id)
     _prune_dir(backend, f"results/{node}", max_files=max(0, config.max_result_files))
+    _prune_dir(backend, f"triage/{node}", max_files=max(0, config.max_result_files))
     _prune_dir(backend, f"logs/{node}", max_files=max(0, config.max_log_files))
     _prune_dir(backend, f"archive/{node}", max_files=max(0, config.max_archive_files))
     _prune_dir(backend, f"screenshots/{node}", max_files=max(0, config.max_screenshot_files))

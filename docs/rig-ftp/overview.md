@@ -18,6 +18,7 @@ FTP Server
     ├─ commands/
     ├─ status/
     ├─ results/
+    ├─ triage/
     ├─ logs/
     ├─ screenshots/
     └─ archive/
@@ -34,8 +35,9 @@ Slave PC
 | `packages/` | master가 업로드한 workflow, 고급 Python, 검증된 Rig SEQ package |
 | `commands/{node}/pending/` | 특정 slave용 job |
 | `commands/all/pending/` | 전체 slave broadcast job |
-| `status/` | slave heartbeat와 PC별 CH/SoC/binary/자재/Test/SEQ/Grid 상태 |
+| `status/` | slave heartbeat, CH inventory, 최근 campaign attempt 상태(PC당 최대 256개) |
 | `results/{node}/` | job 결과 JSON |
+| `triage/{node}/` | 원본 결과와 분리된 AE 실패 분류, 조치, 담당자, 다음 작업 |
 | `logs/{node}/` | stdout/stderr log |
 | `screenshots/{node}/` | 화면 캡처 PNG |
 | `archive/{node}/` | slave가 처리한 command 보관 |
@@ -49,6 +51,9 @@ Slave PC
 5. master에서 macro를 업로드합니다.
 6. PC별 실행표를 채우고 `실행표 전송`을 누릅니다.
 7. `상태 모니터링`에서 상태, 결과와 요청한 전체 화면을 확인합니다.
+
+Campaign이 포함된 `.rigseq.zip`은 [AE 캠페인 운영](ae-campaign.md) 화면에서 목적,
+가설, 합격/중단 조건과 `PC x CH x attempt` 전체를 한 번에 확인할 수 있습니다.
 
 Win Automation Picker가 export한 workflow는 slave EXE의 내장 엔진으로 실행됩니다. 별도 Python 설치는 필요하지 않습니다. 사용자가 직접 만든 일반 Python 파일을 업로드할 때만 slave의 `외부 Python (고급)` 경로와 모듈 설치가 필요합니다.
 

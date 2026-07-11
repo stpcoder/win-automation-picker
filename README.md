@@ -37,6 +37,8 @@ The executables are not code-signed, so Windows SmartScreen may show a warning.
 - Distributes jobs and collects status, results, and screenshots through an FTP spool.
 - Verifies Test Sequence Generator `.rigseq.zip` artifacts and assigns them to SK Commander launchers by PC, slot, and CH.
 - Tracks free-form per-PC channels with SoC, binary source/version/time, DRAM material, current test/SEQ, and Grid progress in FTP heartbeats and two-sheet Excel exports.
+- Verifies checksummed AE campaign snapshots, expands PC/CH/repeat run rows, and shows acceptance/failure state in a campaign board.
+- Stores operator failure classification and disposition in separate triage sidecars without rewriting raw results.
 - Imports Seq Generator `.rigbinary.json` metadata without copying proprietary binary payloads.
 - Keeps configured but stale PCs visible as offline and matches screenshots to their exact request job.
 
