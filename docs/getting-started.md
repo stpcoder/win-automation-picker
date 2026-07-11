@@ -31,8 +31,9 @@ https://github.com/stpcoder/win-automation-picker/releases/latest/download/RigCo
 
 1. `WinAutomationPicker.exe`를 실행합니다.
 2. 대상 업무 프로그램을 켭니다.
-3. `Inspect`를 눌러 대상 프로그램의 버튼이나 입력칸을 클릭해 봅니다.
-4. `Capture Quality`가 `Good capture` 또는 `Check`인지 확인합니다.
+3. `대상 확인`을 눌러 대상 프로그램의 버튼이나 입력칸을 클릭해 봅니다.
+4. `매크로 만들기` 위쪽 캡처 품질 배지가 정상인지 확인합니다.
+5. `이벤트 > 클릭 녹화` 블록을 작업실로 끌어 놓고 실제 드래그 편집이 되는지 확인합니다.
 
 ## FTP 운영 프로그램 실행
 

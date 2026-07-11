@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -54,6 +57,12 @@ jobs:
 
       - name: Run tests
         run: python -m pytest -q
+
+      - name: Smoke test Tk interfaces
+        shell: pwsh
+        run: |
+          python -c "from win_automation_picker.app import PickerApp; app = PickerApp(); app.update_idletasks(); app.destroy()"
+          python -c "from win_automation_picker.ftp_app import RigFtpApp; app = RigFtpApp(); app.update_idletasks(); app.destroy()"
 
       - name: Build GUI executable
         run: >

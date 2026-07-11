@@ -53,6 +53,45 @@ class ConditionResult:
         }
 
 
+@dataclass(frozen=True)
+class RecipeValidationIssue:
+    path: tuple[int, ...]
+    message: str
+
+
+def validate_recipe(recipe: "AutomationRecipe") -> list[RecipeValidationIssue]:
+    issues: list[RecipeValidationIssue] = []
+    container_kinds = {"repeat", "if_exists", "if_text", "if_color", "monitor_group"}
+    selector_kinds = {"click", "type", "if_exists", "if_text", "if_color", "monitor_text", "monitor_color"}
+    condition_kinds = {"if_exists", "if_text", "if_color", "monitor_text", "monitor_color", "monitor_group"}
+
+    def visit(step: AutomationStep, path: tuple[int, ...]) -> None:
+        label = step.block_title()
+        if step.kind in selector_kinds and step.selector is None:
+            issues.append(RecipeValidationIssue(path, f"'{label}' 블록에 대상이 연결되지 않았습니다."))
+        if step.kind == "key" and not step.keys.strip():
+            issues.append(RecipeValidationIssue(path, f"'{label}' 블록의 키 조합이 비어 있습니다."))
+        if step.kind == "repeat" and step.repeat_count < 1:
+            issues.append(RecipeValidationIssue(path, f"'{label}' 블록의 반복 횟수는 1 이상이어야 합니다."))
+        if step.kind in container_kinds and not step.children:
+            issues.append(RecipeValidationIssue(path, f"'{label}' 블록 안에 실행할 블록을 넣으세요."))
+        if step.kind == "monitor_group":
+            invalid = [child.block_title() for child in step.children if child.kind not in condition_kinds]
+            if invalid:
+                issues.append(
+                    RecipeValidationIssue(
+                        path,
+                        f"'{label}' 묶음에는 조건 블록만 넣을 수 있습니다: {', '.join(invalid[:3])}",
+                    )
+                )
+        for child_index, child in enumerate(step.children):
+            visit(child, (*path, child_index))
+
+    for index, step in enumerate(recipe.steps):
+        visit(step, (index,))
+    return issues
+
+
 def _clean_header(value: str, fallback: str) -> str:
     cleaned = value.strip()
     return cleaned or fallback
@@ -278,6 +317,8 @@ class AutomationStep:
         children: list["AutomationStep"],
         *,
         label: str = "",
+        element_id: str = "",
+        element_role: str = "condition",
         block_name: str = "",
         block_color: str = "",
         description: str = "",
@@ -289,6 +330,8 @@ class AutomationStep:
             selector=selector,
             timeout=max(0.0, float(timeout)),
             label=label,
+            element_id=element_id,
+            element_role=element_role,
             block_name=block_name,
             block_color=block_color,
             description=description,
@@ -305,6 +348,8 @@ class AutomationStep:
         *,
         operator: str = "contains",
         label: str = "",
+        element_id: str = "",
+        element_role: str = "condition",
         block_name: str = "",
         block_color: str = "",
         description: str = "",
@@ -316,6 +361,8 @@ class AutomationStep:
             selector=selector,
             timeout=max(0.0, float(timeout)),
             label=label,
+            element_id=element_id,
+            element_role=element_role,
             block_name=block_name,
             block_color=block_color,
             description=description,
@@ -334,6 +381,8 @@ class AutomationStep:
         *,
         tolerance: float = 20.0,
         label: str = "",
+        element_id: str = "",
+        element_role: str = "condition",
         block_name: str = "",
         block_color: str = "",
         description: str = "",
@@ -345,6 +394,8 @@ class AutomationStep:
             selector=selector,
             timeout=max(0.0, float(timeout)),
             label=label,
+            element_id=element_id,
+            element_role=element_role,
             block_name=block_name,
             block_color=block_color,
             description=description,

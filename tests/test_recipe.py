@@ -6,6 +6,7 @@ from win_automation_picker.recipe import (
     evaluate_condition,
     render_template,
     run_recipe,
+    validate_recipe,
 )
 from win_automation_picker.selector import SelectorSegment, UISelector
 
@@ -142,6 +143,23 @@ def test_key_step_round_trip_json() -> None:
     assert restored.steps[0].element_role == "hotkey"
 
 
+def test_condition_factory_keeps_target_metadata() -> None:
+    selector = UISelector(root=SelectorSegment(control_type="Window", name="App"))
+
+    step = AutomationStep.if_text(
+        selector,
+        "PASS",
+        [],
+        element_id="status_text",
+        element_role="text",
+        description="Result status",
+    )
+
+    assert step.element_id == "status_text"
+    assert step.element_role == "text"
+    assert step.description == "Result status"
+
+
 def test_recipe_round_trip_monitor_view_layout() -> None:
     recipe = AutomationRecipe(
         steps=[AutomationStep.wait(0.1)],
@@ -191,6 +209,21 @@ def test_recipe_delete_step_removes_selected_step() -> None:
     updated = recipe.delete_step(1)
 
     assert [step.display_label() for step in updated.steps] == ["Wait 1s", "Wait 2s"]
+
+
+def test_validate_recipe_reports_nested_empty_container_and_missing_target() -> None:
+    recipe = AutomationRecipe(
+        steps=[
+            AutomationStep.repeat([], block_name="empty loop"),
+            AutomationStep(kind="click", block_name="orphan click"),
+        ]
+    )
+
+    issues = validate_recipe(recipe)
+
+    assert [issue.path for issue in issues] == [(0,), (1,)]
+    assert "블록 안" in issues[0].message
+    assert "대상" in issues[1].message
 
 
 def test_run_recipe_dispatches_key_step(monkeypatch) -> None:

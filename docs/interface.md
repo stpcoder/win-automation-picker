@@ -2,50 +2,83 @@
 
 ## Win Automation Picker
 
-### 상단 작업 영역
+프로그램을 열면 `매크로 만들기`가 첫 화면으로 선택됩니다. JSON이나 selector 편집기는 기본 화면을 가리지 않고 `데이터 / 고급` 탭에 모여 있습니다.
+
+## 상단 바
+
+첫째 줄은 파일과 실행 명령입니다.
+
+| 버튼 | 동작 |
+| --- | --- |
+| `불러오기` | 저장한 workflow JSON 열기 |
+| `저장` | 현재 workflow JSON 저장 |
+| `Python 내보내기` | 단독 실행 가능한 Python 파일 생성 |
+| `실행` | 현재 매크로 1회 실행 |
+| `데이터 실행` | 데이터 행마다 매크로 반복 실행 |
+| `중지` | 실행 중인 매크로 중단 요청 |
+| `더보기` | selector, JSON, 추가 블록 관련 고급 명령 |
+
+둘째 줄은 캡처와 입력값입니다.
+
+| 항목 | 동작 |
+| --- | --- |
+| `대상 확인` | 블록을 만들지 않고 클릭한 component만 조사 |
+| `클릭 녹화` | 다음 외부 클릭을 클릭 블록으로 생성 |
+| `입력 녹화` | 다음 외부 클릭을 입력 대상 블록으로 생성 |
+| `캡처 취소` | 대기 중인 대상 선택 취소 |
+| `입력값` | 입력 블록이 실행할 문자열 또는 `${변수}` |
+| `기존값 지우기` | 입력 전에 기존 값을 지움 |
+| `paste / keys` | 붙여넣기 또는 키 입력 방식 선택 |
+| `대상 고급 설정` | 대상명, 역할, 창 구분 조건 패널 열기/닫기 |
+
+## 매크로 만들기
+
+화면은 세 영역으로 나뉩니다.
 
 | 영역 | 역할 |
 | --- | --- |
-| `Capture` | `Inspect`, `Click block`, `Type block`, `Cancel` |
-| `Input` | 입력 텍스트, 기존 값 삭제 여부, 입력 방식 |
-| `Run` | `Run once`, `Run rows`, `Stop`, row 실행 옵션 |
-| `More` | 저장/로드/export, selector 테스트, wait/key 추가, JSON 적용 |
+| 왼쪽 `블록` | 이벤트, 제어, 감시 블록 팔레트 |
+| 가운데 `블록 작업실` | 블록 배치, 중첩, 순서 변경 |
+| 오른쪽 `블록 설정` | 이름, 값, 조건, 대상, 모니터 보드 설정 |
 
-### Target Setup
+팔레트 블록은 클릭하거나 가운데로 끌어 놓을 수 있습니다. 가운데 블록은 블록 사이 또는 반복/조건 블록 안으로 다시 끌어 이동합니다.
 
-| 필드 | 입력 내용 |
+## 모니터링
+
+`모니터링` 탭은 규칙 작성 결과와 실제 판정값을 함께 보여줍니다.
+
+| 영역 | 역할 |
 | --- | --- |
-| `Name` | agent나 Python 코드에서 부를 이름. 예: `start_button`, `message_input` |
-| `Type` | `button`, `input`, `menu`, `checkbox`, `text` 등 |
-| `Note` | 사람이 읽는 설명 |
-| `Window match` | 같은 프로그램 창이 여러 개일 때 구분할 텍스트. 예: `CH1`, `CH11` |
+| 상단 실행 바 | `한 번 확인`, `자동 시작`, `중지`, 확인 주기 |
+| `보드와 규칙` | 보드명과 장비/CH 배정, 규칙 추가, AND/OR 묶기 |
+| 규칙 표 | 통과/실패, 판정식, 최근 읽은 값 확인 |
+| `보드 화면 구성` | 행/열과 표시 순서 커스터마이즈 |
+| `상태 보드 미리보기` | 설정한 CH와 상태 기준 최종 화면 미리보기 |
 
-### 좌측 패널
+## 나머지 탭
 
 | 탭 | 설명 |
 | --- | --- |
-| `Target Detail` | 현재 selector JSON |
-| `Recipe JSON` | 전체 workflow JSON |
-| `Data Rows` | Excel/Google Sheets에서 복사한 반복 실행 데이터 |
+| `실행 기록` | 녹화, 실행, 모니터 판정 이벤트 |
+| `배포` | FTP 서버에 현재 매크로 업로드 및 slave 실행 요청 |
+| `데이터 / 고급` | 데이터 행, workflow JSON, selector, 캡처 진단, 창 후보, 순서/대상 목록 |
 
-### 우측 패널
+## 대상 고급 설정
 
-| 탭 | 설명 |
-| --- | --- |
-| `Inspect` | XPath-like path와 Python snippet |
-| `Build` | 블록 기반 매크로 디자인 |
-| `Dashboard` | 모니터링 보드 설계 |
-| `Sequence` | step 순서 목록 |
-| `Targets` | agent용 element 목록 |
-| `Run Log` | 녹화/실행 상태 로그 |
-| `Capture` | 캡처 품질 상세 정보 |
-| `Windows` | 창 후보 디버그 |
-| `Deploy` | FTP 서버로 현재 매크로 업로드 |
+동일 프로그램 창이 여러 개이거나 CH 식별이 필요할 때만 상단의 `대상 고급 설정`을 엽니다.
+
+| 필드 | 예시 | 의미 |
+| --- | --- | --- |
+| `대상 이름` | `start_button` | Python/agent에서 사용할 element id |
+| `유형` | `button`, `input`, `text` | component 역할 |
+| `메모` | `CH11 시작 버튼` | 사람이 읽을 설명 |
+| `창 구분` | `contains`, `equals`, `regex` | 같은 프로그램 창을 구분하는 방식 |
+| 창 구분 값 | `CH11`, `\bCH\s*11\b` | 창 내부에서 확인할 고유 텍스트 |
 
 ## Rig FTP Commander
 
 | 탭 | 역할 |
 | --- | --- |
-| `Monitor & Run` | macro 업로드, 실행, slave 상태 모니터링 |
+| `Monitor & Run` | 매크로 업로드, slave 실행, 상태와 결과 확인 |
 | `This PC Agent` | 현재 PC를 slave agent로 실행 |
-| `Connection Setup` | FTP 계정, node id, poll interval, retention 설정 |
+| `Connection Setup` | FTP, node id, polling, 보관 개수 설정 |

@@ -40,7 +40,7 @@ nav:
       - 화면 구성: interface.md
   - 매크로 생성기:
       - 기본 매크로 만들기: macro-builder/basic-flow.md
-      - 블록 디자인: macro-builder/block-designer.md
+      - Scratch식 블록 작업실: macro-builder/block-designer.md
       - 조건과 모니터링 블록: macro-builder/conditions-monitoring.md
       - 데이터 행과 템플릿: macro-builder/data-rows.md
       - Python export: macro-builder/python-export.md
