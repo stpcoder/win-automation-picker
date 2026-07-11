@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import queue
 import random
+import re
 import shlex
 import sys
 import threading
@@ -52,6 +53,15 @@ from .workbench_ui import AEWorkbenchMixin
 DEFAULT_CONFIG = "rig-ftp.info"
 LEGACY_CONFIG = "rig-ftp.config.json"
 DEFAULT_CONFIG_FILES = (DEFAULT_CONFIG, LEGACY_CONFIG)
+
+
+def natural_label_key(value: object) -> tuple[tuple[int, object], ...]:
+    parts = re.split(r"(\d+)", str(value or ""))
+    return tuple(
+        (1, int(part)) if part.isdigit() else (0, part.casefold())
+        for part in parts
+        if part
+    )
 
 
 class RigFtpApp(AEWorkbenchMixin, tk.Tk):
@@ -127,6 +137,24 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         style.configure("TNotebook", background="#f4f7fb", borderwidth=0)
         style.configure("TNotebook.Tab", padding=(10, 5))
         style.configure("Treeview", rowheight=24)
+
+    def _style_text_widget(self, widget: tk.Text) -> tk.Text:
+        font = ("Segoe UI", 10) if sys.platform.startswith("win") else ("TkDefaultFont", 10)
+        widget.configure(
+            background="#ffffff",
+            foreground="#111827",
+            insertbackground="#111827",
+            selectbackground="#bfdbfe",
+            selectforeground="#111827",
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground="#cbd5e1",
+            highlightcolor="#2563eb",
+            padx=8,
+            pady=6,
+            font=font,
+        )
+        return widget
 
     def _set_app_icon(self) -> None:
         for base in self._asset_search_paths():
@@ -364,15 +392,25 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
             row=0, column=3, sticky="ew", padx=(4, 0)
         )
 
-        ttk.Label(macro, text="로컬 시험값", style="Panel.TLabel").grid(
+        ttk.Label(macro, text="시험 변수", style="Panel.TLabel").grid(
             row=3, column=0, sticky="w", padx=(0, 6), pady=(4, 0)
         )
         self.wb_macro_values_var = tk.StringVar(value="{}")
-        ttk.Entry(macro, textvariable=self.wb_macro_values_var).grid(
+        self.wb_macro_values_summary_var = tk.StringVar(value="사용할 변수 없음")
+        ttk.Entry(
+            macro,
+            textvariable=self.wb_macro_values_summary_var,
+            state="readonly",
+        ).grid(
             row=3, column=1, sticky="ew", padx=(0, 5), pady=(4, 0)
         )
         test_actions = ttk.Frame(macro, style="Panel.TFrame")
         test_actions.grid(row=3, column=2, sticky="e", pady=(4, 0))
+        ttk.Button(
+            test_actions,
+            text="값 편집",
+            command=self._edit_workbench_macro_values,
+        ).pack(side="left", padx=(0, 4))
         self.wb_macro_test_button = ttk.Button(
             test_actions,
             text="시험",
@@ -440,12 +478,31 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         )
         self.wb_shortcut_frame = ttk.Frame(shortcuts, style="Panel.TFrame")
         self.wb_shortcut_frame.grid(row=0, column=1, sticky="ew")
-        ttk.Button(shortcuts, text="현재 매크로 버튼 만들기", command=self._add_workbench_shortcut).grid(
+        ttk.Button(shortcuts, text="버튼 추가", command=self._add_workbench_shortcut).grid(
             row=0, column=2, padx=(8, 5)
         )
-        ttk.Button(shortcuts, text="선택 버튼 삭제", command=self._remove_workbench_shortcut).grid(
-            row=0, column=3
+        ttk.Button(shortcuts, text="이름 / 메모", command=self._edit_workbench_shortcut).grid(
+            row=0, column=3, padx=(0, 5)
         )
+        ttk.Button(shortcuts, text="위치 <", command=lambda: self._move_workbench_shortcut(-1)).grid(
+            row=0, column=4, padx=(0, 5)
+        )
+        ttk.Button(shortcuts, text="위치 >", command=lambda: self._move_workbench_shortcut(1)).grid(
+            row=0, column=5, padx=(0, 5)
+        )
+        ttk.Button(shortcuts, text="삭제", command=self._remove_workbench_shortcut).grid(
+            row=0, column=6
+        )
+        ttk.Label(shortcuts, text="선택 메모", style="Panel.TLabel").grid(
+            row=1, column=0, sticky="w", padx=(0, 12), pady=(5, 0)
+        )
+        self.wb_shortcut_notes_var = tk.StringVar(value="-")
+        ttk.Label(
+            shortcuts,
+            textvariable=self.wb_shortcut_notes_var,
+            style="Muted.TLabel",
+            anchor="w",
+        ).grid(row=1, column=1, columnspan=6, sticky="ew", pady=(5, 0))
 
         footer = ttk.Frame(parent, padding=(12, 9), style="Panel.TFrame")
         footer.grid(row=4, column=0, sticky="ew")
@@ -600,7 +657,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
             "channels": "CH / 슬롯",
             "variables": "PC별 변수",
         }
-        slave_widths = {"alias": 75, "node": 110, "host": 105, "channels": 130, "variables": 160}
+        slave_widths = {"alias": 75, "node": 110, "host": 105, "channels": 180, "variables": 120}
         for column in ("alias", "node", "host", "channels", "variables"):
             self.settings_slave_tree.heading(column, text=slave_headings[column])
             self.settings_slave_tree.column(column, width=slave_widths[column], anchor="w")
@@ -1180,6 +1237,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         )
         ttk.Label(package, text="설명").grid(row=3, column=0, sticky="nw", padx=(0, 6), pady=3)
         self.package_notes_text = tk.Text(package, height=4, wrap="word", undo=True)
+        self._style_text_widget(self.package_notes_text)
         self.package_notes_text.grid(row=3, column=1, columnspan=2, sticky="ew", pady=3)
         ttk.Button(package, text="파일 업로드", command=self._upload_package, style="Primary.TButton").grid(
             row=4,
@@ -1303,6 +1361,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         detail_frame.rowconfigure(0, weight=1)
         detail_frame.columnconfigure(0, weight=1)
         self.package_detail_text = tk.Text(detail_frame, height=8, wrap="word")
+        self._style_text_widget(self.package_detail_text)
         self.package_detail_text.grid(row=0, column=0, sticky="nsew")
         ttk.Button(
             detail_frame,
@@ -1342,6 +1401,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         self.results_loaded_var = tk.StringVar(value="마지막 결과 조회: -")
 
         status_views = ttk.Notebook(monitor)
+        self.status_views_notebook = status_views
         status_views.grid(row=1, column=0, columnspan=7, sticky="nsew", pady=(8, 0))
         pc_status_page = ttk.Frame(status_views)
         channel_status_page = ttk.Frame(status_views)
@@ -1529,6 +1589,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         log_frame.rowconfigure(0, weight=1)
         log_frame.columnconfigure(0, weight=1)
         self.master_log_text = tk.Text(log_frame, height=8, wrap="word")
+        self._style_text_widget(self.master_log_text)
         self.master_log_text.grid(row=0, column=0, sticky="nsew")
         log_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.master_log_text.yview)
         log_scroll.grid(row=0, column=1, sticky="ns")
@@ -1626,15 +1687,15 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
             "pc": 65,
             "channel": 80,
             "slot": 55,
-            "material": 110,
-            "soc": 100,
-            "binary": 125,
+            "material": 100,
+            "soc": 145,
+            "binary": 115,
             "attempt": 45,
             "state": 75,
             "grid": 120,
             "acceptance": 70,
             "failure": 90,
-            "updated": 135,
+            "updated": 125,
         }
         for column in columns:
             self.campaign_tree.heading(column, text=headings[column])
@@ -1697,6 +1758,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         log_frame.rowconfigure(0, weight=1)
         log_frame.columnconfigure(0, weight=1)
         self.slave_log_text = tk.Text(log_frame, height=16, wrap="word")
+        self._style_text_widget(self.slave_log_text)
         self.slave_log_text.grid(row=0, column=0, sticky="nsew")
         slave_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.slave_log_text.yview)
         slave_scroll.grid(row=0, column=1, sticky="ns")
@@ -2778,7 +2840,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
             records.values(),
             key=lambda item: (
                 str(item.get("node") or ""),
-                str(item.get("channel") or ""),
+                natural_label_key(item.get("channel")),
                 int(item.get("attempt") or 1),
             ),
         )
@@ -3253,11 +3315,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
                     part
                     for part in (
                         str(details.get("campaign_id") or ""),
-                        (
-                            f"{details.get('campaign_attempt')}/{details.get('campaign_repeat_count')}"
-                            if details.get("campaign_attempt")
-                            else ""
-                        ),
+                        self._campaign_attempt_label(details),
                     )
                     if part
                 ),
@@ -3267,6 +3325,14 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
                 summary,
             )
             self.result_tree.insert("", "end", iid=str(index), values=values, tags=("ok" if ok else "fail",))
+
+    @staticmethod
+    def _campaign_attempt_label(details: dict[str, Any]) -> str:
+        attempt = details.get("campaign_attempt")
+        if attempt in (None, ""):
+            return ""
+        repeat_count = details.get("campaign_repeat_count")
+        return f"{attempt}/{repeat_count}" if repeat_count not in (None, "") else str(attempt)
 
     def _selected_result_row(self) -> dict[str, Any] | None:
         selection = self.result_tree.selection()
@@ -3288,6 +3354,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         frame = ttk.Frame(window, padding=10)
         frame.pack(fill="both", expand=True)
         text_widget = tk.Text(frame, wrap="word")
+        self._style_text_widget(text_widget)
         text_widget.pack(fill="both", expand=True)
         text_widget.insert("1.0", json.dumps(row, indent=2, ensure_ascii=False))
         text_widget.configure(state="disabled")

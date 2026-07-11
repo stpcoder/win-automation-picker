@@ -19,5 +19,15 @@ def test_choose_drop_zone_respects_horizontal_nesting() -> None:
     assert choose_drop_zone(zones, 30, 100) == zones[0]
 
 
+def test_choose_drop_zone_keeps_parent_gutter_reachable_with_small_indent() -> None:
+    zones = [
+        DropZone((), 2, 20, 500, 100, 0),
+        DropZone((1,), 1, 42, 478, 100, 1),
+    ]
+
+    assert choose_drop_zone(zones, 22, 100) == zones[0]
+    assert choose_drop_zone(zones, 120, 100) == zones[1]
+
+
 def test_choose_drop_zone_returns_none_for_empty_workspace() -> None:
     assert choose_drop_zone([], 10, 10) is None

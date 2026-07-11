@@ -3,6 +3,12 @@
 `AEWorkbench.exe`는 SEQ 준비, Scratch 매크로 제작, 사전 점검, FTP 업로드,
 PC/CH별 실행과 모니터링을 한 진입 화면으로 연결합니다.
 
+![SEQ와 Scratch가 모두 PASS인 AE Workbench](assets/screenshots/01-ae-workbench.png)
+
+위 예시는 `Mobile DRAM RH 4-Corner` 작업입니다. `SEQ PASS`, `MACRO PASS`,
+`업로드 가능`이 동시에 보여야 원격 실행 준비가 끝난 것입니다. `업로드 가능`은
+실행을 뜻하지 않으며, 실제 전송은 마지막 `SEQ + 매크로 업로드`를 눌러야 시작됩니다.
+
 ## 준비 파일
 
 | 파일 | 역할 |
@@ -82,15 +88,16 @@ PC/CH별 실행과 모니터링을 한 진입 화면으로 연결합니다.
 
 1. Picker에서 `저장`을 누릅니다.
 2. Workbench에서 `구성 검사`를 누릅니다.
-3. `로컬 시험값`에 PC별 값을 JSON으로 입력합니다.
+3. `시험 변수 > 값 편집`을 누릅니다.
+4. 자동으로 표시된 `channel`, `sequence_name`, `dram_part` 칸에 시험할 값을 적고
+   `저장`을 누릅니다. JSON 문법을 직접 입력하지 않습니다.
+5. `시험`을 누르면 이 PC에서 실제 매크로가 실행됩니다.
+6. 진행 중에는 `중지`로 긴급 중단할 수 있습니다. 정상 중단은 오류 팝업 없이
+   `Stopped`로 기록됩니다.
+7. `Python 내보내기`를 누릅니다.
 
-```json
-{"channel":"CH11","sequence":"SEQ_A","material":"LOT-01"}
-```
-
-4. `시험`을 누르면 이 PC에서 실제 매크로가 실행됩니다.
-5. 진행 중에는 `중지`로 긴급 중단할 수 있습니다.
-6. `Python 내보내기`를 누릅니다.
+시험 변수는 `*.aework.json`에 작업별로 저장됩니다. 원격 PC마다 다른 값은 이 시험
+변수가 아니라 뒤의 `PC / 슬롯 / CH별 실행표` 각 행에서 지정합니다.
 
 Scratch source가 export 이후 바뀌면 source SHA-256이 달라져 업로드 버튼이 다시
 비활성화됩니다.
@@ -107,6 +114,11 @@ Scratch source가 export 이후 바뀌면 source SHA-256이 달라져 업로드 
 즉시 실행되지는 않으며 `시험` 또는 배포 절차를 명시적으로 눌러야 합니다. 버튼은
 마지막 Python export 경로와 source hash도 함께 기억하므로 최신 상태라면 다시
 내보내지 않아도 됩니다.
+
+- `버튼 추가`: 현재 매크로를 새 버튼으로 등록
+- `이름 / 메모`: 선택한 버튼의 업무 이름과 설명 수정
+- `위치 <`, `위치 >`: 버튼 순서 변경
+- `삭제`: 선택한 버튼만 제거하며 원본 매크로 파일은 삭제하지 않음
 
 ## 5. 사전 점검과 업로드
 
@@ -128,6 +140,8 @@ Scratch source가 export 이후 바뀌면 source SHA-256이 달라져 업로드 
 
 `PC / 슬롯 / CH별 실행표`에서 한 행은 한 실행 대상입니다.
 
+![PC와 CH마다 서로 다른 변수를 배정한 실행표](assets/screenshots/03-pc-channel-run-table.png)
+
 | 값 | 예 |
 | --- | --- |
 | 별명 | `PC04` |
@@ -139,6 +153,9 @@ Scratch source가 export 이후 바뀌면 source SHA-256이 달라져 업로드 
 
 같은 PC를 여러 행에 넣어 CH마다 다른 SEQ와 변수값을 배정할 수 있습니다. CH 이름은
 숫자 형식으로 고정되지 않습니다.
+
+표의 값을 바꾸려면 해당 셀을 더블클릭합니다. 첫 열의 체크를 끄면 그 행만 전송에서
+제외됩니다. `실행표 전송`을 누르기 전에는 slave에 실행 명령이 생성되지 않습니다.
 
 ## 7. 서버 FLOW 다시 수정
 
@@ -165,3 +182,31 @@ Scratch source가 export 이후 바뀌면 source SHA-256이 달라져 업로드 
 - 업로드는 FTP의 설정된 root 아래만 사용합니다.
 - slave 실행은 interactive desktop이 잠기거나 로그오프되면 실패할 수 있습니다.
 - 관리자 권한 프로그램은 Workbench/Agent도 같은 권한으로 실행해야 합니다.
+
+## 이번 Mac 실제 조작 검증
+
+문서 화면은 정적 목업이 아니라 실제 Tk/Qt 앱에 AE 데모 데이터를 넣어 캡처했습니다.
+
+| 검증 | 결과 |
+| --- | --- |
+| Scratch 팔레트 drag/drop과 반복 블록 안 삽입 | PASS |
+| 선택 블록 이름 변경, 위/아래, 안/밖 이동 | PASS |
+| 복제, 삭제, undo, redo | PASS |
+| 로컬 wait 매크로 실행 후 `중지` | PASS |
+| SEQ Generator Conditions/Run Matrix 탭 전환 | PASS |
+| 기본 4-corner recipe Validate | `5 blocks, 86 commands` PASS |
+| Workbench source/export 및 recipe/package hash gate | PASS |
+
+Mac에는 Windows UI Automation이 없으므로 실제 SK Commander component 녹화·클릭·입력은
+검증 대상이 아닙니다. 이 부분은 배포 전 Windows 시험 PC 한 대에서 확인해야 합니다.
+
+화면을 다시 생성하려면 두 저장소에서 다음을 실행합니다.
+
+```bash
+cd win-automation-picker
+.venv/bin/python scripts/capture_manual_screenshots.py
+
+cd ../test-sequence-generator
+.venv/bin/python scripts/capture_manual_screenshots.py \
+  --output-dir ../win-automation-picker/docs/assets/screenshots
+```

@@ -1,5 +1,10 @@
 # 상태 모니터링과 캡처
 
+![PC heartbeat와 PASS/FAIL 결과를 한 화면에서 보는 상태 모니터링](../assets/screenshots/05-status-monitor.png)
+
+예시에서 `PC04`는 실행 중이고 `PC07`은 online 대기 상태입니다. 아래 결과 표는 CH11
+FAIL과 CH9 PASS를 원래 job ID, 캠페인/시도, 완료 시각과 함께 보여줍니다.
+
 ## 상태 새로고침
 
 1. master PC에서 `RigFtpCommander.exe`를 실행합니다.

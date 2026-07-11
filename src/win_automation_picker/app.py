@@ -254,6 +254,24 @@ class PickerApp(tk.Toplevel):
         style.configure("TLabelframe.Label", background="#f4f7fb", foreground="#374151")
         style.configure("Treeview", rowheight=24)
 
+    def _style_text_widget(self, widget: tk.Text) -> tk.Text:
+        font = ("Segoe UI", 10) if sys.platform.startswith("win") else ("TkDefaultFont", 10)
+        widget.configure(
+            background="#ffffff",
+            foreground="#111827",
+            insertbackground="#111827",
+            selectbackground="#bfdbfe",
+            selectforeground="#111827",
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground="#cbd5e1",
+            highlightcolor="#2563eb",
+            padx=8,
+            pady=6,
+            font=font,
+        )
+        return widget
+
     def _build_ui(self) -> None:
         self.columnconfigure(0, weight=1)
         self.rowconfigure(2, weight=1)
@@ -845,6 +863,7 @@ class PickerApp(tk.Toplevel):
         palette.rowconfigure(1, weight=1)
         ttk.Label(palette, text="블록", style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 8))
         palette_tabs = ttk.Notebook(palette)
+        self.scratch_palette_notebook = palette_tabs
         palette_tabs.grid(row=1, column=0, sticky="nsew")
         event_palette = ttk.Frame(palette_tabs, padding=(7, 9), style="Panel.TFrame")
         control_palette = ttk.Frame(palette_tabs, padding=(7, 9), style="Panel.TFrame")
@@ -1090,8 +1109,25 @@ class PickerApp(tk.Toplevel):
 
         save_button = ttk.Button(fields, text="변경 적용", command=self._apply_block_metadata, style="Primary.TButton")
         save_button.grid(row=44, column=0, sticky="ew", pady=(12, 6))
+        move_actions = ttk.Frame(fields, style="Panel.TFrame")
+        move_actions.grid(row=45, column=0, sticky="ew")
+        for column in (0, 1):
+            move_actions.columnconfigure(column, weight=1)
+        ttk.Button(move_actions, text="위로", command=lambda: self._move_selected_step(-1)).grid(
+            row=0, column=0, sticky="ew", padx=(0, 3), pady=(0, 5)
+        )
+        ttk.Button(move_actions, text="아래로", command=lambda: self._move_selected_step(1)).grid(
+            row=0, column=1, sticky="ew", padx=(3, 0), pady=(0, 5)
+        )
+        ttk.Button(move_actions, text="앞 블록 안으로", command=self._nest_selected_block_in_previous).grid(
+            row=1, column=0, sticky="ew", padx=(0, 3)
+        )
+        ttk.Button(move_actions, text="컨테이너 밖으로", command=self._move_selected_block_out).grid(
+            row=1, column=1, sticky="ew", padx=(3, 0)
+        )
+
         block_actions = ttk.Frame(fields, style="Panel.TFrame")
-        block_actions.grid(row=45, column=0, sticky="ew")
+        block_actions.grid(row=46, column=0, sticky="ew", pady=(6, 0))
         for column in (0, 1, 2):
             block_actions.columnconfigure(column, weight=1)
         ttk.Button(block_actions, text="복제", command=self._duplicate_selected_block).grid(
@@ -1119,6 +1155,7 @@ class PickerApp(tk.Toplevel):
             (monitor_palette, "monitor_all", "AND 조건 묶음", "#0f766e", "모든 안쪽 조건이 맞아야 통과합니다."),
             (monitor_palette, "monitor_any", "OR 조건 묶음", "#0369a1", "안쪽 조건 중 하나가 맞으면 통과합니다."),
         )
+        self.scratch_palette_items: dict[str, ScratchPaletteItem] = {}
         rows: dict[tk.Widget, int] = {event_palette: 0, control_palette: 0, monitor_palette: 0}
         for palette_parent, kind, label, color, tooltip in palette_items:
             row = rows[palette_parent]
@@ -1132,6 +1169,7 @@ class PickerApp(tk.Toplevel):
                 on_drop=self._drop_palette_block,
             )
             item.grid(row=row, column=0, sticky="ew", pady=(0, 7))
+            self.scratch_palette_items[kind] = item
             self._attach_tooltip(item, tooltip)
             rows[palette_parent] = row + 1
 
@@ -1241,6 +1279,7 @@ class PickerApp(tk.Toplevel):
         ttk.Entry(package, textvariable=self.ftp_package_title_var).grid(row=1, column=1, sticky="ew", pady=3)
         ttk.Label(package, text="Notes").grid(row=2, column=0, sticky="nw", padx=(0, 6), pady=3)
         self.ftp_package_notes_text = tk.Text(package, height=3, wrap="word", undo=True)
+        self._style_text_widget(self.ftp_package_notes_text)
         self.ftp_package_notes_text.grid(row=2, column=1, sticky="ew", pady=3)
         ttk.Button(
             package,
@@ -1263,6 +1302,7 @@ class PickerApp(tk.Toplevel):
         self.ftp_package_list.configure(yscrollcommand=package_scroll.set)
 
         self.ftp_package_detail_text = tk.Text(parent, height=8, wrap="word")
+        self._style_text_widget(self.ftp_package_detail_text)
         self.ftp_package_detail_text.grid(row=2, column=1, sticky="nsew", pady=(0, 8))
 
         run_frame = ttk.Labelframe(parent, text="PC별 실행표", padding=(10, 8))
@@ -1300,10 +1340,12 @@ class PickerApp(tk.Toplevel):
         self._refresh_ftp_profile_columns()
 
         self.ftp_log_text = tk.Text(parent, height=7, wrap="word")
+        self._style_text_widget(self.ftp_log_text)
         self.ftp_log_text.grid(row=4, column=0, columnspan=2, sticky="nsew")
 
     def _text_area(self, parent: tk.Widget, *, wrap: str, row: int, height: int | None = None) -> tk.Text:
         widget = tk.Text(parent, wrap=wrap, undo=True, height=height or 20)
+        self._style_text_widget(widget)
         scroll_y = ttk.Scrollbar(parent, orient="vertical", command=widget.yview)
         scroll_x = ttk.Scrollbar(parent, orient="horizontal", command=widget.xview)
         widget.configure(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
@@ -3203,7 +3245,11 @@ class PickerApp(tk.Toplevel):
                 self._queue.put(("status", "Done"))
                 self._queue.put(("monitor", "Run finished."))
             except BaseException as exc:
-                self._queue.put(("error", exc))
+                if stop_event.is_set():
+                    self._queue.put(("status", "Stopped"))
+                    self._queue.put(("monitor", "Run stopped by user request."))
+                else:
+                    self._queue.put(("error", exc))
             finally:
                 self._queue.put(("run_finished", None))
 
@@ -4270,13 +4316,13 @@ class PickerApp(tk.Toplevel):
     def _move_selected_step(self, delta: int) -> None:
         path = self._selected_step_path()
         if path is None:
-            self._show_error(WindowsAutomationError("Select a step first."))
+            self._show_error(WindowsAutomationError("이동할 블록을 선택하세요."))
             return
         siblings = self._recipe.steps if len(path) == 1 else get_block_step(self._recipe, path[:-1]).children
         current_index = path[-1]
         target_index = max(0, min(len(siblings) - 1, current_index + delta))
         if target_index == current_index:
-            self.status.set("Step order unchanged")
+            self.status.set("더 이동할 수 없습니다")
             return
         destination_index = target_index if delta < 0 else target_index + 1
         try:
@@ -4284,8 +4330,61 @@ class PickerApp(tk.Toplevel):
         except BaseException as exc:
             self._show_error(exc)
             return
-        direction = "up" if delta < 0 else "down"
+        direction = "위" if delta < 0 else "아래"
         self._commit_recipe(recipe, selected_path=new_path, message=f"블록을 {direction} 방향으로 이동했습니다")
+
+    def _nest_selected_block_in_previous(self) -> None:
+        path = self._selected_step_path()
+        if path is None:
+            self._show_error(WindowsAutomationError("이동할 블록을 선택하세요."))
+            return
+        if path[-1] == 0:
+            self._show_error(WindowsAutomationError("앞에 있는 반복 또는 조건 블록을 먼저 배치하세요."))
+            return
+        parent_path = path[:-1]
+        container_path = (*parent_path, path[-1] - 1)
+        container = get_block_step(self._recipe, container_path)
+        if container.kind not in {"repeat", "if_exists", "if_text", "if_color", "monitor_group"}:
+            self._show_error(WindowsAutomationError("앞 블록은 반복, 조건 또는 AND/OR 묶음이어야 합니다."))
+            return
+        moving = get_block_step(self._recipe, path)
+        if container.kind == "monitor_group" and not self._is_condition_like_step(moving):
+            self._show_error(WindowsAutomationError("AND/OR 묶음 안에는 조건 또는 모니터 블록만 넣을 수 있습니다."))
+            return
+        try:
+            recipe, new_path = move_block_step(
+                self._recipe,
+                path,
+                container_path,
+                len(container.children),
+            )
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+        self._commit_recipe(recipe, selected_path=new_path, message="블록을 앞 컨테이너 안으로 이동했습니다")
+
+    def _move_selected_block_out(self) -> None:
+        path = self._selected_step_path()
+        if path is None:
+            self._show_error(WindowsAutomationError("이동할 블록을 선택하세요."))
+            return
+        if len(path) == 1:
+            self._show_error(WindowsAutomationError("이 블록은 이미 최상위에 있습니다."))
+            return
+        container_path = path[:-1]
+        destination_parent = container_path[:-1]
+        destination_index = container_path[-1] + 1
+        try:
+            recipe, new_path = move_block_step(
+                self._recipe,
+                path,
+                destination_parent,
+                destination_index,
+            )
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+        self._commit_recipe(recipe, selected_path=new_path, message="블록을 컨테이너 밖으로 이동했습니다")
 
     def _delete_selected_step(self) -> None:
         path = self._selected_step_path()

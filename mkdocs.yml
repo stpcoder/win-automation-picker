@@ -4,6 +4,8 @@ site_url: https://stpcoder.github.io/win-automation-picker/
 repo_url: https://github.com/stpcoder/win-automation-picker
 repo_name: stpcoder/win-automation-picker
 docs_dir: docs
+exclude_docs: |
+  assets/screenshots/README.md
 theme:
   name: material
   language: ko

@@ -74,6 +74,7 @@ class AEWorkbenchMixin:
             sequence_tool_path=self.wb_seq_tool_var.get().strip(),
             macro_project_path=self.wb_macro_project_var.get().strip(),
             macro_export_path=self.wb_macro_export_var.get().strip(),
+            macro_test_values=self._workbench_macro_test_values(),
         )
 
     def _apply_workbench_project(self, project: AEWorkbenchProject) -> None:
@@ -84,6 +85,8 @@ class AEWorkbenchMixin:
         self.wb_seq_tool_var.set(project.sequence_tool_path)
         self.wb_macro_project_var.set(project.macro_project_path)
         self.wb_macro_export_var.set(project.macro_export_path)
+        self.wb_macro_values_var.set(json.dumps(project.macro_test_values, ensure_ascii=True))
+        self._refresh_workbench_test_values_summary()
         if not project.sequence_tool_path:
             installation = find_sequence_tool_installation()
             if installation is not None:
@@ -533,9 +536,7 @@ class AEWorkbenchMixin:
             inspection = inspect_automation_project(self._workbench_macro_source())
             if not inspection.ok:
                 raise ValueError("\n".join(inspection.issues))
-            values = json.loads(self.wb_macro_values_var.get().strip() or "{}")
-            if not isinstance(values, dict):
-                raise ValueError("로컬 시험값은 JSON object여야 합니다.")
+            values = self._workbench_macro_test_values()
             dataset = DataSet.from_text(
                 inspection.project.data_text,
                 first_row_headers=inspection.project.first_row_headers,
@@ -577,11 +578,81 @@ class AEWorkbenchMixin:
                     ),
                 )
             except BaseException as exc:
-                self._queue.put(("workbench_macro_done", {"ok": False, "message": str(exc)}))
+                self._queue.put(
+                    (
+                        "workbench_macro_done",
+                        {
+                            "ok": False,
+                            "stopped": stop_event.is_set(),
+                            "message": "Stopped · 로컬 시험 중단" if stop_event.is_set() else str(exc),
+                        },
+                    )
+                )
             else:
                 self._queue.put(("workbench_macro_done", {"ok": True, "message": "로컬 시험 완료"}))
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _workbench_macro_test_values(self) -> dict[str, str]:
+        raw = self.wb_macro_values_var.get().strip() if hasattr(self, "wb_macro_values_var") else ""
+        if not raw:
+            return {}
+        values = json.loads(raw)
+        if not isinstance(values, dict):
+            raise ValueError("시험 변수 데이터가 올바르지 않습니다.")
+        return {str(key): str(value) for key, value in values.items()}
+
+    def _workbench_test_variable_defaults(self) -> dict[str, str]:
+        values = self._workbench_macro_test_values()
+        try:
+            inspection = inspect_automation_project(self._workbench_macro_source())
+        except (OSError, ValueError):
+            return values
+        defaults = {str(key): str(value) for key, value in inspection.project.recipe.variables.items()}
+        defaults.update(values)
+        for name in inspection.variable_names:
+            defaults.setdefault(name, "")
+        return defaults
+
+    def _refresh_workbench_test_values_summary(self) -> None:
+        if not hasattr(self, "wb_macro_values_summary_var"):
+            return
+        try:
+            values = self._workbench_test_variable_defaults()
+        except (json.JSONDecodeError, ValueError):
+            self.wb_macro_values_summary_var.set("시험 변수 데이터 오류")
+            return
+        if not values:
+            self.wb_macro_values_summary_var.set("사용할 변수 없음")
+            return
+        preview = [f"{key}={value or '(빈 값)'}" for key, value in values.items()]
+        if len(preview) > 3:
+            preview = [*preview[:3], f"+{len(preview) - 3}개"]
+        self.wb_macro_values_summary_var.set("  |  ".join(preview))
+
+    def _edit_workbench_macro_values(self) -> None:
+        try:
+            values = self._workbench_test_variable_defaults()
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+        if not values:
+            messagebox.showinfo(
+                "시험 변수",
+                "현재 매크로에는 PC별 입력 변수가 없습니다.",
+                parent=self,
+            )
+            return
+        edited = self._ask_field_values(
+            "시험 변수 편집",
+            [(key, key, value) for key, value in values.items()],
+        )
+        if edited is None:
+            return
+        self.wb_macro_values_var.set(json.dumps(edited, ensure_ascii=True))
+        self._workbench_project = replace(self._workbench_from_fields(), macro_test_values=edited)
+        self._refresh_workbench_test_values_summary()
+        self._save_workbench_project(silent=True)
 
     def _stop_workbench_macro(self) -> None:
         if self._macro_test_stop is not None:
@@ -657,6 +728,48 @@ class AEWorkbenchMixin:
         self._render_workbench_shortcuts()
         self._save_workbench_project(silent=True)
 
+    def _edit_workbench_shortcut(self) -> None:
+        name = getattr(self, "_selected_shortcut_name", "")
+        shortcut = next(
+            (item for item in self._workbench_project.shortcuts if item.name == name),
+            None,
+        )
+        if shortcut is None:
+            messagebox.showinfo("매크로 버튼", "수정할 버튼을 먼저 선택하세요.", parent=self)
+            return
+        values = self._ask_field_values(
+            "매크로 버튼 수정",
+            [
+                ("name", "버튼 이름", shortcut.name),
+                ("notes", "메모", shortcut.notes),
+            ],
+            required={"name"},
+        )
+        if values is None:
+            return
+        updated = replace(shortcut, name=values["name"], notes=values["notes"])
+        try:
+            self._workbench_project = self._workbench_from_fields().update_shortcut(name, updated)
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+        self._selected_shortcut_name = updated.name
+        self._render_workbench_shortcuts()
+        self._save_workbench_project(silent=True)
+
+    def _move_workbench_shortcut(self, delta: int) -> None:
+        name = getattr(self, "_selected_shortcut_name", "")
+        if not name:
+            messagebox.showinfo("매크로 버튼", "이동할 버튼을 먼저 선택하세요.", parent=self)
+            return
+        try:
+            self._workbench_project = self._workbench_from_fields().move_shortcut(name, delta)
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+        self._render_workbench_shortcuts()
+        self._save_workbench_project(silent=True)
+
     def _render_workbench_shortcuts(self) -> None:
         for child in self.wb_shortcut_frame.winfo_children():
             child.destroy()
@@ -678,9 +791,17 @@ class AEWorkbenchMixin:
                 text="등록된 버튼 없음",
                 style="Muted.TLabel",
             ).grid(row=0, column=0, sticky="w")
+        if hasattr(self, "wb_shortcut_notes_var"):
+            selected_name = getattr(self, "_selected_shortcut_name", "")
+            selected = next(
+                (item for item in self._workbench_project.shortcuts if item.name == selected_name),
+                None,
+            )
+            self.wb_shortcut_notes_var.set(selected.notes if selected and selected.notes else "-")
 
     def _refresh_workbench_state(self) -> WorkbenchReadiness:
         self._workbench_project = self._workbench_from_fields()
+        self._refresh_workbench_test_values_summary()
         readiness = assess_workbench(
             self._workbench_project,
             workspace_path=self.workbench_path_var.get().strip() or None,
@@ -832,12 +953,13 @@ class AEWorkbenchMixin:
             self.wb_macro_test_button.configure(state="normal")
             self.wb_macro_stop_button.configure(state="disabled")
             ok = bool(payload.get("ok")) if isinstance(payload, dict) else False
+            stopped = bool(payload.get("stopped")) if isinstance(payload, dict) else False
             message = str(payload.get("message") or "") if isinstance(payload, dict) else str(payload)
             self._append_readonly_text(self.wb_macro_report_text, message)
             self._set_badge(
                 self.wb_macro_badge,
-                "시험 PASS" if ok else "시험 중단",
-                "#15803d" if ok else "#b91c1c",
+                "시험 PASS" if ok else ("시험 중단" if stopped else "시험 FAIL"),
+                "#15803d" if ok else ("#b45309" if stopped else "#b91c1c"),
             )
             return True
         if kind == "workbench_sequence_done":

@@ -16,7 +16,7 @@ from .sequence_bundle import RigSequenceBundle, read_rig_sequence_bundle
 
 
 WORKBENCH_FORMAT = "rig-ae-workbench"
-WORKBENCH_VERSION = 1
+WORKBENCH_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -60,6 +60,7 @@ class AEWorkbenchProject:
     macro_project_path: str = ""
     macro_export_path: str = ""
     macro_export_source_sha256: str = ""
+    macro_test_values: dict[str, str] = field(default_factory=dict)
     shortcuts: list[MacroShortcut] = field(default_factory=list)
 
     @classmethod
@@ -70,6 +71,9 @@ class AEWorkbenchProject:
         shortcuts_data = data.get("macro_buttons") or []
         if not isinstance(shortcuts_data, list):
             raise ValueError("AE Workbench macro_buttons must be a list.")
+        test_values_data = data.get("macro_test_values") or {}
+        if not isinstance(test_values_data, dict):
+            raise ValueError("AE Workbench macro_test_values must be an object.")
         return cls(
             name=str(data.get("name") or "새 AE 작업").strip() or "새 AE 작업",
             sequence_recipe_path=str(data.get("sequence_recipe_path") or ""),
@@ -78,6 +82,7 @@ class AEWorkbenchProject:
             macro_project_path=str(data.get("macro_project_path") or ""),
             macro_export_path=str(data.get("macro_export_path") or ""),
             macro_export_source_sha256=str(data.get("macro_export_source_sha256") or ""),
+            macro_test_values={str(key): str(value) for key, value in test_values_data.items()},
             shortcuts=[MacroShortcut.from_mapping(item) for item in shortcuts_data],
         )
 
@@ -92,6 +97,7 @@ class AEWorkbenchProject:
             "macro_project_path": self.macro_project_path,
             "macro_export_path": self.macro_export_path,
             "macro_export_source_sha256": self.macro_export_source_sha256,
+            "macro_test_values": dict(self.macro_test_values),
             "macro_buttons": [shortcut.to_mapping() for shortcut in self.shortcuts],
         }
 
@@ -105,6 +111,35 @@ class AEWorkbenchProject:
     def without_shortcut(self, name: str) -> "AEWorkbenchProject":
         key = name.strip().casefold()
         return replace(self, shortcuts=[item for item in self.shortcuts if item.name.casefold() != key])
+
+    def update_shortcut(self, original_name: str, shortcut: MacroShortcut) -> "AEWorkbenchProject":
+        original_key = original_name.strip().casefold()
+        replacement_key = shortcut.name.strip().casefold()
+        if not replacement_key:
+            raise ValueError("A macro button name is required.")
+        if any(
+            item.name.casefold() == replacement_key and item.name.casefold() != original_key
+            for item in self.shortcuts
+        ):
+            raise ValueError(f"A macro button named '{shortcut.name}' already exists.")
+        updated = [shortcut if item.name.casefold() == original_key else item for item in self.shortcuts]
+        if updated == self.shortcuts:
+            raise ValueError(f"Macro button not found: {original_name}")
+        return replace(self, shortcuts=updated)
+
+    def move_shortcut(self, name: str, delta: int) -> "AEWorkbenchProject":
+        key = name.strip().casefold()
+        try:
+            index = next(i for i, item in enumerate(self.shortcuts) if item.name.casefold() == key)
+        except StopIteration as exc:
+            raise ValueError(f"Macro button not found: {name}") from exc
+        target = max(0, min(len(self.shortcuts) - 1, index + int(delta)))
+        if target == index:
+            return self
+        shortcuts = list(self.shortcuts)
+        shortcut = shortcuts.pop(index)
+        shortcuts.insert(target, shortcut)
+        return replace(self, shortcuts=shortcuts)
 
 
 @dataclass(frozen=True)

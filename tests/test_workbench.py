@@ -59,7 +59,10 @@ def _write_sequence_bundle(path: Path, recipe: dict[str, object]) -> None:
 
 
 def test_workbench_round_trip_and_macro_button_replacement(tmp_path: Path) -> None:
-    project = AEWorkbenchProject(name="AE-1").with_shortcut(
+    project = AEWorkbenchProject(
+        name="AE-1",
+        macro_test_values={"channel": "CH11", "sequence": "SEQ-A"},
+    ).with_shortcut(
         MacroShortcut(name="Start", project_path="macros/start.json")
     )
     project = project.with_shortcut(
@@ -81,6 +84,31 @@ def test_workbench_round_trip_and_macro_button_replacement(tmp_path: Path) -> No
     assert restored.shortcuts[0].project_path == "macros/revised.json"
     assert restored.shortcuts[0].export_path == "exports/revised.py"
     assert restored.shortcuts[0].source_sha256 == "abc123"
+    assert restored.macro_test_values == {"channel": "CH11", "sequence": "SEQ-A"}
+
+
+def test_macro_buttons_can_be_renamed_and_reordered_without_losing_paths() -> None:
+    project = AEWorkbenchProject(
+        shortcuts=[
+            MacroShortcut(name="SEQ 선택", project_path="macros/select.json"),
+            MacroShortcut(name="시험 시작", project_path="macros/start.json"),
+            MacroShortcut(name="결과 저장", project_path="macros/save.json"),
+        ]
+    )
+
+    project = project.update_shortcut(
+        "시험 시작",
+        MacroShortcut(
+            name="테스트 시작",
+            project_path="macros/start.json",
+            notes="SK Commander 네 창을 순서대로 시작",
+        ),
+    )
+    project = project.move_shortcut("테스트 시작", -1)
+
+    assert [item.name for item in project.shortcuts] == ["테스트 시작", "SEQ 선택", "결과 저장"]
+    assert project.shortcuts[0].project_path == "macros/start.json"
+    assert project.shortcuts[0].notes == "SK Commander 네 창을 순서대로 시작"
 
 
 def test_macro_project_can_be_inspected_exported_and_reloaded(tmp_path: Path) -> None:

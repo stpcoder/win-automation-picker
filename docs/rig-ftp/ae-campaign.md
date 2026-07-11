@@ -3,6 +3,8 @@
 `AE 캠페인`은 여러 PC와 CH에 흩어진 실행을 하나의 시험 목적과 판정 기준으로 보는
 Master 화면입니다. `.rigseq.zip`에 캠페인이 포함된 경우에만 목록에 나타납니다.
 
+![CH9~CH12의 Grid 진행과 판정을 자연 순서로 표시한 AE 캠페인 보드](../assets/screenshots/04-ae-campaign-board.png)
+
 ## 준비 흐름
 
 ```text

@@ -20,10 +20,14 @@ The executables are not code-signed, so Windows SmartScreen may show a warning.
 
 ## Highlights
 
+![AE Workbench with validated SEQ and Scratch artifacts](docs/assets/screenshots/01-ae-workbench.png)
+
 - Keeps the active SEQ recipe/package, Scratch source/Python export, and named macro buttons in one `*.aework.json` project.
 - Opens Test Sequence Generator on the active recipe and calls `SeqTool.exe` in the background for validation and Rig-package builds.
 - Treats temperature as a user-selected SEQ target rendered into `@TF set/run`, not as automatic measured-temperature collection.
 - Opens the real Scratch editor from Rig, runs/stops a local test, and uploads the validated SEQ and current macro together.
+- Edits detected local-test variables in labeled fields and stores them per Workbench project without requiring JSON syntax.
+- Renames, annotates, and reorders named macro buttons without recreating the source macro.
 - Continuously records external-app clicks, grouped text input, and common keys between explicit Start/Stop actions.
 - Reads the final UIA field value so IME composition and paste become one input block; password values are never stored.
 - Drags click, type, key, wait, repeat, if, and monitor blocks from a palette into the workspace.

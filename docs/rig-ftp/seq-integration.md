@@ -13,6 +13,30 @@ TestSeqGenerator.exe
   -> CH/슬롯에 맞는 SK Commander 창
 ```
 
+## SEQ 화면에서 확인할 세 가지
+
+### Corner 조건
+
+![High/Low Temp와 VDD를 편집하는 Conditions 표](../assets/screenshots/07-seq-conditions.png)
+
+`Use`가 켜진 행만 생성됩니다. `Temp Class`와 `VDD Class`는 단순 메모가 아니라
+4-corner 누락 검사의 기준입니다. 실제 온도 실측값이 아니라 SEQ에 넣을 목표값입니다.
+
+### 실행 블록
+
+![Corner별 Full Sweep과 Fixed CLK를 조합한 Run Matrix](../assets/screenshots/08-seq-run-matrix.png)
+
+한 행이 한 Grid block입니다. `Block Name`, Corner, Run Type, CLK, Run Code, DT, Sleep을
+확인하고 불필요한 행은 `Use`를 끕니다.
+
+### 최종 한 줄 문법
+
+![공백 없는 세미콜론 연결과 Grid header를 확인하는 Preview](../assets/screenshots/09-seq-preview.png)
+
+Preview에서 각 Grid header 다음 body가 한 줄인지, 각 command가 `;`로 끝나는지,
+`;` 뒤에 공백이 없는지 확인합니다. 그 다음 상단 `Validate`를 눌러 compatibility 검사까지
+통과한 뒤 `Export Rig Package`를 사용합니다.
+
 ## 준비물
 
 | 파일 | 만드는 프로그램 | 용도 |

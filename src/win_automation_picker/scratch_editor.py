@@ -33,7 +33,9 @@ def choose_drop_zone(zones: list[DropZone], x: float, y: float) -> DropZone | No
             horizontal = x - zone.x2
         else:
             horizontal = 0.0
-        return abs(zone.y - y) + horizontal * 0.35 - zone.depth * 8.0
+        # A nested slot wins while the pointer is inside it, but its depth must
+        # not overpower the visible parent gutter used to move blocks outward.
+        return abs(zone.y - y) + horizontal * 0.35 - zone.depth * 4.0
 
     nearby = [zone for zone in zones if zone.x1 - 54 <= x <= zone.x2 + 54]
     return min(nearby or zones, key=score)
