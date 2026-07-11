@@ -1,4 +1,9 @@
-from win_automation_picker.exporter import element_catalog, generate_python_script, read_exported_variables
+from win_automation_picker.exporter import (
+    element_catalog,
+    generate_python_script,
+    parse_exported_workflow,
+    read_exported_variables,
+)
 from win_automation_picker.recipe import AutomationRecipe, AutomationStep
 from win_automation_picker.selector import SelectorSegment, UISelector, WindowMarker
 
@@ -149,3 +154,20 @@ def test_read_exported_variables_uses_ast_without_executing(tmp_path) -> None:
     path.write_text(generate_python_script(recipe), encoding="utf-8")
 
     assert read_exported_variables(path) == {"sequence": "Seq 1"}
+
+
+def test_parse_exported_workflow_reads_data_settings_without_execution() -> None:
+    recipe = AutomationRecipe(steps=[AutomationStep.wait(0.1)], variables={"sequence": "Seq 1"})
+    script = generate_python_script(
+        recipe,
+        data_text="sequence\nSeq 2",
+        first_row_headers=True,
+        row_delay=0.25,
+    )
+
+    exported = parse_exported_workflow(script)
+
+    assert exported.recipe == recipe
+    assert exported.data_text == "sequence\nSeq 2"
+    assert exported.first_row_headers is True
+    assert exported.row_delay_seconds == 0.25

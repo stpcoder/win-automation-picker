@@ -46,10 +46,12 @@ from .ftp_spool import (
     example_spool_config,
     initialize_spool,
     list_packages,
+    package_job_kind,
     submit_job,
     write_example_spool_config,
 )
 from .picker import ClickPicker, ContinuousRecorder
+from .project_file import AutomationProject
 from .recipe import (
     AutomationRecipe,
     AutomationStep,
@@ -155,6 +157,8 @@ class PickerApp(tk.Tk):
         self._recipe_history: list[AutomationRecipe] = []
         self._recipe_future: list[AutomationRecipe] = []
         self._recipe_revision = 0
+        self._saved_project_token = ""
+        self._project_path: Path | None = None
         self._ftp_packages: list[PackageInfo] = []
         self._ftp_variables: dict[str, str] = {}
         self._ftp_slaves: tuple[SlaveInfo, ...] = ()
@@ -164,6 +168,7 @@ class PickerApp(tk.Tk):
         self._set_app_icon()
         self._configure_style()
         self._build_ui()
+        self._saved_project_token = self._project_state_token()
         self.protocol("WM_DELETE_WINDOW", self._close_app)
         self.after(80, self._drain_queue)
 
@@ -272,6 +277,7 @@ class PickerApp(tk.Tk):
         file_menu_button.grid(row=0, column=10)
         file_menu = tk.Menu(file_menu_button, tearoff=False)
         file_menu.add_command(label="워크플로 저장", command=self._save_workflow)
+        file_menu.add_command(label="다른 이름으로 저장", command=lambda: self._save_workflow(save_as=True))
         file_menu.add_command(label="워크플로 불러오기", command=self._load_workflow)
         file_menu.add_command(label="실행 가능한 Python 내보내기", command=self._export_python_script)
         file_menu.add_separator()
@@ -2833,6 +2839,9 @@ class PickerApp(tk.Tk):
                 expected=str(detail.get("expected", "")),
                 operator=str(detail.get("operator", "")),
                 element_id=str(detail.get("element_id", "")),
+                monitor_tab=str(detail.get("monitor_tab", "")),
+                monitor_channel=str(detail.get("monitor_channel", "")),
+                monitor_state=str(detail.get("monitor_state", "")),
                 message=str(detail.get("message", "")),
                 details=list(detail.get("details", [])),
             )
@@ -3235,21 +3244,33 @@ class PickerApp(tk.Tk):
         self._set_current_selector(selector)
         self.status.set("Loaded")
 
-    def _save_workflow(self) -> None:
+    def _save_workflow(self, *, save_as: bool = False) -> bool:
         try:
             recipe = self._recipe_from_editor()
+            project = AutomationProject(
+                recipe=recipe,
+                data_text=self.data_text.get("1.0", "end").rstrip("\n"),
+                first_row_headers=bool(self.first_row_headers_var.get()),
+                row_delay_seconds=self._row_delay_seconds(),
+            )
         except BaseException as exc:
             self._show_error(exc)
-            return
-        path = filedialog.asksaveasfilename(
-            title="Save workflow",
-            defaultextension=".json",
-            filetypes=[("JSON", "*.json"), ("All files", "*.*")],
-        )
-        if not path:
-            return
-        Path(path).write_text(recipe.to_json() + "\n", encoding="utf-8")
+            return False
+        path = None if save_as else self._project_path
+        if path is None:
+            selected = filedialog.asksaveasfilename(
+                title="Save workflow",
+                defaultextension=".json",
+                filetypes=[("JSON", "*.json"), ("All files", "*.*")],
+            )
+            if not selected:
+                return False
+            path = Path(selected)
+        path.write_text(project.to_json() + "\n", encoding="utf-8")
+        self._project_path = path
+        self._saved_project_token = self._project_state_token()
         self.status.set("Workflow saved")
+        return True
 
     def _export_python_script(self) -> None:
         try:
@@ -3472,9 +3493,17 @@ class PickerApp(tk.Tk):
             try:
                 submitted: list[str] = []
                 for row in rows:
+                    package = next(
+                        (item for item in self._ftp_packages if item.name == str(row["package"])),
+                        None,
+                    )
                     job = SpoolJob.create(
-                        kind="python",
-                        payload={"package": str(row["package"]), "args": [], "pass_variables": True},
+                        kind=package_job_kind(package) if package else "python",
+                        payload={
+                            "package": str(row["package"]),
+                            "args": [],
+                            "pass_variables": bool(package and package.runner == "python" and package.variables),
+                        },
                         variables={str(key): str(value) for key, value in row.get("variables", {}).items()},
                     )
                     submitted.extend(submit_job(backend, job, [str(row["target"])]))
@@ -3601,6 +3630,7 @@ class PickerApp(tk.Tk):
                         title=title,
                         notes=notes,
                         variables=dict(recipe.variables),
+                        runner="workflow",
                     )
                 packages = list_packages(backend)
                 self._queue.put(("ftp_packages", packages))
@@ -3637,8 +3667,12 @@ class PickerApp(tk.Tk):
                 raise FtpSpoolError("Select an FTP macro package first.")
             targets = self._ftp_targets(self.ftp_target_var.get()) or ["all"]
             job = SpoolJob.create(
-                kind="python",
-                payload={"package": package.name, "args": [], "pass_variables": True},
+                kind=package_job_kind(package),
+                payload={
+                    "package": package.name,
+                    "args": [],
+                    "pass_variables": bool(package.runner == "python" and package.variables),
+                },
                 variables=dict(self._recording_defaults),
             )
         except BaseException as exc:
@@ -3685,6 +3719,7 @@ class PickerApp(tk.Tk):
         lines = [
             f"Name: {package.name}",
             f"Title: {package.title or '-'}",
+            f"Runner: {'내장 워크플로 엔진' if package.runner == 'workflow' else '외부 Python'}",
             f"Uploaded: {package.uploaded_at or '-'}",
             f"Path: {package.path}",
             "",
@@ -3711,8 +3746,13 @@ class PickerApp(tk.Tk):
         if not path:
             return
         text = Path(path).read_text(encoding="utf-8")
-        recipe = AutomationRecipe.from_json(text)
-        self._commit_recipe(recipe, selected_path=None, message="워크플로를 불러왔습니다")
+        project = AutomationProject.from_json(text)
+        self._replace_text(self.data_text, project.data_text)
+        self.first_row_headers_var.set(project.first_row_headers)
+        self.row_delay_var.set(str(project.row_delay_seconds))
+        self._commit_recipe(project.recipe, selected_path=None, message="워크플로 프로젝트를 불러왔습니다")
+        self._project_path = Path(path)
+        self._saved_project_token = self._project_state_token()
 
     def _clear_workflow(self) -> None:
         self._commit_recipe(AutomationRecipe(), selected_path=None, message="워크플로를 비웠습니다")
@@ -3730,6 +3770,18 @@ class PickerApp(tk.Tk):
             return max(0.0, float(self.row_delay_var.get() or "0"))
         except ValueError as exc:
             raise WindowsAutomationError("Row delay must be a number.") from exc
+
+    def _project_state_token(self) -> str:
+        return json.dumps(
+            {
+                "recipe_editor": self.workflow_text.get("1.0", "end").strip(),
+                "data_text": self.data_text.get("1.0", "end").rstrip("\n"),
+                "first_row_headers": bool(self.first_row_headers_var.get()),
+                "row_delay": self.row_delay_var.get().strip(),
+            },
+            sort_keys=True,
+            ensure_ascii=True,
+        )
 
     def _selected_step_index(self) -> int | None:
         selection = self.steps_list.curselection()
@@ -4479,6 +4531,16 @@ class PickerApp(tk.Tk):
         messagebox.showerror("Win Automation Picker", str(exc))
 
     def _close_app(self) -> None:
+        if self._saved_project_token and self._project_state_token() != self._saved_project_token:
+            choice = messagebox.askyesnocancel(
+                "저장하지 않은 변경",
+                "매크로 프로젝트 변경 내용을 저장하고 종료할까요?",
+                parent=self,
+            )
+            if choice is None:
+                return
+            if choice and not self._save_workflow():
+                return
         if self._continuous_recorder is not None:
             self._continuous_recorder.stop()
         if self._picker is not None:

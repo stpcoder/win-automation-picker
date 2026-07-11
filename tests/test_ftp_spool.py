@@ -2,9 +2,11 @@ import json
 import sys
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from win_automation_picker.exporter import generate_python_script
 from win_automation_picker.ftp_spool import (
     FtpSpoolConfig,
     FtpSpoolError,
@@ -12,6 +14,7 @@ from win_automation_picker.ftp_spool import (
     RunProfile,
     SlaveInfo,
     SpoolJob,
+    classify_status_rows,
     cleanup_node_files,
     deploy_package,
     initialize_spool,
@@ -23,6 +26,8 @@ from win_automation_picker.ftp_spool import (
     run_slave_once,
     submit_job,
 )
+from win_automation_picker.recipe import AutomationRecipe, AutomationStep
+from win_automation_picker.selector import SelectorSegment, UISelector
 
 
 def test_initialize_spool_creates_node_folders(tmp_path) -> None:
@@ -57,6 +62,9 @@ def test_config_supports_password_env(monkeypatch) -> None:
     )
 
     assert config.password == "secret"
+    assert config.password_env == "RIG_FTP_PASSWORD"
+    assert config.to_mapping()["ftp"]["password"] == ""
+    assert config.to_mapping()["ftp"]["password_env"] == "RIG_FTP_PASSWORD"
 
 
 def test_config_supports_slave_roster() -> None:
@@ -223,8 +231,123 @@ def test_deploy_package_writes_metadata(tmp_path) -> None:
     assert packages[0].name == "smoke.py"
     assert packages[0].title == "Boot smoke"
     assert packages[0].notes == "Runs boot checks."
+    assert packages[0].runner == "python"
     assert packages[0].variables == {"sequence": "Seq 1"}
     assert (tmp_path / "packages" / "smoke.py.meta.json").exists()
+
+
+def test_exported_workflow_uses_embedded_runner_without_external_python(tmp_path) -> None:
+    backend = LocalSpoolBackend(tmp_path / "spool")
+    script = tmp_path / "workflow.py"
+    script.write_text(
+        generate_python_script(AutomationRecipe(steps=[AutomationStep.wait(0)])),
+        encoding="utf-8",
+    )
+    deploy_package(backend, script)
+    initialize_spool(backend, nodes=["rig-pc-01"])
+    config = FtpSpoolConfig(
+        node_id="rig-pc-01",
+        python_executable=str(tmp_path / "missing-python.exe"),
+        capture_on_error=False,
+    )
+    submit_job(
+        backend,
+        SpoolJob.create(
+            kind="workflow",
+            payload={"package": "workflow.py"},
+            job_id="embedded-workflow",
+        ),
+        ["rig-pc-01"],
+    )
+
+    results = run_slave_once(backend, config)
+
+    assert list_packages(backend)[0].runner == "workflow"
+    assert results[0].ok
+    assert "Running row 1/1" in results[0].stdout
+
+
+def test_embedded_workflow_publishes_structured_monitor_results(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "win_automation_picker.recipe.get_element_text",
+        lambda selector, timeout=1.0: "CH11 PASS",
+    )
+    monkeypatch.setattr(
+        "win_automation_picker.recipe.click",
+        lambda *args, **kwargs: pytest.fail("monitor job must not execute click blocks"),
+    )
+    selector = UISelector(root=SelectorSegment(control_type="Window", name="SK Commander"))
+    recipe = AutomationRecipe(
+        steps=[
+            AutomationStep.click(selector),
+            AutomationStep.monitor_text(
+                selector,
+                "PASS",
+                operator="contains",
+                monitor_tab="SK Commander",
+                monitor_channel="CH11",
+                monitor_state="PASS",
+            )
+        ],
+        monitor_view={"name": "Line A", "tab_order": ["SK Commander"]},
+    )
+    backend = LocalSpoolBackend(tmp_path / "spool")
+    script = tmp_path / "monitor.py"
+    script.write_text(generate_python_script(recipe), encoding="utf-8")
+    deploy_package(backend, script)
+    initialize_spool(backend, nodes=["rig-pc-01"])
+    submit_job(
+        backend,
+        SpoolJob.create(kind="monitor", payload={"package": "monitor.py"}, job_id="monitor-job"),
+        ["rig-pc-01"],
+    )
+
+    result = run_slave_once(
+        backend,
+        FtpSpoolConfig(node_id="rig-pc-01", capture_on_error=False),
+    )[0]
+
+    assert result.ok
+    assert result.monitor_view["name"] == "Line A"
+    assert result.monitor_results[0]["monitor_channel"] == "CH11"
+    published = list_results(backend, "rig-pc-01")[0]
+    assert published["monitor_results"][0]["monitor_state"] == "PASS"
+
+
+def test_classify_status_rows_keeps_missing_and_stale_slaves_visible() -> None:
+    now = datetime(2026, 7, 11, 12, 0, tzinfo=timezone.utc)
+    rows = [
+        {
+            "node_id": "rig-pc-01",
+            "state": "idle",
+            "message": "waiting",
+            "updated_at": (now - timedelta(seconds=45)).isoformat(),
+        },
+        {
+            "node_id": "rig-pc-02",
+            "state": "running",
+            "message": "step 2",
+            "updated_at": (now - timedelta(seconds=2)).isoformat(),
+        },
+    ]
+
+    classified = classify_status_rows(
+        rows,
+        slaves=(
+            SlaveInfo(node_id="rig-pc-01", alias="PC01"),
+            SlaveInfo(node_id="rig-pc-02", alias="PC02"),
+            SlaveInfo(node_id="rig-pc-03", alias="PC03"),
+        ),
+        stale_after_seconds=30,
+        now=now,
+    )
+
+    states = {row["node_id"]: (row["state"], row["health"]) for row in classified}
+    assert states == {
+        "rig-pc-01": ("offline", "offline"),
+        "rig-pc-02": ("running", "running"),
+        "rig-pc-03": ("offline", "offline"),
+    }
 
 
 def test_status_and_results_are_listed(tmp_path) -> None:
@@ -241,9 +364,19 @@ def test_status_and_results_are_listed(tmp_path) -> None:
         ["rig-pc-01"],
     )
 
-    run_slave_once(backend, config)
+    status_context: dict = {}
+    run_slave_once(backend, config, status_context=status_context)
+    run_slave_once(
+        backend,
+        config,
+        ensure_directories=False,
+        status_context=status_context,
+    )
 
-    assert list_status(backend)[0]["node_id"] == "rig-pc-01"
+    status = list_status(backend)[0]
+    assert status["node_id"] == "rig-pc-01"
+    assert status["last_ok"] is True
+    assert "last PASS: job-list" in status["message"]
     assert list_results(backend, "rig-pc-01")[0]["job_id"] == "job-list"
 
 
@@ -265,6 +398,28 @@ def test_broadcast_job_is_processed_once_per_slave(tmp_path) -> None:
     assert repeat == []
     assert [result.stdout for result in second] == ["rig-pc-02"]
     assert (tmp_path / "commands" / "all" / "pending" / "broadcast-job.json").exists()
+
+
+def test_broadcast_job_is_deleted_after_every_configured_slave_archives_it(tmp_path) -> None:
+    backend = LocalSpoolBackend(tmp_path)
+    slaves = (SlaveInfo(node_id="rig-pc-01"), SlaveInfo(node_id="rig-pc-02"))
+    initialize_spool(backend, nodes=[slave.node_id for slave in slaves])
+    submit_job(
+        backend,
+        SpoolJob.create(
+            kind="shell",
+            payload={"args": [sys.executable, "-c", "print('[node_id]')"]},
+            job_id="broadcast-cleanup",
+        ),
+        ["all"],
+    )
+
+    run_slave_once(backend, FtpSpoolConfig(node_id="rig-pc-01", slaves=slaves))
+    assert (tmp_path / "commands" / "all" / "pending" / "broadcast-cleanup.json").exists()
+
+    run_slave_once(backend, FtpSpoolConfig(node_id="rig-pc-02", slaves=slaves))
+
+    assert not (tmp_path / "commands" / "all" / "pending" / "broadcast-cleanup.json").exists()
 
 
 def test_stop_signal_terminates_running_shell_job(tmp_path) -> None:
@@ -315,6 +470,31 @@ def test_screenshot_job_uploads_png(tmp_path, monkeypatch) -> None:
     screenshots = list_screenshots(backend, "rig-pc-01")
     assert len(screenshots) == 1
     assert screenshots[0].endswith("-manual.png")
+
+
+def test_screenshot_rate_limit_is_enforced_on_slave(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("win_automation_picker.ftp_spool._capture_screen_png", lambda: b"fake-png")
+    backend = LocalSpoolBackend(tmp_path)
+    config = FtpSpoolConfig(node_id="rig-pc-01", min_screenshot_interval_seconds=60, capture_on_error=False)
+    initialize_spool(backend, nodes=["rig-pc-01"])
+    submit_job(
+        backend,
+        SpoolJob.create(kind="screenshot", payload={"label": "first"}, job_id="shot-first"),
+        ["rig-pc-01"],
+    )
+    first = run_slave_once(backend, config)
+    submit_job(
+        backend,
+        SpoolJob.create(kind="screenshot", payload={"label": "second"}, job_id="shot-second"),
+        ["rig-pc-01"],
+    )
+
+    second = run_slave_once(backend, config)
+
+    assert first[0].ok
+    assert not second[0].ok
+    assert "Screenshot rate limit" in second[0].stderr
+    assert len(list_screenshots(backend, "rig-pc-01")) == 1
 
 
 def test_cleanup_prunes_retained_files(tmp_path) -> None:

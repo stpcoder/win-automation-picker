@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 from dataclasses import replace
 import json
+import os
 from pathlib import Path
 import queue
 import random
@@ -23,6 +24,7 @@ from .ftp_spool import (
     SlaveInfo,
     SpoolJob,
     backend_from_config,
+    classify_status_rows,
     cleanup_node_files,
     clear_stop,
     deploy_package,
@@ -32,6 +34,7 @@ from .ftp_spool import (
     list_results,
     list_screenshots,
     list_status,
+    package_job_kind,
     request_stop,
     run_slave_once,
     submit_job,
@@ -55,9 +58,13 @@ class RigFtpApp(tk.Tk):
         self._queue: queue.Queue[tuple[str, Any]] = queue.Queue()
         self._packages: list[PackageInfo] = []
         self._run_profiles: list[dict[str, Any]] = []
+        self._settings_variables: dict[str, str] = {}
+        self._settings_slaves: list[dict[str, Any]] = []
         self._slave_stop: threading.Event | None = None
         self._monitor_stop: threading.Event | None = None
         self._last_status_rows: list[dict[str, Any]] = []
+        self._last_result_rows: list[dict[str, Any]] = []
+        self._last_result_node = ""
         self._last_screenshot_request_by_node: dict[str, float] = {}
         self._image_refs: list[tk.PhotoImage] = []
         self._icon_image: tk.PhotoImage | None = None
@@ -124,24 +131,33 @@ class RigFtpApp(tk.Tk):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
 
-        top = ttk.Labelframe(self, text="Connection Profile", padding=(10, 8))
+        top = ttk.Labelframe(self, text="연결 프로필", padding=(10, 8))
         top.grid(row=0, column=0, sticky="ew")
         top.columnconfigure(1, weight=1)
         top.columnconfigure(3, weight=1)
 
-        ttk.Label(top, text="Config").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        ttk.Label(top, text="설정 파일").grid(row=0, column=0, sticky="w", padx=(0, 6))
         self.config_path_var = tk.StringVar(value=str(self._default_config_path()))
         ttk.Entry(top, textvariable=self.config_path_var).grid(row=0, column=1, sticky="ew", padx=(0, 8))
-        ttk.Button(top, text="Browse", command=self._browse_config).grid(row=0, column=2, padx=(0, 8))
-        ttk.Button(top, text="Load", command=self._load_config).grid(row=0, column=3, sticky="w", padx=(0, 8))
-        ttk.Button(top, text="Save", command=self._save_config).grid(row=0, column=4, padx=(0, 8))
+        ttk.Button(top, text="찾기", command=self._browse_config).grid(row=0, column=2, padx=(0, 8))
+        ttk.Button(top, text="불러오기", command=self._load_config).grid(row=0, column=3, sticky="w", padx=(0, 8))
+        ttk.Button(top, text="저장", command=self._save_config).grid(row=0, column=4, padx=(0, 8))
+        ttk.Button(top, text="연결 확인", command=self._test_connection).grid(row=0, column=5, padx=(0, 8))
         self.local_root_var = tk.StringVar(value="")
-        profile_more_button = ttk.Menubutton(top, text="More")
-        profile_more_button.grid(row=0, column=5)
+        profile_more_button = ttk.Menubutton(top, text="더보기")
+        profile_more_button.grid(row=0, column=6)
         profile_more = tk.Menu(profile_more_button, tearoff=False)
-        profile_more.add_command(label="Create example config", command=self._create_example_config)
-        profile_more.add_command(label="Select local test root", command=self._browse_local_root)
+        profile_more.add_command(label="예제 설정 만들기", command=self._create_example_config)
+        profile_more.add_command(label="로컬 시험 폴더 선택", command=self._browse_local_root)
         profile_more_button["menu"] = profile_more
+        self.connection_state_var = tk.StringVar(value="연결 상태: 확인 전")
+        ttk.Label(top, textvariable=self.connection_state_var).grid(
+            row=1,
+            column=1,
+            columnspan=6,
+            sticky="w",
+            pady=(6, 0),
+        )
 
         notebook = ttk.Notebook(self)
         notebook.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
@@ -149,9 +165,9 @@ class RigFtpApp(tk.Tk):
         settings = ttk.Frame(notebook, padding=10)
         master = ttk.Frame(notebook, padding=10)
         slave = ttk.Frame(notebook, padding=10)
-        notebook.add(master, text="Monitor & Run")
-        notebook.add(slave, text="This PC Agent")
-        notebook.add(settings, text="Connection Setup")
+        notebook.add(master, text="모니터 및 실행")
+        notebook.add(slave, text="이 PC Agent")
+        notebook.add(settings, text="연결 설정")
 
         self._build_settings_tab(settings)
         self._build_master_tab(master)
@@ -161,12 +177,12 @@ class RigFtpApp(tk.Tk):
         for column in (1, 3):
             parent.columnconfigure(column, weight=1)
         parent.rowconfigure(11, weight=1)
-        parent.rowconfigure(12, weight=1)
 
         self.host_var = tk.StringVar(value="")
         self.port_var = tk.StringVar(value="21")
         self.username_var = tk.StringVar(value="")
         self.password_var = tk.StringVar(value="")
+        self.password_env_var = tk.StringVar(value="")
         self.root_dir_var = tk.StringVar(value="/win_automation_macros")
         self.tls_var = tk.BooleanVar(value=False)
         self.passive_var = tk.BooleanVar(value=True)
@@ -183,36 +199,38 @@ class RigFtpApp(tk.Tk):
         self.max_archive_var = tk.StringVar(value="500")
         self.max_screens_var = tk.StringVar(value="20")
 
-        self._entry_row(parent, 0, "FTP host", self.host_var, "Port", self.port_var)
-        self._entry_row(parent, 1, "Username", self.username_var, "Password", self.password_var, show_password=True)
-        self._entry_row(parent, 2, "Root dir", self.root_dir_var, "Timeout", self.timeout_var)
-        ttk.Checkbutton(parent, text="Use FTPS", variable=self.tls_var).grid(row=3, column=1, sticky="w", pady=4)
-        ttk.Checkbutton(parent, text="Passive mode", variable=self.passive_var).grid(
+        self._entry_row(parent, 0, "FTP 주소", self.host_var, "포트", self.port_var)
+        self._entry_row(parent, 1, "아이디", self.username_var, "비밀번호", self.password_var, show_password=True)
+        self._entry_row(parent, 2, "서버 폴더", self.root_dir_var, "연결 제한(초)", self.timeout_var)
+        ttk.Checkbutton(parent, text="FTPS 사용", variable=self.tls_var).grid(row=3, column=1, sticky="w", pady=4)
+        ttk.Checkbutton(parent, text="Passive 모드", variable=self.passive_var).grid(
             row=3,
             column=3,
             sticky="w",
             pady=4,
         )
-        self._entry_row(parent, 4, "Node ID", self.node_id_var, "Poll sec", self.poll_var)
-        self._entry_row(parent, 5, "Work dir", self.work_dir_var, "Python", self.python_var)
+        self._entry_row(parent, 4, "이 PC Node ID", self.node_id_var, "조회 간격(초)", self.poll_var)
+        self._entry_row(parent, 5, "작업 폴더", self.work_dir_var, "외부 Python (고급)", self.python_var)
         self._entry_row(
             parent,
             6,
-            "Poll jitter",
+            "조회 분산(초)",
             self.poll_jitter_var,
-            "Screenshot min sec",
+            "화면 요청 최소(초)",
             self.screenshot_min_interval_var,
         )
-        ttk.Checkbutton(parent, text="Capture screenshot on error", variable=self.capture_error_var).grid(
+        ttk.Checkbutton(parent, text="오류 발생 시 전체 화면 저장", variable=self.capture_error_var).grid(
             row=7,
             column=1,
             sticky="w",
             pady=4,
         )
-        self._entry_row(parent, 8, "Keep results", self.max_results_var, "Keep logs", self.max_logs_var)
-        self._entry_row(parent, 9, "Keep archive", self.max_archive_var, "Keep screens", self.max_screens_var)
+        ttk.Label(parent, text="비밀번호 환경 변수").grid(row=7, column=2, sticky="w", padx=(0, 6), pady=4)
+        ttk.Entry(parent, textvariable=self.password_env_var).grid(row=7, column=3, sticky="ew", pady=4)
+        self._entry_row(parent, 8, "결과 보관 개수", self.max_results_var, "로그 보관 개수", self.max_logs_var)
+        self._entry_row(parent, 9, "작업 보관 개수", self.max_archive_var, "화면 보관 개수", self.max_screens_var)
 
-        ttk.Label(parent, text="Local test root").grid(row=10, column=0, sticky="w", padx=(0, 6), pady=(8, 0))
+        ttk.Label(parent, text="로컬 시험 폴더").grid(row=10, column=0, sticky="w", padx=(0, 6), pady=(8, 0))
         ttk.Entry(parent, textvariable=self.local_root_var).grid(
             row=10,
             column=1,
@@ -221,19 +239,75 @@ class RigFtpApp(tk.Tk):
             pady=(8, 0),
             padx=(0, 8),
         )
-        ttk.Button(parent, text="Folder", command=self._browse_local_root).grid(
+        ttk.Button(parent, text="폴더", command=self._browse_local_root).grid(
             row=10,
             column=3,
             sticky="ew",
             pady=(8, 0),
         )
 
-        ttk.Label(parent, text="Variables JSON").grid(row=11, column=0, sticky="nw", padx=(0, 6), pady=(8, 0))
-        self.variables_text = tk.Text(parent, height=8, wrap="none", undo=True)
-        self.variables_text.grid(row=11, column=1, columnspan=3, sticky="nsew", pady=(8, 0))
-        ttk.Label(parent, text="Slave roster JSON").grid(row=12, column=0, sticky="nw", padx=(0, 6), pady=(8, 0))
-        self.slaves_text = tk.Text(parent, height=8, wrap="none", undo=True)
-        self.slaves_text.grid(row=12, column=1, columnspan=3, sticky="nsew", pady=(8, 0))
+        variables_frame = ttk.Labelframe(parent, text="공통 변수", padding=8)
+        variables_frame.grid(row=11, column=0, columnspan=2, sticky="nsew", padx=(0, 7), pady=(10, 0))
+        variables_frame.columnconfigure(0, weight=1)
+        variables_frame.rowconfigure(0, weight=1)
+        self.settings_variable_tree = ttk.Treeview(
+            variables_frame,
+            columns=("key", "value"),
+            show="headings",
+            height=7,
+        )
+        self.settings_variable_tree.heading("key", text="이름")
+        self.settings_variable_tree.heading("value", text="기본값")
+        self.settings_variable_tree.column("key", width=130, anchor="w")
+        self.settings_variable_tree.column("value", width=220, anchor="w")
+        self.settings_variable_tree.grid(row=0, column=0, columnspan=3, sticky="nsew")
+        variable_scroll = ttk.Scrollbar(
+            variables_frame,
+            orient="vertical",
+            command=self.settings_variable_tree.yview,
+        )
+        variable_scroll.grid(row=0, column=3, sticky="ns")
+        self.settings_variable_tree.configure(yscrollcommand=variable_scroll.set)
+        self.settings_variable_tree.bind("<Double-1>", lambda _event: self._edit_settings_variable())
+        ttk.Button(variables_frame, text="추가", command=self._add_settings_variable).grid(
+            row=1, column=0, sticky="w", pady=(6, 0)
+        )
+        ttk.Button(variables_frame, text="수정", command=self._edit_settings_variable).grid(
+            row=1, column=1, sticky="w", padx=(5, 0), pady=(6, 0)
+        )
+        ttk.Button(variables_frame, text="삭제", command=self._delete_settings_variable).grid(
+            row=1, column=2, sticky="e", pady=(6, 0)
+        )
+
+        slaves_frame = ttk.Labelframe(parent, text="Slave PC 목록", padding=8)
+        slaves_frame.grid(row=11, column=2, columnspan=2, sticky="nsew", padx=(7, 0), pady=(10, 0))
+        slaves_frame.columnconfigure(0, weight=1)
+        slaves_frame.rowconfigure(0, weight=1)
+        self.settings_slave_tree = ttk.Treeview(
+            slaves_frame,
+            columns=("alias", "node", "host", "variables"),
+            show="headings",
+            height=7,
+        )
+        slave_headings = {"alias": "별명", "node": "Node ID", "host": "IP", "variables": "PC별 변수"}
+        slave_widths = {"alias": 80, "node": 120, "host": 120, "variables": 220}
+        for column in ("alias", "node", "host", "variables"):
+            self.settings_slave_tree.heading(column, text=slave_headings[column])
+            self.settings_slave_tree.column(column, width=slave_widths[column], anchor="w")
+        self.settings_slave_tree.grid(row=0, column=0, columnspan=3, sticky="nsew")
+        slave_scroll = ttk.Scrollbar(slaves_frame, orient="vertical", command=self.settings_slave_tree.yview)
+        slave_scroll.grid(row=0, column=3, sticky="ns")
+        self.settings_slave_tree.configure(yscrollcommand=slave_scroll.set)
+        self.settings_slave_tree.bind("<Double-1>", lambda _event: self._edit_settings_slave())
+        ttk.Button(slaves_frame, text="PC 추가", command=self._add_settings_slave).grid(
+            row=1, column=0, sticky="w", pady=(6, 0)
+        )
+        ttk.Button(slaves_frame, text="수정", command=self._edit_settings_slave).grid(
+            row=1, column=1, sticky="w", padx=(5, 0), pady=(6, 0)
+        )
+        ttk.Button(slaves_frame, text="삭제", command=self._delete_settings_slave).grid(
+            row=1, column=2, sticky="e", pady=(6, 0)
+        )
 
     def _entry_row(
         self,
@@ -252,39 +326,247 @@ class RigFtpApp(tk.Tk):
         show = "*" if show_password else ""
         ttk.Entry(parent, textvariable=right_var, show=show).grid(row=row, column=3, sticky="ew", pady=4)
 
+    def _ask_field_values(
+        self,
+        title: str,
+        fields: list[tuple[str, str, str]],
+        *,
+        required: set[str] | None = None,
+    ) -> dict[str, str] | None:
+        dialog = tk.Toplevel(self)
+        dialog.title(title)
+        dialog.transient(self)
+        dialog.resizable(True, False)
+        dialog.columnconfigure(1, weight=1)
+        values: dict[str, tk.StringVar] = {}
+        result: dict[str, str] | None = None
+        for row, (key, label, initial) in enumerate(fields):
+            ttk.Label(dialog, text=label).grid(row=row, column=0, sticky="w", padx=(12, 8), pady=6)
+            variable = tk.StringVar(value=initial)
+            values[key] = variable
+            entry = ttk.Entry(dialog, textvariable=variable, width=48)
+            entry.grid(row=row, column=1, sticky="ew", padx=(0, 12), pady=6)
+            if row == 0:
+                entry.focus_set()
+
+        def save() -> None:
+            nonlocal result
+            mapped = {key: variable.get().strip() for key, variable in values.items()}
+            missing = [key for key in (required or set()) if not mapped.get(key)]
+            if missing:
+                messagebox.showerror(title, "필수 값을 입력하세요.", parent=dialog)
+                return
+            result = mapped
+            dialog.destroy()
+
+        buttons = ttk.Frame(dialog, padding=(12, 8, 12, 12))
+        buttons.grid(row=len(fields), column=0, columnspan=2, sticky="e")
+        ttk.Button(buttons, text="취소", command=dialog.destroy).pack(side="right")
+        ttk.Button(buttons, text="저장", command=save, style="Primary.TButton").pack(side="right", padx=(0, 6))
+        dialog.bind("<Return>", lambda _event: save())
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
+        dialog.grab_set()
+        self.wait_window(dialog)
+        return result
+
+    def _refresh_settings_variables(self) -> None:
+        self.settings_variable_tree.delete(*self.settings_variable_tree.get_children())
+        for index, (key, value) in enumerate(sorted(self._settings_variables.items())):
+            self.settings_variable_tree.insert("", "end", iid=str(index), values=(key, value))
+
+    def _selected_settings_variable(self) -> tuple[str, str] | None:
+        selection = self.settings_variable_tree.selection()
+        if not selection:
+            return None
+        values = self.settings_variable_tree.item(selection[0], "values")
+        return (str(values[0]), str(values[1])) if len(values) >= 2 else None
+
+    def _add_settings_variable(self) -> None:
+        values = self._ask_field_values(
+            "공통 변수 추가",
+            [("key", "변수 이름", ""), ("value", "기본값", "")],
+            required={"key"},
+        )
+        if values is None:
+            return
+        self._settings_variables[values["key"]] = values["value"]
+        self._refresh_settings_variables()
+
+    def _edit_settings_variable(self) -> None:
+        selected = self._selected_settings_variable()
+        if selected is None:
+            return
+        old_key, old_value = selected
+        values = self._ask_field_values(
+            "공통 변수 수정",
+            [("key", "변수 이름", old_key), ("value", "기본값", old_value)],
+            required={"key"},
+        )
+        if values is None:
+            return
+        if values["key"] != old_key:
+            self._settings_variables.pop(old_key, None)
+        self._settings_variables[values["key"]] = values["value"]
+        self._refresh_settings_variables()
+
+    def _delete_settings_variable(self) -> None:
+        selected = self._selected_settings_variable()
+        if selected is None:
+            return
+        self._settings_variables.pop(selected[0], None)
+        self._refresh_settings_variables()
+
+    def _format_settings_variables(self, variables: dict[str, str]) -> str:
+        return "; ".join(f"{key}={value}" for key, value in variables.items())
+
+    def _parse_settings_variables(self, raw: str) -> dict[str, str]:
+        result: dict[str, str] = {}
+        for item in raw.replace("\n", ";").split(";"):
+            item = item.strip()
+            if not item:
+                continue
+            if "=" not in item:
+                raise FtpSpoolError(f"PC별 변수는 이름=값 형식이어야 합니다: {item}")
+            key, value = item.split("=", 1)
+            key = key.strip()
+            if not key:
+                raise FtpSpoolError("PC별 변수 이름이 비어 있습니다.")
+            result[key] = value.strip()
+        return result
+
+    def _refresh_settings_slaves(self) -> None:
+        self.settings_slave_tree.delete(*self.settings_slave_tree.get_children())
+        for index, row in enumerate(self._settings_slaves):
+            variables = row.get("variables") if isinstance(row.get("variables"), dict) else {}
+            self.settings_slave_tree.insert(
+                "",
+                "end",
+                iid=str(index),
+                values=(
+                    row.get("alias", ""),
+                    row.get("node_id", ""),
+                    row.get("host", ""),
+                    self._format_settings_variables(variables),
+                ),
+            )
+
+    def _selected_settings_slave_index(self) -> int | None:
+        selection = self.settings_slave_tree.selection()
+        return int(selection[0]) if selection and selection[0].isdigit() else None
+
+    def _add_settings_slave(self) -> None:
+        self._edit_settings_slave(new=True)
+
+    def _edit_settings_slave(self, index: int | None = None, *, new: bool = False) -> None:
+        if new:
+            row: dict[str, Any] = {}
+            edit_index = None
+        elif index is None:
+            selected_index = self._selected_settings_slave_index()
+            if selected_index is None:
+                return
+            row = self._settings_slaves[selected_index] if selected_index is not None else {}
+            edit_index = selected_index
+        else:
+            row = self._settings_slaves[index]
+            edit_index = index
+        variables = row.get("variables") if isinstance(row.get("variables"), dict) else {}
+        values = self._ask_field_values(
+            "Slave PC 추가" if edit_index is None else "Slave PC 수정",
+            [
+                ("node_id", "Node ID", str(row.get("node_id", ""))),
+                ("alias", "별명 (예: PC04)", str(row.get("alias", ""))),
+                ("host", "IP / Host", str(row.get("host", ""))),
+                ("port", "관리 포트 (없으면 0)", str(row.get("port", 0))),
+                ("variables", "PC별 변수 (; 구분)", self._format_settings_variables(variables)),
+                ("notes", "메모", str(row.get("notes", ""))),
+            ],
+            required={"node_id"},
+        )
+        if values is None:
+            return
+        try:
+            port = int(values["port"] or "0")
+            parsed_variables = self._parse_settings_variables(values["variables"])
+        except (ValueError, FtpSpoolError) as exc:
+            self._show_error(FtpSpoolError(f"Slave PC 설정을 확인하세요: {exc}"))
+            return
+        mapped: dict[str, Any] = {
+            "node_id": values["node_id"],
+            "alias": values["alias"],
+            "host": values["host"],
+            "port": port,
+            "notes": values["notes"],
+            "variables": parsed_variables,
+        }
+        duplicate = next(
+            (
+                existing_index
+                for existing_index, existing in enumerate(self._settings_slaves)
+                if existing_index != edit_index and str(existing.get("node_id", "")) == values["node_id"]
+            ),
+            None,
+        )
+        if duplicate is not None:
+            self._show_error(FtpSpoolError(f"이미 등록된 Node ID입니다: {values['node_id']}"))
+            return
+        if edit_index is None:
+            self._settings_slaves.append(mapped)
+        else:
+            self._settings_slaves[edit_index] = mapped
+        self._refresh_settings_slaves()
+
+    def _delete_settings_slave(self) -> None:
+        index = self._selected_settings_slave_index()
+        if index is None:
+            return
+        self._settings_slaves.pop(index)
+        self._refresh_settings_slaves()
+
     def _build_master_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
-        parent.columnconfigure(1, weight=1)
-        parent.rowconfigure(3, weight=1)
-        parent.rowconfigure(4, weight=1)
-        parent.rowconfigure(5, weight=1)
+        parent.rowconfigure(0, weight=1)
 
-        server = ttk.Labelframe(parent, text="Server Setup", padding=10)
+        workspace = ttk.Notebook(parent)
+        workspace.grid(row=0, column=0, sticky="nsew")
+        run_page = ttk.Frame(workspace, padding=8)
+        monitor_page = ttk.Frame(workspace, padding=8)
+        workspace.add(run_page, text="실행 및 배포")
+        workspace.add(monitor_page, text="상태 모니터링")
+
+        run_page.columnconfigure(0, weight=1)
+        run_page.columnconfigure(1, weight=1)
+        run_page.rowconfigure(3, weight=1)
+        monitor_page.columnconfigure(0, weight=1)
+        monitor_page.rowconfigure(0, weight=3)
+        monitor_page.rowconfigure(1, weight=1)
+
+        server = ttk.Labelframe(run_page, text="서버 초기 설정", padding=10)
         server.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         server.columnconfigure(1, weight=1)
-        ttk.Label(server, text="Known slave nodes").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        ttk.Label(server, text="대상 PC").grid(row=0, column=0, sticky="w", padx=(0, 6))
         self.init_nodes_var = tk.StringVar(value="")
         ttk.Entry(server, textvariable=self.init_nodes_var).grid(row=0, column=1, sticky="ew", padx=(0, 8))
-        ttk.Button(server, text="Init folders", command=self._init_server, style="Primary.TButton").grid(
+        ttk.Button(server, text="서버 폴더 초기화", command=self._init_server, style="Primary.TButton").grid(
             row=0,
             column=2,
             padx=(0, 8),
         )
-        server_more_button = ttk.Menubutton(server, text="More")
+        server_more_button = ttk.Menubutton(server, text="더보기")
         server_more_button.grid(row=0, column=3)
         server_more = tk.Menu(server_more_button, tearoff=False)
-        server_more.add_command(label="Export slave .info", command=self._export_slave_infos)
-        server_more.add_command(label="Refresh status", command=self._refresh_status)
+        server_more.add_command(label="Slave .info 내보내기", command=self._export_slave_infos)
+        server_more.add_command(label="상태 새로고침", command=self._refresh_status)
         server_more_button["menu"] = server_more
 
-        package = ttk.Labelframe(parent, text="Macro Upload", padding=10)
+        package = ttk.Labelframe(run_page, text="매크로 업로드", padding=10)
         package.grid(row=1, column=0, sticky="nsew", padx=(0, 8), pady=(0, 8))
         package.columnconfigure(1, weight=1)
-        ttk.Label(package, text="File").grid(row=0, column=0, sticky="w", padx=(0, 6), pady=3)
+        ttk.Label(package, text="파일").grid(row=0, column=0, sticky="w", padx=(0, 6), pady=3)
         self.package_file_var = tk.StringVar(value="")
         ttk.Entry(package, textvariable=self.package_file_var).grid(row=0, column=1, sticky="ew", padx=(0, 6), pady=3)
-        ttk.Button(package, text="Browse", command=self._browse_package).grid(row=0, column=2, pady=3)
-        ttk.Label(package, text="Package name").grid(row=1, column=0, sticky="w", padx=(0, 6), pady=3)
+        ttk.Button(package, text="찾기", command=self._browse_package).grid(row=0, column=2, pady=3)
+        ttk.Label(package, text="파일명").grid(row=1, column=0, sticky="w", padx=(0, 6), pady=3)
         self.package_name_var = tk.StringVar(value="")
         ttk.Entry(package, textvariable=self.package_name_var).grid(
             row=1,
@@ -293,7 +575,7 @@ class RigFtpApp(tk.Tk):
             sticky="ew",
             pady=3,
         )
-        ttk.Label(package, text="Title").grid(row=2, column=0, sticky="w", padx=(0, 6), pady=3)
+        ttk.Label(package, text="제목").grid(row=2, column=0, sticky="w", padx=(0, 6), pady=3)
         self.package_title_var = tk.StringVar(value="")
         ttk.Entry(package, textvariable=self.package_title_var).grid(
             row=2,
@@ -302,76 +584,67 @@ class RigFtpApp(tk.Tk):
             sticky="ew",
             pady=3,
         )
-        ttk.Label(package, text="Notes").grid(row=3, column=0, sticky="nw", padx=(0, 6), pady=3)
+        ttk.Label(package, text="설명").grid(row=3, column=0, sticky="nw", padx=(0, 6), pady=3)
         self.package_notes_text = tk.Text(package, height=4, wrap="word", undo=True)
         self.package_notes_text.grid(row=3, column=1, columnspan=2, sticky="ew", pady=3)
-        ttk.Button(package, text="Upload macro", command=self._upload_package, style="Primary.TButton").grid(
+        ttk.Button(package, text="매크로 업로드", command=self._upload_package, style="Primary.TButton").grid(
             row=4,
             column=1,
             sticky="e",
             pady=(8, 0),
             padx=(0, 6),
         )
-        ttk.Button(package, text="Refresh list", command=self._refresh_packages).grid(
+        ttk.Button(package, text="목록 새로고침", command=self._refresh_packages).grid(
             row=4,
             column=2,
             sticky="e",
             pady=(8, 0),
         )
 
-        jobs = ttk.Labelframe(parent, text="Run on Slaves", padding=10)
+        jobs = ttk.Labelframe(run_page, text="빠른 실행", padding=10)
         jobs.grid(row=1, column=1, sticky="nsew", pady=(0, 8))
         jobs.columnconfigure(1, weight=1)
-        ttk.Label(jobs, text="Target").grid(row=0, column=0, sticky="w", padx=(0, 6), pady=3)
+        ttk.Label(jobs, text="대상 PC").grid(row=0, column=0, sticky="w", padx=(0, 6), pady=3)
         self.job_target_var = tk.StringVar(value="all")
         ttk.Entry(jobs, textvariable=self.job_target_var).grid(row=0, column=1, sticky="ew", pady=3)
-        ttk.Label(jobs, text="Args").grid(row=1, column=0, sticky="w", padx=(0, 6), pady=3)
+        ttk.Label(jobs, text="고급 인자").grid(row=1, column=0, sticky="w", padx=(0, 6), pady=3)
         self.job_args_var = tk.StringVar(value="")
         ttk.Entry(jobs, textvariable=self.job_args_var).grid(row=1, column=1, sticky="ew", pady=3)
-        ttk.Label(jobs, text="Vars").grid(row=2, column=0, sticky="w", padx=(0, 6), pady=3)
+        ttk.Label(jobs, text="입력값").grid(row=2, column=0, sticky="w", padx=(0, 6), pady=3)
         self.job_vars_var = tk.StringVar(value="")
         ttk.Entry(jobs, textvariable=self.job_vars_var).grid(row=2, column=1, sticky="ew", pady=3)
-        ttk.Label(jobs, text="Timeout").grid(row=3, column=0, sticky="w", padx=(0, 6), pady=3)
+        ttk.Label(jobs, text="제한 시간(초)").grid(row=3, column=0, sticky="w", padx=(0, 6), pady=3)
         self.job_timeout_var = tk.StringVar(value="0")
         ttk.Entry(jobs, textvariable=self.job_timeout_var, width=10).grid(row=3, column=1, sticky="w", pady=3)
-        ttk.Button(jobs, text="Submit macro", command=self._submit_selected_package, style="Primary.TButton").grid(
+        ttk.Button(jobs, text="선택 매크로 전송", command=self._submit_selected_package, style="Primary.TButton").grid(
             row=4,
             column=0,
             sticky="ew",
             pady=(8, 0),
             padx=(0, 6),
         )
-        ttk.Button(jobs, text="Emergency stop", command=self._request_stop, style="Danger.TButton").grid(
+        ttk.Button(jobs, text="긴급 중단", command=self._request_stop, style="Danger.TButton").grid(
             row=5,
             column=0,
             sticky="ew",
             pady=(6, 0),
             padx=(0, 6),
         )
-        job_more_button = ttk.Menubutton(jobs, text="More")
-        job_more_button.grid(row=4, column=1, sticky="w", pady=(8, 0))
-        job_more = tk.Menu(job_more_button, tearoff=False)
-        job_more.add_command(label="Ask for screenshot", command=self._submit_screenshot)
-        job_more.add_command(label="Clear stop", command=self._clear_stop)
-        job_more_button["menu"] = job_more
-        ttk.Label(jobs, text="Monitor sec").grid(row=6, column=0, sticky="w", padx=(0, 6), pady=(8, 0))
-        self.monitor_interval_var = tk.StringVar(value="30")
-        ttk.Entry(jobs, textvariable=self.monitor_interval_var, width=10).grid(row=6, column=1, sticky="w", pady=(8, 0))
-        ttk.Button(jobs, text="Auto refresh on", command=self._start_monitor_loop).grid(
-            row=7,
-            column=0,
-            sticky="ew",
-            pady=(6, 0),
-            padx=(0, 6),
-        )
-        ttk.Button(jobs, text="Auto refresh off", command=self._stop_monitor_loop).grid(
-            row=7,
+        ttk.Button(jobs, text="상태 규칙 1회", command=self._submit_selected_monitor).grid(
+            row=5,
             column=1,
             sticky="w",
             pady=(6, 0),
         )
+        job_more_button = ttk.Menubutton(jobs, text="더보기")
+        job_more_button.grid(row=4, column=1, sticky="w", pady=(8, 0))
+        job_more = tk.Menu(job_more_button, tearoff=False)
+        job_more.add_command(label="전체 화면 요청", command=self._submit_screenshot)
+        job_more.add_command(label="중단 신호 해제", command=self._clear_stop)
+        job_more_button["menu"] = job_more
+        self.monitor_interval_var = tk.StringVar(value="30")
 
-        profiles = ttk.Labelframe(parent, text="PC별 매크로 실행표", padding=10)
+        profiles = ttk.Labelframe(run_page, text="PC별 매크로 실행표", padding=10)
         profiles.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         profiles.columnconfigure(0, weight=1)
         profile_toolbar = ttk.Frame(profiles)
@@ -409,7 +682,7 @@ class RigFtpApp(tk.Tk):
         self.run_profile_tree.bind("<Button-1>", self._toggle_run_profile, add="+")
         self._refresh_run_profile_columns()
 
-        packages_frame = ttk.Labelframe(parent, text="Macro Library", padding=10)
+        packages_frame = ttk.Labelframe(run_page, text="매크로 목록", padding=10)
         packages_frame.grid(row=3, column=0, sticky="nsew", padx=(0, 8), pady=(0, 8))
         packages_frame.rowconfigure(0, weight=1)
         packages_frame.columnconfigure(0, weight=1)
@@ -420,52 +693,64 @@ class RigFtpApp(tk.Tk):
         package_scroll.grid(row=0, column=1, sticky="ns")
         self.package_list.configure(yscrollcommand=package_scroll.set)
 
-        detail_frame = ttk.Labelframe(parent, text="Selected Macro", padding=10)
+        detail_frame = ttk.Labelframe(run_page, text="선택 매크로 정보", padding=10)
         detail_frame.grid(row=3, column=1, sticky="nsew", pady=(0, 8))
         detail_frame.rowconfigure(0, weight=1)
         detail_frame.columnconfigure(0, weight=1)
         self.package_detail_text = tk.Text(detail_frame, height=8, wrap="word")
         self.package_detail_text.grid(row=0, column=0, sticky="nsew")
 
-        monitor = ttk.Labelframe(parent, text="Slave Monitor", padding=10)
-        monitor.grid(row=4, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
+        monitor = ttk.Labelframe(monitor_page, text="PC 상태와 실행 이력", padding=10)
+        monitor.grid(row=0, column=0, sticky="nsew", pady=(0, 8))
         monitor.columnconfigure(1, weight=1)
         monitor.rowconfigure(1, weight=1)
-        ttk.Label(monitor, text="Node").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        monitor.rowconfigure(3, weight=1)
+        ttk.Label(monitor, text="결과 조회 PC").grid(row=0, column=0, sticky="w", padx=(0, 6))
         self.result_node_var = tk.StringVar(value="")
         ttk.Entry(monitor, textvariable=self.result_node_var, width=20).grid(row=0, column=1, sticky="w", padx=(0, 8))
-        ttk.Button(monitor, text="Refresh status", command=self._refresh_status).grid(row=0, column=2, padx=(0, 8))
-        ttk.Button(monitor, text="Refresh results", command=self._refresh_results).grid(row=0, column=3, padx=(0, 8))
-        ttk.Button(monitor, text="View screenshot", command=self._request_selected_screenshot).grid(
+        ttk.Button(monitor, text="상태 새로고침", command=self._refresh_status).grid(row=0, column=2, padx=(0, 8))
+        ttk.Button(monitor, text="결과 새로고침", command=self._refresh_results).grid(row=0, column=3, padx=(0, 8))
+        ttk.Button(monitor, text="전체 화면 보기", command=self._request_selected_screenshot).grid(
             row=0,
             column=4,
             padx=(0, 8),
         )
-        monitor_more_button = ttk.Menubutton(monitor, text="More")
-        monitor_more_button.grid(row=0, column=5, sticky="w")
+        ttk.Button(monitor, text="모니터 보드", command=self._show_remote_monitor_board).grid(
+            row=0,
+            column=5,
+            padx=(0, 8),
+        )
+        monitor_more_button = ttk.Menubutton(monitor, text="더보기")
+        monitor_more_button.grid(row=0, column=6, sticky="w")
         monitor_more = tk.Menu(monitor_more_button, tearoff=False)
-        monitor_more.add_command(label="Export Excel", command=self._export_state_excel)
-        monitor_more.add_command(label="Clean old files", command=self._cleanup_node)
+        monitor_more.add_command(label="선택 작업 긴급 중단", command=self._stop_selected_job)
+        monitor_more.add_command(label="Excel 내보내기", command=self._export_state_excel)
+        monitor_more.add_command(label="오래된 파일 정리", command=self._cleanup_node)
         monitor_more_button["menu"] = monitor_more
-        self.status_loaded_var = tk.StringVar(value="Status loaded: -")
-        self.results_loaded_var = tk.StringVar(value="Results loaded: -")
+        self.status_loaded_var = tk.StringVar(value="마지막 상태 조회: -")
+        self.results_loaded_var = tk.StringVar(value="마지막 결과 조회: -")
 
         columns = ("alias", "node", "state", "job", "updated", "message")
         self.status_tree = ttk.Treeview(monitor, columns=columns, show="headings", height=6)
         headings = {
-            "alias": "Alias",
+            "alias": "별명",
             "node": "Node",
-            "state": "State",
-            "job": "Current job",
-            "updated": "Updated",
-            "message": "Message",
+            "state": "상태",
+            "job": "현재 작업",
+            "updated": "마지막 신호",
+            "message": "상세",
         }
         widths = {"alias": 90, "node": 130, "state": 80, "job": 180, "updated": 155, "message": 260}
         for column in columns:
             self.status_tree.heading(column, text=headings[column])
             self.status_tree.column(column, width=widths[column], anchor="w")
+        self.status_tree.tag_configure("offline", background="#f3f4f6", foreground="#6b7280")
+        self.status_tree.tag_configure("running", background="#eff6ff", foreground="#1d4ed8")
+        self.status_tree.tag_configure("error", background="#fef2f2", foreground="#b91c1c")
+        self.status_tree.tag_configure("online", background="#f0fdf4", foreground="#166534")
         self.status_tree.grid(row=1, column=0, columnspan=6, sticky="nsew", pady=(8, 0))
         self.status_tree.bind("<Double-1>", lambda _event: self._request_selected_screenshot())
+        self.status_tree.bind("<<TreeviewSelect>>", self._status_selection_changed)
         status_scroll = ttk.Scrollbar(monitor, orient="vertical", command=self.status_tree.yview)
         status_scroll.grid(row=1, column=6, sticky="ns", pady=(8, 0))
         self.status_tree.configure(yscrollcommand=status_scroll.set)
@@ -484,8 +769,35 @@ class RigFtpApp(tk.Tk):
             pady=(6, 0),
         )
 
-        log_frame = ttk.Frame(parent)
-        log_frame.grid(row=5, column=0, columnspan=2, sticky="nsew")
+        result_columns = ("state", "job", "kind", "finished", "message")
+        self.result_tree = ttk.Treeview(monitor, columns=result_columns, show="headings", height=4)
+        result_headings = {
+            "state": "결과",
+            "job": "작업 ID",
+            "kind": "유형",
+            "finished": "완료 시각",
+            "message": "요약",
+        }
+        result_widths = {"state": 70, "job": 240, "kind": 90, "finished": 170, "message": 350}
+        for column in result_columns:
+            self.result_tree.heading(column, text=result_headings[column])
+            self.result_tree.column(column, width=result_widths[column], anchor="w")
+        self.result_tree.tag_configure("ok", background="#f0fdf4", foreground="#166534")
+        self.result_tree.tag_configure("fail", background="#fef2f2", foreground="#b91c1c")
+        self.result_tree.grid(row=3, column=0, columnspan=6, sticky="nsew", pady=(8, 0))
+        self.result_tree.bind("<Double-1>", self._show_selected_result)
+        result_scroll = ttk.Scrollbar(monitor, orient="vertical", command=self.result_tree.yview)
+        result_scroll.grid(row=3, column=6, sticky="ns", pady=(8, 0))
+        self.result_tree.configure(yscrollcommand=result_scroll.set)
+        auto_refresh = ttk.Frame(monitor)
+        auto_refresh.grid(row=4, column=0, columnspan=6, sticky="ew", pady=(8, 0))
+        ttk.Label(auto_refresh, text="자동 상태 조회 간격(초)").pack(side="left")
+        ttk.Entry(auto_refresh, textvariable=self.monitor_interval_var, width=8).pack(side="left", padx=(6, 8))
+        ttk.Button(auto_refresh, text="시작", command=self._start_monitor_loop).pack(side="left")
+        ttk.Button(auto_refresh, text="중지", command=self._stop_monitor_loop).pack(side="left", padx=(5, 0))
+
+        log_frame = ttk.Frame(monitor_page)
+        log_frame.grid(row=1, column=0, sticky="nsew")
         log_frame.rowconfigure(0, weight=1)
         log_frame.columnconfigure(0, weight=1)
         self.master_log_text = tk.Text(log_frame, height=8, wrap="word")
@@ -499,10 +811,10 @@ class RigFtpApp(tk.Tk):
         parent.rowconfigure(1, weight=1)
 
         self.slave_state_var = tk.StringVar(value="Stopped")
-        control = ttk.Labelframe(parent, text="Agent Control", padding=10)
+        control = ttk.Labelframe(parent, text="Agent 제어", padding=10)
         control.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         control.columnconfigure(1, weight=1)
-        ttk.Label(control, text="Node").grid(row=0, column=0, sticky="w", padx=(0, 6), pady=(0, 8))
+        ttk.Label(control, text="이 PC Node ID").grid(row=0, column=0, sticky="w", padx=(0, 6), pady=(0, 8))
         ttk.Entry(control, textvariable=self.node_id_var).grid(row=0, column=1, sticky="ew", pady=(0, 8))
         ttk.Label(control, textvariable=self.slave_state_var).grid(
             row=0,
@@ -512,27 +824,27 @@ class RigFtpApp(tk.Tk):
             pady=(0, 8),
         )
 
-        ttk.Button(control, text="Start agent", command=self._start_slave_loop, style="Primary.TButton").grid(
+        ttk.Button(control, text="Agent 시작", command=self._start_slave_loop, style="Primary.TButton").grid(
             row=1,
             column=0,
             sticky="ew",
             padx=(0, 8),
         )
-        ttk.Button(control, text="Check once", command=self._poll_slave_once).grid(row=1, column=1, sticky="w")
-        ttk.Button(control, text="Stop agent", command=self._stop_slave_loop, style="Danger.TButton").grid(
+        ttk.Button(control, text="한 번 확인", command=self._poll_slave_once).grid(row=1, column=1, sticky="w")
+        ttk.Button(control, text="Agent 중지", command=self._stop_slave_loop, style="Danger.TButton").grid(
             row=1,
             column=2,
             sticky="ew",
             padx=(8, 0),
         )
-        ttk.Button(control, text="Clear stop", command=self._clear_my_stop).grid(
+        ttk.Button(control, text="중단 신호 해제", command=self._clear_my_stop).grid(
             row=1,
             column=3,
             sticky="ew",
             padx=(8, 0),
         )
 
-        log_frame = ttk.Labelframe(parent, text="Agent Log", padding=10)
+        log_frame = ttk.Labelframe(parent, text="Agent 로그", padding=10)
         log_frame.grid(row=1, column=0, sticky="nsew")
         log_frame.rowconfigure(0, weight=1)
         log_frame.columnconfigure(0, weight=1)
@@ -675,6 +987,7 @@ class RigFtpApp(tk.Tk):
         self.port_var.set(str(config.port))
         self.username_var.set(config.username)
         self.password_var.set(config.password)
+        self.password_env_var.set(config.password_env)
         self.root_dir_var.set(config.root_dir)
         self.tls_var.set(config.tls)
         self.passive_var.set(config.passive)
@@ -690,13 +1003,10 @@ class RigFtpApp(tk.Tk):
         self.max_logs_var.set(str(config.max_log_files))
         self.max_archive_var.set(str(config.max_archive_files))
         self.max_screens_var.set(str(config.max_screenshot_files))
-        self.variables_text.delete("1.0", "end")
-        self.variables_text.insert("1.0", json.dumps(config.variables, indent=2, ensure_ascii=True))
-        self.slaves_text.delete("1.0", "end")
-        self.slaves_text.insert(
-            "1.0",
-            json.dumps([slave.to_mapping() for slave in config.slaves], indent=2, ensure_ascii=True),
-        )
+        self._settings_variables = dict(config.variables)
+        self._settings_slaves = [slave.to_mapping() for slave in config.slaves]
+        self._refresh_settings_variables()
+        self._refresh_settings_slaves()
         if config.slaves:
             self.init_nodes_var.set(" ".join(slave.label() for slave in config.slaves))
         if not self.result_node_var.get().strip():
@@ -705,24 +1015,13 @@ class RigFtpApp(tk.Tk):
         self._refresh_run_profile_columns()
 
     def _config_from_fields(self) -> FtpSpoolConfig:
-        try:
-            variables_raw = self.variables_text.get("1.0", "end").strip() or "{}"
-            variables = json.loads(variables_raw)
-        except json.JSONDecodeError as exc:
-            raise FtpSpoolError(f"Variables JSON is invalid: {exc}") from exc
-        if not isinstance(variables, dict):
-            raise FtpSpoolError("Variables JSON must be an object.")
-        try:
-            slaves_raw = self.slaves_text.get("1.0", "end").strip() or "[]"
-            slaves_data = json.loads(slaves_raw)
-        except json.JSONDecodeError as exc:
-            raise FtpSpoolError(f"Slaves JSON is invalid: {exc}") from exc
-        if not isinstance(slaves_data, list):
-            raise FtpSpoolError("Slaves JSON must be a list.")
+        password_env = self.password_env_var.get().strip()
+        password = os.environ.get(password_env, self.password_var.get()) if password_env else self.password_var.get()
         return FtpSpoolConfig(
             host=self.host_var.get().strip(),
             username=self.username_var.get().strip(),
-            password=self.password_var.get(),
+            password=password,
+            password_env=password_env,
             port=int(self.port_var.get() or "21"),
             root_dir=self.root_dir_var.get().strip() or "/win_automation_macros",
             tls=bool(self.tls_var.get()),
@@ -739,8 +1038,8 @@ class RigFtpApp(tk.Tk):
             max_log_files=int(self.max_logs_var.get() or "200"),
             max_archive_files=int(self.max_archive_var.get() or "500"),
             max_screenshot_files=int(self.max_screens_var.get() or "20"),
-            variables={str(key): str(value) for key, value in variables.items()},
-            slaves=tuple(SlaveInfo.from_mapping(item) for item in slaves_data if isinstance(item, dict)),
+            variables=dict(self._settings_variables),
+            slaves=tuple(SlaveInfo.from_mapping(item) for item in self._settings_slaves),
             run_profiles=tuple(RunProfile.from_mapping(row) for row in self._run_profiles),
         )
 
@@ -751,6 +1050,42 @@ class RigFtpApp(tk.Tk):
         config = self._config_from_fields()
         local_root = self.local_root_var.get().strip()
         return config, self._backend(config, local_root), local_root
+
+    def _test_connection(self) -> None:
+        try:
+            config, backend, local_root = self._snapshot_backend()
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+        self.connection_state_var.set("연결 상태: 확인 중...")
+
+        def worker() -> None:
+            destination = local_root or f"{config.host}:{config.port}{config.root_dir}"
+            probe_name = f"connection-check-{time.time_ns()}.probe"
+            probe_path = f"control/all/{probe_name}"
+            try:
+                backend.write_bytes(probe_path, b"connection-check")
+                try:
+                    if backend.read_bytes(probe_path) != b"connection-check":
+                        raise FtpSpoolError("연결 확인 파일을 다시 읽지 못했습니다.")
+                finally:
+                    backend.delete(probe_path)
+                if probe_name in backend.list_files("control/all"):
+                    raise FtpSpoolError("연결 확인 파일을 삭제할 권한이 없습니다.")
+                statuses = list_status(backend)
+                packages = list_packages(backend)
+            except BaseException:
+                self._queue.put(("connection_state", f"연결 실패: {destination}"))
+                raise
+            self._queue.put(
+                (
+                    "connection_state",
+                    f"연결됨: {destination} | PC {len(statuses)}대 | 매크로 {len(packages)}개",
+                )
+            )
+            self._queue.put(("log", f"연결 확인 완료: {destination}"))
+
+        self._start_worker("연결 확인", worker)
 
     def _init_server(self) -> None:
         try:
@@ -1017,13 +1352,17 @@ class RigFtpApp(tk.Tk):
         def worker() -> None:
             submitted: list[str] = []
             for row in rows:
+                package = next(
+                    (item for item in self._packages if item.name == str(row["package"])),
+                    None,
+                )
                 job = SpoolJob.create(
-                    kind="python",
+                    kind=package_job_kind(package) if package else "python",
                     payload={
                         "package": str(row["package"]),
                         "args": args,
                         "timeout_seconds": timeout,
-                        "pass_variables": True,
+                        "pass_variables": bool(package and package.runner == "python" and package.variables),
                     },
                     variables={str(key): str(value) for key, value in row.get("variables", {}).items()},
                 )
@@ -1045,6 +1384,32 @@ class RigFtpApp(tk.Tk):
 
         self._start_worker("Submitting macro job", worker)
 
+    def _submit_selected_monitor(self) -> None:
+        try:
+            config, backend, _local_root = self._snapshot_backend()
+            package = self._selected_package()
+            if package is None:
+                raise FtpSpoolError("상태 규칙을 읽을 매크로를 먼저 선택하세요.")
+            if package.runner != "workflow":
+                raise FtpSpoolError("상태 규칙 실행은 Picker에서 export한 workflow만 지원합니다.")
+            targets = self._targets(self.job_target_var.get(), config=config) or ["all"]
+            variables = self._parse_vars(self.job_vars_var.get())
+            timeout = float(self.job_timeout_var.get() or "0")
+            job = SpoolJob.create(
+                kind="monitor",
+                payload={"package": package.name, "timeout_seconds": timeout},
+                variables=variables,
+            )
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+
+        def worker() -> None:
+            paths = submit_job(backend, job, targets)
+            self._queue.put(("log", f"상태 규칙 1회 실행 요청: {', '.join(paths)}"))
+
+        self._start_worker("상태 규칙 전송", worker)
+
     def _selected_package_job(self) -> tuple[Any, PackageInfo, list[str], SpoolJob]:
         _config, backend, _local_root = self._snapshot_backend()
         package = self._selected_package()
@@ -1055,12 +1420,12 @@ class RigFtpApp(tk.Tk):
         variables = self._parse_vars(self.job_vars_var.get())
         targets = self._targets(self.job_target_var.get(), config=_config) or ["all"]
         job = SpoolJob.create(
-            kind="python",
+            kind=package_job_kind(package),
             payload={
                 "package": package.name,
                 "args": args,
                 "timeout_seconds": timeout,
-                "pass_variables": True,
+                "pass_variables": bool(package.runner == "python" and package.variables),
             },
             variables=variables,
         )
@@ -1068,14 +1433,12 @@ class RigFtpApp(tk.Tk):
 
     def _start_monitor_loop(self) -> None:
         if self._monitor_stop is not None:
-            self._append_master_log("Monitor loop is already running.")
+            self._append_master_log("상태 자동 새로고침이 이미 실행 중입니다.")
             return
         try:
             interval = max(10.0, float(self.monitor_interval_var.get() or "30"))
-            backend, package, targets, _job = self._selected_package_job()
-            args_raw = self.job_args_var.get()
-            vars_raw = self.job_vars_var.get()
-            timeout = float(self.job_timeout_var.get() or "0")
+            config, backend, _local_root = self._snapshot_backend()
+            stale_after = self._status_stale_seconds(config)
         except BaseException as exc:
             self._show_error(exc)
             return
@@ -1083,34 +1446,28 @@ class RigFtpApp(tk.Tk):
         self._monitor_stop = stop_event
 
         def worker() -> None:
-            self._queue.put(("log", f"Started monitor loop: {package.name} every {interval:g}s."))
+            self._queue.put(("log", f"상태 자동 새로고침 시작: {interval:g}초 간격"))
             try:
                 while not stop_event.is_set():
-                    job = SpoolJob.create(
-                        kind="python",
-                        payload={
-                            "package": package.name,
-                            "args": shlex.split(args_raw, posix=False) if args_raw.strip() else [],
-                            "timeout_seconds": timeout,
-                            "pass_variables": True,
-                        },
-                        variables=self._parse_vars(vars_raw),
+                    rows = classify_status_rows(
+                        list_status(backend),
+                        slaves=config.slaves,
+                        stale_after_seconds=stale_after,
                     )
-                    paths = submit_job(backend, job, targets)
-                    self._queue.put(("log", f"Monitor submitted {job.job_id}: {', '.join(paths)}"))
+                    self._queue.put(("status_rows", rows))
                     deadline = time.monotonic() + interval
                     while time.monotonic() < deadline and not stop_event.is_set():
                         time.sleep(0.3)
             except BaseException as exc:
                 self._queue.put(("error", exc))
             finally:
-                self._queue.put(("monitor_stopped", "Monitor loop stopped."))
+                self._queue.put(("monitor_stopped", "상태 자동 새로고침을 중지했습니다."))
 
         threading.Thread(target=worker, daemon=True).start()
 
     def _stop_monitor_loop(self) -> None:
         if self._monitor_stop is None:
-            self._append_master_log("Monitor loop is not running.")
+            self._append_master_log("상태 자동 새로고침이 실행 중이 아닙니다.")
             return
         self._monitor_stop.set()
 
@@ -1154,6 +1511,36 @@ class RigFtpApp(tk.Tk):
             return
         self._stop_or_clear(stop=True)
 
+    def _stop_selected_job(self) -> None:
+        node = self._selected_status_node()
+        selection = self.status_tree.selection()
+        if not node or not selection:
+            self._show_error(FtpSpoolError("중단할 실행 중 PC 행을 선택하세요."))
+            return
+        values = self.status_tree.item(selection[0], "values")
+        job_id = str(values[3]) if len(values) > 3 else ""
+        if not job_id or job_id == "-":
+            self._show_error(FtpSpoolError("선택한 PC에는 현재 실행 중인 작업이 없습니다."))
+            return
+        if not messagebox.askyesno("선택 작업 긴급 중단", f"{node}의 작업 {job_id}만 중단할까요?"):
+            return
+        try:
+            _config, backend, _local_root = self._snapshot_backend()
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+
+        def worker() -> None:
+            request_stop(
+                backend,
+                node,
+                job_id=job_id,
+                reason="selected job stop from Rig FTP Commander",
+            )
+            self._queue.put(("log", f"선택 작업 중단 요청: {node} / {job_id}"))
+
+        self._start_worker("선택 작업 중단 신호 전송", worker)
+
     def _clear_stop(self) -> None:
         self._stop_or_clear(stop=False)
 
@@ -1178,13 +1565,18 @@ class RigFtpApp(tk.Tk):
 
     def _refresh_status(self) -> None:
         try:
-            _config, backend, _local_root = self._snapshot_backend()
+            config, backend, _local_root = self._snapshot_backend()
+            stale_after = self._status_stale_seconds(config)
         except BaseException as exc:
             self._show_error(exc)
             return
 
         def worker() -> None:
-            rows = list_status(backend)
+            rows = classify_status_rows(
+                list_status(backend),
+                slaves=config.slaves,
+                stale_after_seconds=stale_after,
+            )
             self._queue.put(("status_rows", rows))
             if not rows:
                 self._queue.put(("log", "No slave status has been published."))
@@ -1202,12 +1594,22 @@ class RigFtpApp(tk.Tk):
 
         self._start_worker("Refreshing status", worker)
 
+    def _status_stale_seconds(self, config: FtpSpoolConfig) -> float:
+        return max(
+            15.0,
+            config.poll_interval_seconds * 3.0 + config.poll_jitter_seconds * 2.0 + 5.0,
+        )
+
     def _set_status_rows(self, rows: list[dict[str, Any]]) -> None:
         self._last_status_rows = rows
         self.status_loaded_var.set(
-            f"Status loaded: {time.strftime('%Y-%m-%d %H:%M:%S')} ({len(rows)} slave(s))"
+            f"마지막 상태 조회: {time.strftime('%Y-%m-%d %H:%M:%S')} ({len(rows)}대)"
         )
-        config = self._config_from_fields()
+        try:
+            config = self._config_from_fields()
+        except Exception:
+            config = None
+        previous_selection = set(self.status_tree.selection())
         self.status_tree.delete(*self.status_tree.get_children())
         for row in rows:
             node = str(row.get("node_id") or "")
@@ -1220,10 +1622,19 @@ class RigFtpApp(tk.Tk):
                 row.get("updated_at", ""),
                 row.get("message", ""),
             )
+            health = str(row.get("health") or "online")
             if node:
-                self.status_tree.insert("", "end", iid=node, values=values)
+                self.status_tree.insert("", "end", iid=node, values=values, tags=(health,))
             else:
-                self.status_tree.insert("", "end", values=values)
+                self.status_tree.insert("", "end", values=values, tags=(health,))
+        for item in previous_selection:
+            if self.status_tree.exists(item):
+                self.status_tree.selection_add(item)
+
+    def _status_selection_changed(self, _event: Any | None = None) -> None:
+        node = self._selected_status_node()
+        if node:
+            self.result_node_var.set(node)
 
     def _export_state_excel(self) -> None:
         path = filedialog.asksaveasfilename(
@@ -1233,16 +1644,26 @@ class RigFtpApp(tk.Tk):
         )
         if not path:
             return
+        try:
+            config = self._config_from_fields()
+        except BaseException as exc:
+            self._show_error(exc)
+            return
         rows = self._last_status_rows
         if not rows:
             try:
                 _config, backend, _local_root = self._snapshot_backend()
-                rows = list_status(backend)
+                rows = classify_status_rows(
+                    list_status(backend),
+                    slaves=config.slaves,
+                    stale_after_seconds=self._status_stale_seconds(config),
+                )
             except BaseException as exc:
                 self._show_error(exc)
                 return
-        config = self._config_from_fields()
-        table: list[list[Any]] = [["Alias", "Node", "State", "Current job", "Updated", "Message"]]
+        table: list[list[Any]] = [
+            ["Alias", "Node", "State", "Current job", "Updated", "Last result", "Last finished", "Message"]
+        ]
         for row in rows:
             node = str(row.get("node_id") or "")
             table.append(
@@ -1252,6 +1673,8 @@ class RigFtpApp(tk.Tk):
                     row.get("state", ""),
                     row.get("current_job") or "",
                     row.get("updated_at", ""),
+                    "PASS" if row.get("last_ok") is True else "FAIL" if row.get("last_ok") is False else "",
+                    row.get("last_finished_at", ""),
                     row.get("message", ""),
                 ]
             )
@@ -1278,8 +1701,9 @@ class RigFtpApp(tk.Tk):
                     f"Screenshot for {label} skipped: wait {wait_seconds:.0f}s before requesting again."
                 )
                 return
-            before = set(list_screenshots(backend, node))
-            job = SpoolJob.create(kind="screenshot", payload={"label": "master-view"})
+            job = SpoolJob.create(kind="screenshot", payload={})
+            request_label = f"master-view-{job.job_id}"
+            job = replace(job, payload={"label": request_label})
             self._last_screenshot_request_by_node[node] = now
         except BaseException as exc:
             self._show_error(exc)
@@ -1292,17 +1716,13 @@ class RigFtpApp(tk.Tk):
             latest = ""
             while time.monotonic() < deadline:
                 screenshots = list_screenshots(backend, node)
-                new_paths = [path for path in screenshots if path not in before]
-                if new_paths:
-                    latest = sorted(new_paths)[-1]
+                matching = [path for path in screenshots if path.endswith(f"-{request_label}.png")]
+                if matching:
+                    latest = sorted(matching)[-1]
                     break
                 time.sleep(2.0)
             if not latest:
-                screenshots = list_screenshots(backend, node)
-                if screenshots:
-                    latest = sorted(screenshots)[-1]
-            if not latest:
-                self._queue.put(("log", f"No screenshot arrived from {node} within 45 seconds."))
+                self._queue.put(("log", f"{node}의 이번 화면 요청에 대한 응답이 45초 안에 오지 않았습니다."))
                 return
             data = backend.read_bytes(latest)
             self._queue.put(("show_screenshot", (self._slave_label(node, config), latest, data)))
@@ -1346,8 +1766,10 @@ class RigFtpApp(tk.Tk):
 
     def _refresh_results(self) -> None:
         try:
-            _config, backend, _local_root = self._snapshot_backend()
-            node = self.result_node_var.get().strip() or self.node_id_var.get().strip()
+            config, backend, _local_root = self._snapshot_backend()
+            raw_node = self.result_node_var.get().strip() or self.node_id_var.get().strip()
+            resolved = self._targets(raw_node, config=config)
+            node = resolved[0] if resolved else ""
             if not node:
                 raise FtpSpoolError("Node ID is required for results.")
         except BaseException as exc:
@@ -1356,6 +1778,7 @@ class RigFtpApp(tk.Tk):
 
         def worker() -> None:
             rows = list_results(backend, node)
+            self._queue.put(("result_rows", {"node": node, "rows": rows}))
             self._queue.put(("results_loaded", {"node": node, "count": len(rows)}))
             if not rows:
                 self._queue.put(("log", f"No results for {node}."))
@@ -1371,6 +1794,176 @@ class RigFtpApp(tk.Tk):
                 )
 
         self._start_worker("Refreshing results", worker)
+
+    def _set_result_rows(self, rows: list[dict[str, Any]], *, node: str = "") -> None:
+        self._last_result_node = node
+        self._last_result_rows = rows[-100:]
+        self.result_tree.delete(*self.result_tree.get_children())
+        for index, row in enumerate(reversed(self._last_result_rows)):
+            ok = bool(row.get("ok"))
+            monitor_results = row.get("monitor_results") if isinstance(row.get("monitor_results"), list) else []
+            if monitor_results:
+                passed = sum(1 for item in monitor_results if isinstance(item, dict) and item.get("ok"))
+                summary = f"모니터 {passed}/{len(monitor_results)} 통과"
+            else:
+                output = str(row.get("stderr") or row.get("stdout") or "").strip()
+                summary = next((line.strip() for line in output.splitlines() if line.strip()), "-")
+            values = (
+                "PASS" if ok else "FAIL",
+                row.get("job_id", ""),
+                row.get("kind", ""),
+                row.get("finished_at", ""),
+                summary,
+            )
+            self.result_tree.insert("", "end", iid=str(index), values=values, tags=("ok" if ok else "fail",))
+
+    def _show_selected_result(self, _event: Any | None = None) -> None:
+        selection = self.result_tree.selection()
+        if not selection:
+            return
+        display_index = int(selection[0])
+        rows = list(reversed(self._last_result_rows))
+        if not 0 <= display_index < len(rows):
+            return
+        row = rows[display_index]
+        window = tk.Toplevel(self)
+        window.title(f"작업 결과 - {row.get('job_id', '')}")
+        window.geometry("820x560")
+        frame = ttk.Frame(window, padding=10)
+        frame.pack(fill="both", expand=True)
+        text_widget = tk.Text(frame, wrap="word")
+        text_widget.pack(fill="both", expand=True)
+        text_widget.insert("1.0", json.dumps(row, indent=2, ensure_ascii=False))
+        text_widget.configure(state="disabled")
+
+    def _show_remote_monitor_board(self) -> None:
+        try:
+            config, backend, _local_root = self._snapshot_backend()
+            raw_node = self._selected_status_node() or self.result_node_var.get().strip() or config.node_id
+            resolved = self._targets(raw_node, config=config)
+            node = resolved[0] if resolved else ""
+            if not node or node == "all":
+                raise FtpSpoolError("모니터 보드를 볼 PC 한 대를 선택하세요.")
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+
+        def worker() -> None:
+            rows = list_results(backend, node)
+            self._queue.put(("result_rows", {"node": node, "rows": rows}))
+            latest = next((row for row in reversed(rows) if row.get("monitor_results")), None)
+            if latest is None:
+                raise FtpSpoolError(f"{node}에 아직 구조화된 모니터 결과가 없습니다.")
+            self._queue.put(("remote_monitor_board", (node, latest)))
+
+        self._start_worker("원격 모니터 보드 불러오기", worker)
+
+    def _open_remote_monitor_board(self, node: str, result_row: dict[str, Any]) -> None:
+        raw_results = result_row.get("monitor_results") or []
+        entries = self._flatten_remote_monitor_results(raw_results)
+        if not entries:
+            self._show_error(FtpSpoolError("표시할 모니터 결과가 없습니다."))
+            return
+        view = result_row.get("monitor_view") if isinstance(result_row.get("monitor_view"), dict) else {}
+        discovered_tabs = list(dict.fromkeys(str(entry["tab"]) for entry in entries))
+        ordered_tabs = [str(value) for value in view.get("tab_order", []) if str(value).strip()]
+        tabs = [tab for tab in ordered_tabs if tab in discovered_tabs]
+        tabs.extend(tab for tab in discovered_tabs if tab not in tabs)
+
+        window = tk.Toplevel(self)
+        board_name = str(view.get("name") or "원격 모니터 보드")
+        window.title(f"{board_name} - {self._slave_label(node)}")
+        window.geometry("980x620")
+        frame = ttk.Frame(window, padding=10)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(
+            frame,
+            text=(
+                f"{self._slave_label(node)} | 작업 {result_row.get('job_id', '-')} | "
+                f"완료 {result_row.get('finished_at', '-')}"
+            ),
+        ).pack(anchor="w", pady=(0, 8))
+        notebook = ttk.Notebook(frame)
+        notebook.pack(fill="both", expand=True)
+        for tab in tabs:
+            tab_frame = ttk.Frame(notebook, padding=6)
+            tab_frame.columnconfigure(0, weight=1)
+            tab_frame.rowconfigure(0, weight=1)
+            notebook.add(tab_frame, text=tab)
+            columns = ("channel", "state", "result", "actual", "expected", "rule")
+            tree = ttk.Treeview(tab_frame, columns=columns, show="headings")
+            headings = {
+                "channel": "장비 / CH",
+                "state": "표시 상태",
+                "result": "판정",
+                "actual": "실제값",
+                "expected": "기대값",
+                "rule": "규칙",
+            }
+            widths = {"channel": 130, "state": 110, "result": 70, "actual": 210, "expected": 180, "rule": 220}
+            for column in columns:
+                tree.heading(column, text=headings[column])
+                tree.column(column, width=widths[column], anchor="w")
+            tree.tag_configure("ok", background="#f0fdf4", foreground="#166534")
+            tree.tag_configure("fail", background="#fef2f2", foreground="#b91c1c")
+            tree.grid(row=0, column=0, sticky="nsew")
+            scroll = ttk.Scrollbar(tab_frame, orient="vertical", command=tree.yview)
+            scroll.grid(row=0, column=1, sticky="ns")
+            tree.configure(yscrollcommand=scroll.set)
+            for entry in (item for item in entries if item["tab"] == tab):
+                ok = bool(entry["ok"])
+                tree.insert(
+                    "",
+                    "end",
+                    values=(
+                        entry["channel"],
+                        entry["state"],
+                        "PASS" if ok else "FAIL",
+                        entry["actual"],
+                        entry["expected"],
+                        entry["label"],
+                    ),
+                    tags=("ok" if ok else "fail",),
+                )
+
+    def _flatten_remote_monitor_results(
+        self,
+        results: Any,
+        *,
+        inherited_tab: str = "",
+        inherited_channel: str = "",
+        inherited_state: str = "",
+    ) -> list[dict[str, Any]]:
+        if not isinstance(results, list):
+            return []
+        flattened: list[dict[str, Any]] = []
+        for raw in results:
+            if not isinstance(raw, dict):
+                continue
+            tab = str(raw.get("monitor_tab") or inherited_tab or "Default")
+            channel = str(raw.get("monitor_channel") or inherited_channel or "-")
+            state = str(raw.get("monitor_state") or inherited_state or "-")
+            if str(raw.get("kind") or "").startswith("monitor_"):
+                flattened.append(
+                    {
+                        "tab": tab,
+                        "channel": channel,
+                        "state": state,
+                        "ok": bool(raw.get("ok")),
+                        "actual": str(raw.get("actual") or "-"),
+                        "expected": str(raw.get("expected") or "-"),
+                        "label": str(raw.get("label") or "조건"),
+                    }
+                )
+            flattened.extend(
+                self._flatten_remote_monitor_results(
+                    raw.get("details"),
+                    inherited_tab=tab,
+                    inherited_channel=channel,
+                    inherited_state=state,
+                )
+            )
+        return flattened
 
     def _cleanup_node(self) -> None:
         try:
@@ -1407,21 +2000,42 @@ class RigFtpApp(tk.Tk):
 
         def worker() -> None:
             self._queue.put(("slave_log", f"Started slave loop for {node}."))
+            failures = 0
+            directories_ready = False
+            status_context: dict[str, Any] = {}
             try:
                 while not stop_event.is_set():
-                    results = run_slave_once(backend, config, node_id=node)
-                    for result in results:
-                        state = "OK" if result.ok else "FAIL"
-                        self._queue.put(
-                            (
-                                "slave_log",
-                                f"[{state}] {result.job_id} {result.kind} rc={result.returncode}",
-                            )
+                    try:
+                        results = run_slave_once(
+                            backend,
+                            config,
+                            node_id=node,
+                            ensure_directories=not directories_ready,
+                            status_context=status_context,
                         )
+                    except Exception as exc:
+                        failures += 1
+                        directories_ready = False
+                        self._queue.put(("slave_state", f"Reconnecting ({failures})"))
+                        self._queue.put(("slave_log", f"FTP poll failed ({failures}): {exc}"))
+                    else:
+                        failures = 0
+                        directories_ready = True
+                        self._queue.put(("slave_state", f"Running: {node}"))
+                        for result in results:
+                            state = "OK" if result.ok else "FAIL"
+                            self._queue.put(
+                                (
+                                    "slave_log",
+                                    f"[{state}] {result.job_id} {result.kind} rc={result.returncode}",
+                                )
+                            )
                     delay = max(0.2, config.poll_interval_seconds)
                     jitter = max(0.0, config.poll_jitter_seconds)
                     if jitter:
                         delay += random.uniform(0.0, jitter)
+                    if failures:
+                        delay = min(60.0, max(delay, 2.0) * (2 ** min(failures - 1, 4)))
                     deadline = time.monotonic() + delay
                     while time.monotonic() < deadline and not stop_event.is_set():
                         time.sleep(0.2)
@@ -1491,6 +2105,7 @@ class RigFtpApp(tk.Tk):
         lines = [
             f"Name: {package.name}",
             f"Title: {package.title or '-'}",
+            f"Runner: {'내장 워크플로 엔진' if package.runner == 'workflow' else '외부 Python'}",
             f"Uploaded: {package.uploaded_at or '-'}",
             f"Path: {package.path}",
             "",
@@ -1598,18 +2213,30 @@ class RigFtpApp(tk.Tk):
                 self._set_packages(list(payload))
             elif kind == "status_rows":
                 self._set_status_rows(list(payload))
+            elif kind == "result_rows":
+                if isinstance(payload, dict):
+                    self._set_result_rows(list(payload.get("rows", [])), node=str(payload.get("node", "")))
+                else:
+                    self._set_result_rows(list(payload))
+            elif kind == "connection_state":
+                self.connection_state_var.set(str(payload))
             elif kind == "results_loaded":
                 node = str(payload.get("node", "")) if isinstance(payload, dict) else ""
                 count = int(payload.get("count", 0)) if isinstance(payload, dict) else 0
-                label = f" for {node}" if node else ""
+                label = f" ({node})" if node else ""
                 self.results_loaded_var.set(
-                    f"Results loaded{label}: {time.strftime('%Y-%m-%d %H:%M:%S')} ({count} result(s))"
+                    f"마지막 결과 조회{label}: {time.strftime('%Y-%m-%d %H:%M:%S')} ({count}건)"
                 )
             elif kind == "show_screenshot":
                 alias, path, data = payload
                 self._show_screenshot(str(alias), str(path), data)
+            elif kind == "remote_monitor_board":
+                node, row = payload
+                self._open_remote_monitor_board(str(node), dict(row))
             elif kind == "slave_stopped":
                 self._slave_stop = None
+                self.slave_state_var.set(str(payload))
+            elif kind == "slave_state":
                 self.slave_state_var.set(str(payload))
             elif kind == "monitor_stopped":
                 self._monitor_stop = None

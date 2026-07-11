@@ -18,6 +18,8 @@ from contextlib import redirect_stderr, redirect_stdout
 from typing import Any, Iterable, Protocol, Sequence
 
 from . import rig_cli
+from .exporter import parse_exported_workflow, read_exported_workflow
+from .recipe import ConditionResult, DataSet, monitor_only_recipe, run_recipe
 from .rig import RigConfigError, RigExecutionError, powershell_argv
 
 
@@ -113,6 +115,7 @@ class FtpSpoolConfig:
     host: str = ""
     username: str = ""
     password: str = ""
+    password_env: str = ""
     port: int = 21
     root_dir: str = "/win_automation_macros"
     tls: bool = False
@@ -155,6 +158,7 @@ class FtpSpoolConfig:
             host=str(ftp_data.get("host", "") or ""),
             username=str(ftp_data.get("username", "") or ""),
             password=password,
+            password_env=password_env,
             port=int(ftp_data.get("port", 21) or 21),
             root_dir=str(ftp_data.get("root_dir", "/win_automation_macros") or "/win_automation_macros"),
             tls=bool(ftp_data.get("tls", False)),
@@ -210,8 +214,8 @@ class FtpSpoolConfig:
                 "host": self.host,
                 "port": self.port,
                 "username": self.username,
-                "password": self.password,
-                "password_env": "",
+                "password": "" if self.password_env else self.password,
+                "password_env": self.password_env,
                 "root_dir": self.root_dir,
                 "tls": self.tls,
                 "passive": self.passive,
@@ -467,6 +471,8 @@ class JobResult:
     finished_at: str
     stdout: str = ""
     stderr: str = ""
+    monitor_results: list[dict[str, Any]] = field(default_factory=list)
+    monitor_view: dict[str, Any] = field(default_factory=dict)
 
     def to_mapping(self) -> dict[str, Any]:
         return {
@@ -479,6 +485,8 @@ class JobResult:
             "finished_at": self.finished_at,
             "stdout": self.stdout,
             "stderr": self.stderr,
+            "monitor_results": list(self.monitor_results),
+            "monitor_view": dict(self.monitor_view),
         }
 
 
@@ -489,6 +497,7 @@ class PackageInfo:
     title: str = ""
     notes: str = ""
     uploaded_at: str = ""
+    runner: str = "python"
     variables: dict[str, str] = field(default_factory=dict)
 
     @classmethod
@@ -503,6 +512,7 @@ class PackageInfo:
             title=str(data.get("title") or ""),
             notes=str(data.get("notes") or ""),
             uploaded_at=str(data.get("uploaded_at") or ""),
+            runner=str(data.get("runner") or "python").strip().casefold(),
             variables={str(key): str(value) for key, value in variables.items()},
         )
 
@@ -513,6 +523,7 @@ class PackageInfo:
             "title": self.title,
             "notes": self.notes,
             "uploaded_at": self.uploaded_at,
+            "runner": self.runner,
             "variables": dict(self.variables),
         }
 
@@ -551,12 +562,26 @@ def deploy_package(
     title: str = "",
     notes: str = "",
     variables: dict[str, str] | None = None,
+    runner: str = "auto",
 ) -> str:
     source_path = Path(source)
     if not source_path.exists():
         raise FtpSpoolError(f"Package source not found: {source_path}")
     package_name = name or source_path.name
     safe_package_name = _safe_name(package_name)
+    resolved_runner = runner.strip().casefold() or "auto"
+    resolved_variables = {str(key): str(value) for key, value in (variables or {}).items()}
+    if resolved_runner == "auto":
+        try:
+            exported = read_exported_workflow(source_path)
+        except (OSError, SyntaxError, ValueError, json.JSONDecodeError):
+            resolved_runner = "python"
+        else:
+            resolved_runner = "workflow"
+            if not resolved_variables:
+                resolved_variables = dict(exported.recipe.variables)
+    if resolved_runner not in {"python", "workflow"}:
+        raise FtpSpoolError(f"Unsupported package runner: {runner}")
     remote_path = f"packages/{safe_package_name}"
     backend.write_bytes(remote_path, source_path.read_bytes())
     package = PackageInfo(
@@ -565,13 +590,18 @@ def deploy_package(
         title=title or source_path.stem,
         notes=notes,
         uploaded_at=_utc_now(),
-        variables={str(key): str(value) for key, value in (variables or {}).items()},
+        runner=resolved_runner,
+        variables=resolved_variables,
     )
     backend.write_bytes(
         f"packages/{safe_package_name}.meta.json",
         (json.dumps(package.to_mapping(), indent=2, ensure_ascii=True) + "\n").encode("utf-8"),
     )
     return remote_path
+
+
+def package_job_kind(package: PackageInfo) -> str:
+    return "workflow" if package.runner == "workflow" else "python"
 
 
 def list_packages(backend: SpoolBackend) -> list[PackageInfo]:
@@ -662,14 +692,18 @@ def run_slave_once(
     config: FtpSpoolConfig,
     *,
     node_id: str | None = None,
+    ensure_directories: bool = True,
+    status_context: dict[str, Any] | None = None,
 ) -> list[JobResult]:
     node = _clean_node_id(node_id or config.node_id)
     if not node:
         raise FtpSpoolError("Slave node_id is required.")
-    ensure_node_dirs(backend, node)
-    write_status(backend, node, state="idle", message="polling", current_job="")
+    if ensure_directories:
+        ensure_node_dirs(backend, node)
     results: list[JobResult] = []
+    processed_broadcast = False
     for path in pending_job_paths(backend, node):
+        processed_broadcast = processed_broadcast or path.startswith("commands/all/")
         try:
             job = SpoolJob.from_json(backend.read_bytes(path).decode("utf-8"))
         except Exception as exc:
@@ -704,7 +738,28 @@ def run_slave_once(
             backend.delete(path)
         cleanup_node_files(backend, node, config)
         results.append(result)
-    write_status(backend, node, state="idle", message="waiting", current_job="")
+        if status_context is not None:
+            status_context.update(
+                {
+                    "last_job": result.job_id,
+                    "last_ok": result.ok,
+                    "last_finished_at": result.finished_at,
+                }
+            )
+    if processed_broadcast and config.slaves:
+        cleanup_completed_broadcast_jobs(backend, [slave.node_id for slave in config.slaves])
+    final_message = "waiting"
+    if status_context and status_context.get("last_job"):
+        outcome = "PASS" if status_context.get("last_ok") else "FAIL"
+        final_message = f"waiting | last {outcome}: {status_context['last_job']}"
+    write_status(
+        backend,
+        node,
+        state="idle",
+        message=final_message,
+        current_job="",
+        details=status_context,
+    )
     return results
 
 
@@ -717,15 +772,36 @@ def slave_loop(
     count: int = 0,
 ) -> None:
     rounds = 0
+    failures = 0
+    directories_ready = False
+    status_context: dict[str, Any] = {}
     while True:
         rounds += 1
-        run_slave_once(backend, config, node_id=node_id)
+        try:
+            run_slave_once(
+                backend,
+                config,
+                node_id=node_id,
+                ensure_directories=not directories_ready,
+                status_context=status_context,
+            )
+        except Exception as exc:
+            if once:
+                raise
+            failures += 1
+            directories_ready = False
+            print(f"slave poll failed ({failures}): {exc}", file=sys.stderr)
+        else:
+            failures = 0
+            directories_ready = True
         if once or (count and rounds >= count):
             return
         delay = max(0.2, config.poll_interval_seconds)
         jitter = max(0.0, config.poll_jitter_seconds)
         if jitter:
             delay += random.uniform(0.0, jitter)
+        if failures:
+            delay = min(60.0, max(delay, 2.0) * (2 ** min(failures - 1, 4)))
         time.sleep(delay)
 
 
@@ -772,6 +848,17 @@ def execute_job(
                 started_at=started,
                 max_output_chars=config.max_output_chars,
             )
+        if job.kind in {"workflow", "monitor"}:
+            return _execute_workflow(
+                backend,
+                job,
+                variables,
+                timeout=timeout,
+                node_id=node_id,
+                started_at=started,
+                max_output_chars=config.max_output_chars,
+                monitor_only=job.kind == "monitor",
+            )
         if job.kind == "rig":
             return _limit_result(
                 _execute_rig(job, variables, node_id=node_id, started_at=started),
@@ -783,6 +870,7 @@ def execute_job(
                 config,
                 node_id,
                 label=str(job.payload.get("label", job.job_id) or job.job_id),
+                enforce_min_interval=True,
             )
             return JobResult(
                 job_id=job.job_id,
@@ -840,6 +928,7 @@ def write_status(
     state: str,
     message: str,
     current_job: str,
+    details: dict[str, Any] | None = None,
 ) -> None:
     status = {
         "node_id": node_id,
@@ -848,6 +937,8 @@ def write_status(
         "current_job": current_job,
         "updated_at": _utc_now(),
     }
+    if details:
+        status.update(details)
     backend.write_bytes(f"status/{_clean_node_id(node_id)}.json", json.dumps(status, indent=2).encode("utf-8"))
 
 
@@ -863,6 +954,70 @@ def list_status(backend: SpoolBackend) -> list[dict[str, Any]]:
         if isinstance(data, dict):
             rows.append(data)
     return sorted(rows, key=lambda item: str(item.get("node_id", "")))
+
+
+def classify_status_rows(
+    rows: Sequence[dict[str, Any]],
+    *,
+    slaves: Sequence[SlaveInfo] = (),
+    stale_after_seconds: float = 30.0,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Merge configured nodes and mark stale or missing heartbeats as offline."""
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    by_node = {
+        str(row.get("node_id") or "").strip(): dict(row)
+        for row in rows
+        if str(row.get("node_id") or "").strip()
+    }
+    for slave in slaves:
+        by_node.setdefault(
+            slave.node_id,
+            {
+                "node_id": slave.node_id,
+                "state": "offline",
+                "message": "No heartbeat received",
+                "current_job": "",
+                "updated_at": "",
+            },
+        )
+
+    classified: list[dict[str, Any]] = []
+    threshold = max(1.0, float(stale_after_seconds))
+    for node_id, original in by_node.items():
+        row = dict(original)
+        row["node_id"] = node_id
+        reported_state = str(row.get("state") or "unknown").strip().casefold()
+        updated_at = str(row.get("updated_at") or "").strip()
+        age_seconds: float | None = None
+        if updated_at:
+            try:
+                updated = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+                if updated.tzinfo is None:
+                    updated = updated.replace(tzinfo=timezone.utc)
+                age_seconds = max(0.0, (current - updated.astimezone(timezone.utc)).total_seconds())
+            except ValueError:
+                age_seconds = None
+
+        if not updated_at or age_seconds is None or age_seconds > threshold:
+            row["reported_state"] = reported_state
+            row["state"] = "offline"
+            row["health"] = "offline"
+            if updated_at and age_seconds is not None:
+                previous = str(row.get("message") or "").strip()
+                stale_message = f"Last heartbeat {int(age_seconds)}s ago"
+                row["message"] = f"{stale_message} | {previous}" if previous else stale_message
+        elif reported_state == "running":
+            row["health"] = "running"
+        elif reported_state in {"error", "failed", "fail"} or row.get("last_ok") is False:
+            row["health"] = "error"
+        else:
+            row["health"] = "online"
+        row["age_seconds"] = age_seconds
+        classified.append(row)
+    return sorted(classified, key=lambda item: str(item.get("node_id", "")))
 
 
 def list_results(backend: SpoolBackend, node_id: str) -> list[dict[str, Any]]:
@@ -883,6 +1038,22 @@ def list_results(backend: SpoolBackend, node_id: str) -> list[dict[str, Any]]:
 def archive_job(backend: SpoolBackend, node_id: str, source_path: str, job: SpoolJob) -> None:
     node = _clean_node_id(node_id)
     backend.write_bytes(f"archive/{node}/{job.job_id}.json", backend.read_bytes(source_path))
+
+
+def cleanup_completed_broadcast_jobs(backend: SpoolBackend, node_ids: Sequence[str]) -> list[str]:
+    nodes = [_clean_node_id(node) for node in node_ids if _clean_node_id(node)]
+    if not nodes:
+        return []
+    archived_by_node = {node: set(backend.list_files(f"archive/{node}")) for node in nodes}
+    deleted: list[str] = []
+    for name in backend.list_files("commands/all/pending"):
+        if not name.endswith(".json"):
+            continue
+        if all(name in archived_by_node[node] for node in nodes):
+            path = f"commands/all/pending/{name}"
+            backend.delete(path)
+            deleted.append(path)
+    return deleted
 
 
 def _execute_shell(
@@ -962,7 +1133,7 @@ def _run_process(
     timed_out = False
     while process.poll() is None:
         now = time.monotonic()
-        if now - last_stop_check >= 0.8:
+        if now - last_stop_check >= 2.0:
             last_stop_check = now
             if stop_requested(backend, node_id, job_id=job.job_id):
                 stopped = True
@@ -1007,6 +1178,172 @@ def _run_process(
         ),
         max_output_chars=max_output_chars,
     )
+
+
+class _RemoteWorkflowStopEvent:
+    def __init__(
+        self,
+        backend: SpoolBackend,
+        node_id: str,
+        job_id: str,
+        *,
+        timeout: float,
+    ) -> None:
+        self.backend = backend
+        self.node_id = node_id
+        self.job_id = job_id
+        self.deadline = time.monotonic() + timeout if timeout > 0 else None
+        self.last_remote_check = time.monotonic()
+        self.remote_stopped = False
+        self.timed_out = False
+
+    def is_set(self) -> bool:
+        now = time.monotonic()
+        if self.deadline is not None and now >= self.deadline:
+            self.timed_out = True
+            return True
+        if not self.remote_stopped and now - self.last_remote_check >= 2.0:
+            self.last_remote_check = now
+            self.remote_stopped = stop_requested(self.backend, self.node_id, job_id=self.job_id)
+        return self.remote_stopped
+
+
+def _execute_workflow(
+    backend: SpoolBackend,
+    job: SpoolJob,
+    variables: dict[str, str],
+    *,
+    timeout: float,
+    node_id: str,
+    started_at: str,
+    max_output_chars: int,
+    monitor_only: bool = False,
+) -> JobResult:
+    package = str(job.payload.get("package", "") or "")
+    if not package:
+        raise FtpSpoolError("Workflow job requires 'package'.")
+    package_name = _safe_name(_render_placeholders(package, variables))
+    source = backend.read_bytes(f"packages/{package_name}").decode("utf-8")
+    exported = parse_exported_workflow(source, filename=package_name)
+    recipe = monitor_only_recipe(exported.recipe) if monitor_only else exported.recipe
+    if monitor_only and not recipe.steps:
+        raise FtpSpoolError("Workflow package has no monitor rules.")
+    dataset = DataSet.from_text(exported.data_text, first_row_headers=exported.first_row_headers)
+    rows = dataset.rows or [{}]
+    stop_event = _RemoteWorkflowStopEvent(backend, node_id, job.job_id, timeout=timeout)
+    output: list[str] = []
+    output_chars = 0
+    monitor_results: list[dict[str, Any]] = []
+    monitor_failures = 0
+    last_status_at = 0.0
+
+    def emit(line: str) -> None:
+        nonlocal output_chars
+        remaining = max(0, max_output_chars - output_chars)
+        if remaining <= 0:
+            return
+        text = line[:remaining]
+        output.append(text)
+        output_chars += len(text) + 1
+
+    def on_step(step_index: int, step: Any) -> None:
+        nonlocal last_status_at
+        label = step.display_label()
+        emit(f"  step {step_index}: {label}")
+        now = time.monotonic()
+        if step_index == 1 or now - last_status_at >= 2.0:
+            last_status_at = now
+            try:
+                write_status(
+                    backend,
+                    node_id,
+                    state="running",
+                    message=f"step {step_index}: {label}",
+                    current_job=job.job_id,
+                )
+            except Exception:
+                pass
+
+    def on_monitor(result: ConditionResult) -> None:
+        nonlocal monitor_failures
+        if len(monitor_results) >= 500:
+            monitor_results.pop(0)
+        monitor_results.append(result.to_mapping())
+        state = "OK" if result.ok else "FAIL"
+        emit(
+            f"  MONITOR {state}: {result.label} | actual={result.actual!r} expected={result.expected!r}"
+        )
+        if result.kind.startswith("monitor_") and not result.ok:
+            monitor_failures += 1
+
+    try:
+        for row_index, row in enumerate(rows, start=1):
+            if stop_event.is_set():
+                raise RuntimeError("Run stopped.")
+            values = {**recipe.variables, **row, **variables}
+            emit(f"Running row {row_index}/{len(rows)}")
+            run_recipe(
+                recipe,
+                row=values,
+                stop_event=stop_event,  # type: ignore[arg-type]
+                on_step=on_step,
+                on_monitor=on_monitor,
+            )
+            if exported.row_delay_seconds and row_index < len(rows):
+                _wait_for_workflow_delay(exported.row_delay_seconds, stop_event)
+    except Exception as exc:
+        if stop_event.timed_out:
+            returncode = 124
+            error = f"Timed out after {timeout:g}s."
+        elif stop_event.remote_stopped:
+            returncode = 130
+            error = "Stopped by master stop signal."
+        else:
+            returncode = 1
+            error = str(exc)
+        return _limit_result(
+            JobResult(
+                job_id=job.job_id,
+                node_id=node_id,
+                kind=job.kind,
+                ok=False,
+                returncode=returncode,
+                started_at=started_at,
+                finished_at=_utc_now(),
+                stdout="\n".join(output),
+                stderr=error,
+                monitor_results=monitor_results,
+                monitor_view=dict(recipe.monitor_view),
+            ),
+            max_output_chars=max_output_chars,
+        )
+
+    returncode = 3 if monitor_failures else 0
+    stderr = f"{monitor_failures} monitor condition(s) failed." if monitor_failures else ""
+    return _limit_result(
+        JobResult(
+            job_id=job.job_id,
+            node_id=node_id,
+            kind=job.kind,
+            ok=returncode == 0,
+            returncode=returncode,
+            started_at=started_at,
+            finished_at=_utc_now(),
+            stdout="\n".join(output),
+            stderr=stderr,
+            monitor_results=monitor_results,
+            monitor_view=dict(recipe.monitor_view),
+        ),
+        max_output_chars=max_output_chars,
+    )
+
+
+def _wait_for_workflow_delay(seconds: float, stop_event: _RemoteWorkflowStopEvent) -> None:
+    deadline = time.monotonic() + max(0.0, seconds)
+    while time.monotonic() < deadline:
+        if stop_event.is_set():
+            raise RuntimeError("Run stopped.")
+        time.sleep(min(0.2, max(0.0, deadline - time.monotonic())))
 
 
 def _execute_python(
@@ -1097,8 +1434,16 @@ def capture_screenshot(
     node_id: str,
     *,
     label: str = "manual",
+    enforce_min_interval: bool = False,
 ) -> str:
     node = _clean_node_id(node_id)
+    if enforce_min_interval and config.min_screenshot_interval_seconds > 0:
+        latest_at = _latest_screenshot_time(backend, node)
+        if latest_at is not None:
+            age = (datetime.now(timezone.utc) - latest_at).total_seconds()
+            remaining = config.min_screenshot_interval_seconds - age
+            if remaining > 0:
+                raise FtpSpoolError(f"Screenshot rate limit: retry after {remaining:.0f}s.")
     data = _capture_screen_png()
     name = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{_safe_name(label)}.png"
     path = f"screenshots/{node}/{name}"
@@ -1111,6 +1456,19 @@ def capture_screenshot(
 def list_screenshots(backend: SpoolBackend, node_id: str) -> list[str]:
     node = _clean_node_id(node_id)
     return [f"screenshots/{node}/{name}" for name in backend.list_files(f"screenshots/{node}") if name.endswith(".png")]
+
+
+def _latest_screenshot_time(backend: SpoolBackend, node_id: str) -> datetime | None:
+    latest: datetime | None = None
+    for path in list_screenshots(backend, node_id):
+        timestamp = PurePosixPath(path).name.split("-", 1)[0]
+        try:
+            captured_at = datetime.strptime(timestamp, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if latest is None or captured_at > latest:
+            latest = captured_at
+    return latest
 
 
 def cleanup_node_files(backend: SpoolBackend, node_id: str, config: FtpSpoolConfig) -> None:
@@ -1185,6 +1543,8 @@ def _append_stderr(result: JobResult, message: str) -> JobResult:
         finished_at=result.finished_at,
         stdout=result.stdout,
         stderr=stderr,
+        monitor_results=list(result.monitor_results),
+        monitor_view=dict(result.monitor_view),
     )
 
 
@@ -1200,6 +1560,8 @@ def _limit_result(result: JobResult, *, max_output_chars: int) -> JobResult:
         finished_at=result.finished_at,
         stdout=_limit_text(result.stdout, limit),
         stderr=_limit_text(result.stderr, limit),
+        monitor_results=list(result.monitor_results),
+        monitor_view=dict(result.monitor_view),
     )
 
 

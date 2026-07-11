@@ -10,8 +10,8 @@
 
 | 버튼 | 동작 |
 | --- | --- |
-| `불러오기` | 저장한 workflow JSON 열기 |
-| `저장` | 현재 workflow JSON 저장 |
+| `불러오기` | 저장한 프로젝트 JSON 또는 기존 workflow JSON 열기 |
+| `저장` | 블록, 변수, 데이터 행과 실행 옵션을 프로젝트 JSON으로 저장 |
 | `Python 내보내기` | 단독 실행 가능한 Python 파일 생성 |
 | `실행` | 현재 매크로 1회 실행 |
 | `데이터 실행` | 데이터 행마다 매크로 반복 실행 |
@@ -85,8 +85,9 @@
 
 | 탭 | 역할 |
 | --- | --- |
-| `Monitor & Run` | 매크로 업로드, slave 실행, 상태와 결과 확인 |
-| `This PC Agent` | 현재 PC를 slave agent로 실행 |
-| `Connection Setup` | FTP, node id, polling, 보관 개수 설정 |
+| `모니터 및 실행 > 실행 및 배포` | 매크로 업로드와 PC별 실행 요청 |
+| `모니터 및 실행 > 상태 모니터링` | online/offline, 결과 이력과 전체 화면 확인 |
+| `이 PC Agent` | 현재 PC를 slave agent로 실행 |
+| `연결 설정` | FTP, node id, PC 목록, 변수와 보관 개수 설정 |
 
-`Monitor & Run`의 `PC별 매크로 실행표`는 package metadata에서 변수 열을 자동으로 만들며, 한 번의 전송으로 PC마다 다른 macro와 값을 보냅니다.
+`PC별 매크로 실행표`는 package metadata에서 변수 열을 자동으로 만들며, 한 번의 전송으로 PC마다 다른 macro와 값을 보냅니다. `연결 설정`의 공통 변수와 Slave PC 목록은 JSON이 아닌 표에서 추가, 수정, 삭제합니다.

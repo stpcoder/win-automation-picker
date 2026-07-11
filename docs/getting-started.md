@@ -38,8 +38,8 @@ https://github.com/stpcoder/win-automation-picker/releases/latest/download/RigCo
 ## FTP 운영 프로그램 실행
 
 1. master PC에서 `RigFtpCommander.exe`를 실행합니다.
-2. `Connection Setup` 탭에 FTP 서버 정보를 입력합니다.
-3. `Save`를 눌러 `rig-ftp.info`를 저장합니다.
+2. `연결 설정` 탭에 FTP 서버 정보를 입력하고 `연결 확인`을 누릅니다.
+3. `저장`을 눌러 `rig-ftp.info`를 저장합니다.
 4. slave PC에는 `RigFtpCommander.exe`와 해당 PC용 `rig-ftp.info`를 같은 폴더에 둡니다.
 
 ## 로컬 개발 환경에서 실행

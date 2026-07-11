@@ -36,6 +36,9 @@ class ConditionResult:
     expected: str
     operator: str
     element_id: str = ""
+    monitor_tab: str = ""
+    monitor_channel: str = ""
+    monitor_state: str = ""
     message: str = ""
     details: list[dict[str, Any]] = field(default_factory=list)
 
@@ -48,6 +51,9 @@ class ConditionResult:
             "expected": self.expected,
             "operator": self.operator,
             "element_id": self.element_id,
+            "monitor_tab": self.monitor_tab,
+            "monitor_channel": self.monitor_channel,
+            "monitor_state": self.monitor_state,
             "message": self.message,
             "details": list(self.details),
         }
@@ -695,6 +701,25 @@ class AutomationRecipe:
         )
 
 
+def monitor_only_recipe(recipe: AutomationRecipe) -> AutomationRecipe:
+    monitor_kinds = {"monitor_text", "monitor_color", "monitor_group"}
+    steps: list[AutomationStep] = []
+
+    def collect(items: list[AutomationStep]) -> None:
+        for step in items:
+            if step.kind in monitor_kinds:
+                steps.append(step)
+            else:
+                collect(step.children)
+
+    collect(recipe.steps)
+    return AutomationRecipe(
+        steps=steps,
+        monitor_view=dict(recipe.monitor_view),
+        variables=dict(recipe.variables),
+    )
+
+
 def evaluate_condition(step: AutomationStep, *, row: dict[str, str] | None = None) -> ConditionResult:
     if step.kind == "monitor_group":
         if not step.children:
@@ -721,6 +746,9 @@ def evaluate_condition(step: AutomationStep, *, row: dict[str, str] | None = Non
             expected=expected,
             operator=("not " if step.condition_invert else "") + operator,
             element_id=step.element_id,
+            monitor_tab=step.monitor_tab,
+            monitor_channel=step.monitor_channel,
+            monitor_state=step.monitor_state,
             message=message,
             details=details,
         )
@@ -741,6 +769,9 @@ def evaluate_condition(step: AutomationStep, *, row: dict[str, str] | None = Non
             expected=expected,
             operator="exists",
             element_id=step.element_id,
+            monitor_tab=step.monitor_tab,
+            monitor_channel=step.monitor_channel,
+            monitor_state=step.monitor_state,
             message=f"{actual} expected {expected}",
         )
 
@@ -759,6 +790,9 @@ def evaluate_condition(step: AutomationStep, *, row: dict[str, str] | None = Non
             expected=expected,
             operator=("not " if step.condition_invert else "") + operator,
             element_id=step.element_id,
+            monitor_tab=step.monitor_tab,
+            monitor_channel=step.monitor_channel,
+            monitor_state=step.monitor_state,
             message=f"text {operator} {expected!r}: {actual!r}",
         )
 
@@ -777,6 +811,9 @@ def evaluate_condition(step: AutomationStep, *, row: dict[str, str] | None = Non
             expected=expected,
             operator=("not near" if step.condition_invert else "near"),
             element_id=step.element_id,
+            monitor_tab=step.monitor_tab,
+            monitor_channel=step.monitor_channel,
+            monitor_state=step.monitor_state,
             message=f"color {actual} near {expected} tolerance={step.color_tolerance:g} at {sample.x},{sample.y}",
         )
 
@@ -834,7 +871,7 @@ def run_recipe(
                 timeout=step.timeout,
             )
         elif step.kind == "wait":
-            time.sleep(max(0.0, step.seconds))
+            _interruptible_sleep(max(0.0, step.seconds), stop_event)
         elif step.kind == "key":
             if not step.keys:
                 raise WindowsAutomationError(f"Step {step_counter} is missing keys.")
@@ -865,3 +902,19 @@ def run_recipe(
 
     for step in recipe.steps:
         run_step(step)
+
+
+def _interruptible_sleep(seconds: float, stop_event: threading.Event | None) -> None:
+    if seconds <= 0:
+        return
+    if stop_event is None:
+        time.sleep(seconds)
+        return
+    deadline = time.monotonic() + seconds
+    while True:
+        if stop_event.is_set():
+            raise WindowsAutomationError("Run stopped.")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        time.sleep(min(0.2, remaining))

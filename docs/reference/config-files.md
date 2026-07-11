@@ -67,12 +67,13 @@
 | `runtime.node_id` | 현재 PC 식별자 |
 | `runtime.poll_interval_seconds` | slave polling 주기 |
 | `runtime.min_screenshot_interval_seconds` | screenshot 요청 최소 간격 |
+| `runtime.python_executable` | 일반 Python package 전용 실행기. export workflow에는 사용하지 않음 |
 | `runtime.max_*` | 파일 보관 개수 |
 | `variables` | job 실행 시 기본 변수 |
 | `slaves` | master에서 보는 slave roster |
 | `run_profiles` | Master의 PC별 매크로 실행표 |
 
-`Save`는 현재 실행표도 `run_profiles`에 저장합니다. `Export slave .info`로 생성되는 slave용 파일에서는 다른 PC의 실행표를 제거합니다. 실행표 변수는 일반 문자열로 저장되므로 비밀번호나 token은 저장하지 말고 실행 직전에 입력하십시오.
+`저장`은 현재 실행표도 `run_profiles`에 저장합니다. `Slave .info 내보내기`로 생성되는 slave용 파일에서는 다른 PC의 실행표를 제거합니다. 실행표 변수는 일반 문자열로 저장되므로 비밀번호나 token은 저장하지 말고 실행 직전에 입력하십시오.
 
 ## password_env 사용
 
@@ -92,3 +93,5 @@ Windows에서는 실행 전 환경 변수를 설정합니다.
 ```powershell
 $env:RIG_FTP_PASSWORD = "actual-password"
 ```
+
+`password_env`가 설정된 config를 GUI에서 다시 저장해도 해석된 실제 비밀번호는 파일에 기록하지 않습니다.

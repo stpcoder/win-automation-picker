@@ -33,7 +33,9 @@ The executables are not code-signed, so Windows SmartScreen may show a warning.
 - Replays pasted spreadsheet rows with `${name}`, `${col1}`, and `${row}` variables.
 - Converts recorded values into runtime variables and submits a different macro/value matrix for each PC.
 - Exports the complete nested workflow as runnable Python.
+- Runs exported workflows inside the slave executable without requiring a separate Python installation.
 - Distributes jobs and collects status, results, and screenshots through an FTP spool.
+- Keeps configured but stale PCs visible as offline and matches screenshots to their exact request job.
 
 ## Macro quick start
 
@@ -67,13 +69,13 @@ Equipment labels are free-form. `CH9`, `CH11`, and `PC04-RIG2` work without a fi
 The FTP tools use a configured root directory as a shared spool when inbound ports cannot be opened.
 
 1. Start `RigFtpCommander.exe` on the master PC.
-2. Enter the FTP connection and root directory under `Connection Setup`.
+2. Enter the FTP connection and root directory under `연결 설정`, then run `연결 확인`.
 3. Initialize the dedicated folders.
 4. Export one `.info` file per slave and place it next to the executable on that PC.
-5. Start `This PC Agent` on each slave.
+5. Start `이 PC Agent` on each slave.
 6. Load the configured PCs into the run matrix, edit per-PC macro values, and submit the table.
 
-Connections are opened only for transfers. Poll jitter, screenshot rate limits, and retention limits reduce server load. The tool stays under its configured FTP root and does not touch unrelated folders.
+Connections are opened only for transfers. Poll jitter, screenshot rate limits, retention limits, stale-heartbeat classification, and agent reconnect backoff reduce server load and false status. The tool stays under its configured FTP root and does not touch unrelated folders.
 
 See the [FTP overview](https://stpcoder.github.io/win-automation-picker/rig-ftp/overview/).
 

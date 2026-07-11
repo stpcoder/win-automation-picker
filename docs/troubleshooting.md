@@ -70,17 +70,17 @@
 
 ## FTP status가 안 보임
 
-1. slave PC에서 `This PC Agent > Start agent`가 실행 중인지 확인합니다.
+1. slave PC에서 `이 PC Agent > Agent 시작`이 실행 중인지 확인합니다.
 2. master와 slave의 `root_dir`이 같은지 확인합니다.
 3. FTP 계정이 `status/`, `results/`, `logs/`에 쓰기 권한이 있는지 확인합니다.
-4. `Monitor & Run > Refresh status`를 누릅니다.
+4. `모니터 및 실행 > 상태 모니터링 > 상태 새로고침`을 누릅니다.
 
 ## PC별 실행표에 변수 열이 안 보임
 
 1. Win Automation Picker에서 입력 블록이 `${variable}` 형식인지 확인합니다.
 2. 현재 workflow를 다시 업로드해 package metadata를 갱신합니다.
-3. Rig FTP Commander에서 `Refresh list` 후 해당 macro를 다시 선택합니다.
-4. 예전 package나 임의 Python 파일은 변수 metadata가 없을 수 있습니다. 이때는 빠른 실행의 `Vars`를 사용하거나 Picker에서 다시 업로드합니다.
+3. Rig FTP Commander에서 `목록 새로고침` 후 해당 macro를 다시 선택합니다.
+4. 예전 package나 임의 Python 파일은 변수 metadata가 없을 수 있습니다. 이때는 빠른 실행의 `입력값`을 사용하거나 Picker에서 다시 업로드합니다.
 
 ## screenshot이 안 뜸
 

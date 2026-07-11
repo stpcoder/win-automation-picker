@@ -4,6 +4,7 @@ from win_automation_picker.recipe import (
     AutomationStep,
     DataSet,
     evaluate_condition,
+    monitor_only_recipe,
     render_template,
     run_recipe,
     validate_recipe,
@@ -33,6 +34,27 @@ def test_dataset_parses_excel_tsv_with_headers_and_col_aliases() -> None:
             "message": "Hi",
         },
     ]
+
+
+def test_monitor_only_recipe_extracts_nested_monitor_rules_without_actions() -> None:
+    selector = UISelector(root=SelectorSegment(control_type="Window", name="App"))
+    recipe = AutomationRecipe(
+        steps=[
+            AutomationStep.click(selector),
+            AutomationStep.repeat(
+                [
+                    AutomationStep.key("{ENTER}"),
+                    AutomationStep.monitor_text(selector, "PASS"),
+                ]
+            ),
+        ],
+        monitor_view={"name": "Status"},
+    )
+
+    extracted = monitor_only_recipe(recipe)
+
+    assert [step.kind for step in extracted.steps] == ["monitor_text"]
+    assert extracted.monitor_view == {"name": "Status"}
 
 
 def test_dataset_without_headers_uses_col_names() -> None:
@@ -411,6 +433,9 @@ def test_run_recipe_monitor_group_aggregates_child_conditions(monkeypatch) -> No
     assert monitor_results[0].operator == "any"
     assert monitor_results[0].actual == "1/2 matched"
     assert len(monitor_results[0].details) == 2
+    assert monitor_results[0].monitor_tab == "SK Commander"
+    assert monitor_results[0].monitor_channel == "CH1"
+    assert monitor_results[0].to_mapping()["monitor_tab"] == "SK Commander"
 
 
 def test_evaluate_condition_supports_text_regex(monkeypatch) -> None:

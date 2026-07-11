@@ -4,8 +4,9 @@
 
 | 버튼 | 설명 |
 | --- | --- |
-| `불러오기` | workflow JSON 열기 |
-| `저장` | workflow JSON 저장 |
+| `불러오기` | 프로젝트 JSON 또는 기존 workflow JSON 열기 |
+| `저장` | 블록, 변수, 데이터 행과 실행 옵션 저장 |
+| `더보기 > 다른 이름으로 저장` | 현재 프로젝트를 새 JSON 파일로 저장 |
 | `Python 내보내기` | 실행 가능한 Python 생성 |
 | `실행` | 매크로 1회 실행 |
 | `데이터 실행` | 데이터 행별 실행 |
@@ -55,23 +56,27 @@
 
 | 위치 | 버튼/메뉴 | 설명 |
 | --- | --- | --- |
-| 상단 | `Browse` | config 선택 |
-| 상단 | `Load` | config 로드 |
-| 상단 | `Save` | config 저장 |
-| 상단 `More` | `Create example config` | 예제 config 생성 |
-| `Server Setup` | `Init folders` | FTP spool 폴더 초기화 |
-| `Server Setup > More` | `Export slave .info` | slave별 config 생성 |
-| `Macro Upload` | `Upload macro` | Python macro 업로드 |
-| `Run on Slaves` | `Submit macro` | 선택 macro 실행 요청 |
+| 상단 | `찾기` | config 선택 |
+| 상단 | `불러오기` | config 로드 |
+| 상단 | `저장` | config 저장 |
+| 상단 | `연결 확인` | FTP 로그인과 전용 root 읽기/쓰기/삭제 권한 확인 |
+| 상단 `더보기` | `예제 설정 만들기` | 예제 config 생성 |
+| `서버 초기 설정` | `서버 폴더 초기화` | FTP spool 폴더 초기화 |
+| `서버 초기 설정 > 더보기` | `Slave .info 내보내기` | slave별 config 생성 |
+| `매크로 업로드` | `매크로 업로드` | workflow 또는 Python package 업로드 |
+| `빠른 실행` | `선택 매크로 전송` | 선택 macro 실행 요청 |
+| `빠른 실행` | `상태 규칙 1회` | 클릭/입력 없이 선택 workflow의 monitor 블록만 평가 |
 | `PC별 매크로 실행표` | `설정 PC 불러오기` | config의 slave를 실행 행으로 추가 |
 | `PC별 매크로 실행표` | `대상 추가` | Target의 PC를 실행 행으로 추가 |
 | `PC별 매크로 실행표` | `실행표 전송` | PC별 macro와 variables를 각각 제출 |
-| `Run on Slaves` | `Emergency stop` | stop signal 전송 |
-| `Run on Slaves > More` | `Ask for screenshot` | screenshot job 제출 |
-| `Slave Monitor` | `Refresh status` | slave heartbeat 읽기 |
-| `Slave Monitor` | `Refresh results` | 결과 로그 읽기 |
-| `Slave Monitor` | `View screenshot` | screenshot 요청/표시 |
-| `Slave Monitor > More` | `Export Excel` | 상태표 `.xlsx` 저장 |
-| `This PC Agent` | `Start agent` | slave polling 시작 |
-| `This PC Agent` | `Check once` | pending job 1회 확인 |
-| `This PC Agent` | `Stop agent` | slave polling 중지 |
+| `빠른 실행` | `긴급 중단` | 대상 PC에 stop signal 전송 |
+| `빠른 실행 > 더보기` | `전체 화면 요청` | screenshot job 제출 |
+| `상태 모니터링` | `상태 새로고침` | slave heartbeat와 offline 상태 읽기 |
+| `상태 모니터링` | `결과 새로고침` | PASS/FAIL 실행 이력 읽기 |
+| `상태 모니터링` | `모니터 보드` | 최신 구조화 결과를 탭/CH별 표로 표시 |
+| `상태 모니터링` | `전체 화면 보기` | 이번 요청과 일치하는 screenshot 표시 |
+| `상태 모니터링 > 더보기` | `선택 작업 긴급 중단` | 선택 PC의 현재 job만 중단 |
+| `상태 모니터링 > 더보기` | `Excel 내보내기` | 상태표 `.xlsx` 저장 |
+| `이 PC Agent` | `Agent 시작` | slave polling 시작 |
+| `이 PC Agent` | `한 번 확인` | pending job 1회 확인 |
+| `이 PC Agent` | `Agent 중지` | slave polling 중지 |

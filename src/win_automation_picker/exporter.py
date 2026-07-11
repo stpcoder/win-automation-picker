@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+from dataclasses import dataclass
 import json
 from pathlib import Path
 
@@ -8,18 +9,60 @@ from .recipe import AutomationRecipe
 from .selector import UISelector
 
 
+@dataclass(frozen=True)
+class ExportedWorkflow:
+    recipe: AutomationRecipe
+    data_text: str = ""
+    first_row_headers: bool = True
+    row_delay_seconds: float = 0.0
+
+
+def parse_exported_workflow(source: str, *, filename: str = "<exported-workflow>") -> ExportedWorkflow:
+    """Read generated workflow constants without importing or executing code."""
+    tree = ast.parse(source, filename=filename)
+    constants: dict[str, object] = {}
+    wanted = {"RECIPE_JSON", "DATA_TEXT", "FIRST_ROW_HEADERS", "ROW_DELAY_SECONDS"}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        names = [target.id for target in node.targets if isinstance(target, ast.Name) and target.id in wanted]
+        if not names:
+            continue
+        try:
+            value = ast.literal_eval(node.value)
+        except (TypeError, ValueError):
+            continue
+        for name in names:
+            constants[name] = value
+
+    recipe_json = constants.get("RECIPE_JSON")
+    if not isinstance(recipe_json, str):
+        raise ValueError("File is not a Win Automation Picker exported workflow.")
+    data_text = constants.get("DATA_TEXT", "")
+    first_row_headers = constants.get("FIRST_ROW_HEADERS", True)
+    row_delay = constants.get("ROW_DELAY_SECONDS", 0.0)
+    if not isinstance(data_text, str):
+        raise ValueError("Exported workflow DATA_TEXT must be a string.")
+    if not isinstance(first_row_headers, bool):
+        raise ValueError("Exported workflow FIRST_ROW_HEADERS must be a boolean.")
+    if not isinstance(row_delay, (int, float)) or isinstance(row_delay, bool):
+        raise ValueError("Exported workflow ROW_DELAY_SECONDS must be a number.")
+    return ExportedWorkflow(
+        recipe=AutomationRecipe.from_json(recipe_json),
+        data_text=data_text,
+        first_row_headers=first_row_headers,
+        row_delay_seconds=max(0.0, float(row_delay)),
+    )
+
+
+def read_exported_workflow(path: str | Path) -> ExportedWorkflow:
+    source_path = Path(path)
+    return parse_exported_workflow(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+
+
 def read_exported_variables(path: str | Path) -> dict[str, str]:
     """Read embedded workflow defaults without importing or executing the script."""
-    source = Path(path).read_text(encoding="utf-8")
-    tree = ast.parse(source, filename=str(path))
-    for node in tree.body:
-        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Constant):
-            continue
-        if not isinstance(node.value.value, str):
-            continue
-        if any(isinstance(target, ast.Name) and target.id == "RECIPE_JSON" for target in node.targets):
-            return dict(AutomationRecipe.from_json(node.value.value).variables)
-    return {}
+    return dict(read_exported_workflow(path).recipe.variables)
 
 
 def _python_string(value: str) -> str:

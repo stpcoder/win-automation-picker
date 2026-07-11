@@ -3,15 +3,28 @@
 ## 상태 새로고침
 
 1. master PC에서 `RigFtpCommander.exe`를 실행합니다.
-2. `Monitor & Run` 탭을 엽니다.
-3. `Slave Monitor > Refresh status`를 누릅니다.
-4. 상태표의 `Alias`, `Node`, `State`, `Current job`, `Updated`, `Message`를 확인합니다.
+2. `모니터 및 실행 > 상태 모니터링`을 엽니다.
+3. `상태 새로고침`을 누릅니다.
+4. 상태표의 별명, Node, 상태, 현재 작업, 마지막 신호, 상세 내용을 확인합니다.
+
+등록했지만 아직 접속하지 않은 PC도 `offline`으로 표시됩니다. 마지막 heartbeat가 polling 주기보다 충분히 오래되면 이전 상태가 `idle`이어도 `offline`으로 바뀝니다. `자동 상태 조회`는 상태만 읽으며 매크로를 전송하거나 실행하지 않습니다.
+
+화면 component의 텍스트/색상을 새로 판정하려면 `실행 및 배포`에서 workflow를 선택하고 대상 PC를 지정한 뒤 `상태 규칙 1회`를 누릅니다. 이 job은 클릭, 입력, 키 블록을 제외하고 텍스트/색상/AND/OR 모니터 블록만 실행합니다.
 
 ## 결과 로그 보기
 
-1. `Slave Monitor > Node`에 node id 또는 alias를 입력합니다.
-2. `Refresh results`를 누릅니다.
-3. 하단 log에서 최신 결과를 확인합니다.
+1. 상태표에서 PC를 선택하거나 `결과 조회 PC`에 node id를 입력합니다.
+2. `결과 새로고침`을 누릅니다.
+3. PASS/FAIL 실행 이력 표에서 작업을 더블클릭해 stdout, stderr와 완료 시각을 봅니다.
+
+## 원격 모니터 보드
+
+1. 상태표에서 PC 한 대를 선택합니다.
+2. `결과 새로고침`으로 최신 실행 결과를 확인합니다.
+3. `모니터 보드`를 누릅니다.
+4. workflow에서 지정한 탭별로 `장비 / CH`, 표시 상태, 실제값, 기대값과 PASS/FAIL을 확인합니다.
+
+보드 이름과 탭 순서는 매크로 생성기의 `보드 화면 구성` 값을 따릅니다. `CH9`, `CH11`, `PC04-RIG2` 같은 자유 이름과 CH가 없는 `-` 행을 함께 표시할 수 있습니다. 원격 보드는 slave가 완료해 올린 최신 구조화 결과를 표시하며 실시간 영상 스트리밍은 아닙니다.
 
 ## screenshot 요청
 
@@ -23,26 +36,28 @@
 
 방법 2:
 
-1. `Slave Monitor`에서 node를 선택하거나 입력합니다.
-2. `View screenshot`을 누릅니다.
+1. `PC 상태와 실행 이력`에서 node를 선택하거나 입력합니다.
+2. `전체 화면 보기`를 누릅니다.
+
+요청마다 고유한 job label을 사용하므로 이전 PNG를 새 응답처럼 열지 않습니다. 45초 안에 이번 요청과 정확히 일치하는 파일이 오지 않으면 timeout으로 기록합니다. 최소 요청 간격은 master와 slave 양쪽에서 적용됩니다.
 
 ## Excel export
 
-1. `Slave Monitor > More`를 엽니다.
-2. `Export Excel`을 누릅니다.
+1. `PC 상태와 실행 이력 > 더보기`를 엽니다.
+2. `Excel 내보내기`를 누릅니다.
 3. `.xlsx` 저장 위치를 선택합니다.
 
 ## 오래된 파일 정리
 
-1. `Slave Monitor > More`를 엽니다.
-2. `Clean old files`를 누릅니다.
+1. `PC 상태와 실행 이력 > 더보기`를 엽니다.
+2. `오래된 파일 정리`를 누릅니다.
 
-retention 개수는 `Connection Setup`의 `Keep results`, `Keep logs`, `Keep archive`, `Keep screens`에서 조정합니다.
+보관 개수는 `연결 설정`의 결과, 로그, 작업, 화면 보관 개수에서 조정합니다.
 
 ## Emergency stop
 
-1. `Run on Slaves > Target`에 대상 slave를 입력합니다.
-2. `Emergency stop`을 누릅니다.
+1. `빠른 실행 > 대상 PC`에 대상 slave를 입력합니다.
+2. `긴급 중단`을 누릅니다.
 3. 확인창에서 승인합니다.
 
-stop signal을 해제하려면 `Run on Slaves > More > Clear stop`을 사용합니다.
+실행 중인 작업 하나만 정확히 중단하려면 상태표에서 PC를 선택하고 `더보기 > 선택 작업 긴급 중단`을 사용합니다. 전체 stop signal을 해제하려면 `빠른 실행 > 더보기 > 중단 신호 해제`를 사용합니다.
