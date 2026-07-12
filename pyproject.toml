@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "win-automation-picker"
-version = "0.9.0"
-description = "A Windows UI Automation picker and action runner."
+version = "1.5.0"
+description = "An AE workbench for Windows UI automation, SEQ handoff, and FTP rig orchestration."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -15,6 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
+ae-workbench = "win_automation_picker.ae_workbench:main"
 win-automation-picker = "win_automation_picker.__main__:main"
 rig-commander = "win_automation_picker.rig_cli:main"
 rig-ftp = "win_automation_picker.ftp_cli:main"

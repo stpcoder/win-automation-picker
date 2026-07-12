@@ -1,9 +1,11 @@
-site_name: Win Automation Picker Manual
-site_description: Windows UI Automation macro builder and FTP master/slave orchestration manual.
+site_name: AE Workbench Manual
+site_description: Integrated SEQ, Windows automation, and FTP rig orchestration manual.
 site_url: https://stpcoder.github.io/win-automation-picker/
 repo_url: https://github.com/stpcoder/win-automation-picker
 repo_name: stpcoder/win-automation-picker
 docs_dir: docs
+exclude_docs: |
+  assets/screenshots/README.md
 theme:
   name: material
   language: ko
@@ -36,16 +38,21 @@ markdown_extensions:
 nav:
   - 시작하기:
       - 개요: index.md
+      - Mobile DRAM AE 업무 흐름: daily-workflow.md
+      - AE Workbench 통합 흐름: ae-workbench.md
       - 설치와 실행: getting-started.md
       - 화면 구성: interface.md
+      - UX 완성도와 지원 범위: ux-readiness.md
   - 매크로 생성기:
       - 기본 매크로 만들기: macro-builder/basic-flow.md
-      - 블록 디자인: macro-builder/block-designer.md
+      - Scratch식 블록 작업실: macro-builder/block-designer.md
       - 조건과 모니터링 블록: macro-builder/conditions-monitoring.md
       - 데이터 행과 템플릿: macro-builder/data-rows.md
       - Python export: macro-builder/python-export.md
   - 원격 운영:
       - FTP master/slave 개요: rig-ftp/overview.md
+      - AE 캠페인 운영: rig-ftp/ae-campaign.md
+      - SEQ Generator와 SK Commander: rig-ftp/seq-integration.md
       - Master 세팅: rig-ftp/master-setup.md
       - Slave 세팅: rig-ftp/slave-setup.md
       - 상태 모니터링과 캡처: rig-ftp/monitoring.md

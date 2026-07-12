@@ -4,10 +4,13 @@ from win_automation_picker.recipe import (
     AutomationStep,
     DataSet,
     evaluate_condition,
+    monitor_only_recipe,
+    render_selector,
     render_template,
     run_recipe,
+    validate_recipe,
 )
-from win_automation_picker.selector import SelectorSegment, UISelector
+from win_automation_picker.selector import SelectorSegment, UISelector, WindowMarker
 
 
 def test_dataset_parses_excel_tsv_with_headers_and_col_aliases() -> None:
@@ -34,6 +37,27 @@ def test_dataset_parses_excel_tsv_with_headers_and_col_aliases() -> None:
     ]
 
 
+def test_monitor_only_recipe_extracts_nested_monitor_rules_without_actions() -> None:
+    selector = UISelector(root=SelectorSegment(control_type="Window", name="App"))
+    recipe = AutomationRecipe(
+        steps=[
+            AutomationStep.click(selector),
+            AutomationStep.repeat(
+                [
+                    AutomationStep.key("{ENTER}"),
+                    AutomationStep.monitor_text(selector, "PASS"),
+                ]
+            ),
+        ],
+        monitor_view={"name": "Status"},
+    )
+
+    extracted = monitor_only_recipe(recipe)
+
+    assert [step.kind for step in extracted.steps] == ["monitor_text"]
+    assert extracted.monitor_view == {"name": "Status"}
+
+
 def test_dataset_without_headers_uses_col_names() -> None:
     dataset = DataSet.from_text("Alice\tHello\nBob\tHi", first_row_headers=False)
 
@@ -49,6 +73,71 @@ def test_render_template_replaces_known_variables_only() -> None:
     )
 
     assert rendered == "Dear Alice, row 3: ${missing}"
+
+
+def test_selector_and_monitor_metadata_use_runtime_channel_variables(monkeypatch) -> None:
+    captured: list[UISelector] = []
+    selector = UISelector(
+        root=SelectorSegment(control_type="Window", name="SK Commander ${channel}"),
+        path=[SelectorSegment(control_type="Text", automation_id="status_${slot_id}")],
+        window_marker=WindowMarker(name_regex=r"\b${channel}\b"),
+    )
+    monkeypatch.setattr(
+        "win_automation_picker.recipe.get_element_text",
+        lambda rendered, timeout=1.0: captured.append(rendered) or "PASS",
+    )
+    step = AutomationStep.monitor_text(
+        selector,
+        "PASS",
+        monitor_tab="${node_id}",
+        monitor_channel="${channel}",
+        monitor_state="PASS",
+        block_name="${channel} result",
+    )
+
+    result = evaluate_condition(
+        step,
+        row={"node_id": "PC04", "channel": "CH11", "slot_id": "S3"},
+    )
+
+    assert result.ok
+    assert result.label == "CH11 result"
+    assert result.monitor_tab == "PC04"
+    assert result.monitor_channel == "CH11"
+    assert captured[0].root.name == "SK Commander CH11"
+    assert captured[0].path[0].automation_id == "status_S3"
+    assert captured[0].window_marker
+    assert captured[0].window_marker.name_regex == r"\bCH11\b"
+
+
+def test_render_selector_keeps_unknown_placeholders_visible() -> None:
+    selector = UISelector(root=SelectorSegment(control_type="Window", name="${missing}"))
+
+    rendered = render_selector(selector, {"channel": "CH9"})
+
+    assert rendered.root.name == "${missing}"
+
+
+def test_run_callback_receives_rendered_runtime_label(monkeypatch) -> None:
+    seen: list[str] = []
+    monkeypatch.setattr("win_automation_picker.recipe.press_keys", lambda *args, **kwargs: None)
+    recipe = AutomationRecipe(
+        steps=[
+            AutomationStep.key(
+                "{ENTER}",
+                block_name="Start ${channel}",
+                element_id="start_${slot_id}",
+            )
+        ]
+    )
+
+    run_recipe(
+        recipe,
+        row={"channel": "CH11", "slot_id": "S3"},
+        on_step=lambda _index, step: seen.append(f"{step.display_label()}:{step.element_id}"),
+    )
+
+    assert seen == ["Start CH11:start_S3"]
 
 
 def test_recipe_round_trip_json() -> None:
@@ -124,12 +213,14 @@ def test_recipe_round_trip_json() -> None:
                 monitor_channel="CH1",
                 monitor_state="RUNNING",
             ),
-        ]
+        ],
+        variables={"message": "Hello"},
     )
 
     restored = AutomationRecipe.from_json(recipe.to_json())
 
     assert restored == recipe
+    assert restored.variables == {"message": "Hello"}
 
 
 def test_key_step_round_trip_json() -> None:
@@ -140,6 +231,23 @@ def test_key_step_round_trip_json() -> None:
     assert restored.steps[0].kind == "key"
     assert restored.steps[0].keys == "^s"
     assert restored.steps[0].element_role == "hotkey"
+
+
+def test_condition_factory_keeps_target_metadata() -> None:
+    selector = UISelector(root=SelectorSegment(control_type="Window", name="App"))
+
+    step = AutomationStep.if_text(
+        selector,
+        "PASS",
+        [],
+        element_id="status_text",
+        element_role="text",
+        description="Result status",
+    )
+
+    assert step.element_id == "status_text"
+    assert step.element_role == "text"
+    assert step.description == "Result status"
 
 
 def test_recipe_round_trip_monitor_view_layout() -> None:
@@ -191,6 +299,21 @@ def test_recipe_delete_step_removes_selected_step() -> None:
     updated = recipe.delete_step(1)
 
     assert [step.display_label() for step in updated.steps] == ["Wait 1s", "Wait 2s"]
+
+
+def test_validate_recipe_reports_nested_empty_container_and_missing_target() -> None:
+    recipe = AutomationRecipe(
+        steps=[
+            AutomationStep.repeat([], block_name="empty loop"),
+            AutomationStep(kind="click", block_name="orphan click"),
+        ]
+    )
+
+    issues = validate_recipe(recipe)
+
+    assert [issue.path for issue in issues] == [(0,), (1,)]
+    assert "블록 안" in issues[0].message
+    assert "대상" in issues[1].message
 
 
 def test_run_recipe_dispatches_key_step(monkeypatch) -> None:
@@ -376,6 +499,9 @@ def test_run_recipe_monitor_group_aggregates_child_conditions(monkeypatch) -> No
     assert monitor_results[0].operator == "any"
     assert monitor_results[0].actual == "1/2 matched"
     assert len(monitor_results[0].details) == 2
+    assert monitor_results[0].monitor_tab == "SK Commander"
+    assert monitor_results[0].monitor_channel == "CH1"
+    assert monitor_results[0].to_mapping()["monitor_tab"] == "SK Commander"
 
 
 def test_evaluate_condition_supports_text_regex(monkeypatch) -> None:

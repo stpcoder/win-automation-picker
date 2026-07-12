@@ -1,9 +1,68 @@
 from __future__ import annotations
 
+import ast
+from dataclasses import dataclass
 import json
+from pathlib import Path
 
 from .recipe import AutomationRecipe
 from .selector import UISelector
+
+
+@dataclass(frozen=True)
+class ExportedWorkflow:
+    recipe: AutomationRecipe
+    data_text: str = ""
+    first_row_headers: bool = True
+    row_delay_seconds: float = 0.0
+
+
+def parse_exported_workflow(source: str, *, filename: str = "<exported-workflow>") -> ExportedWorkflow:
+    """Read generated workflow constants without importing or executing code."""
+    tree = ast.parse(source, filename=filename)
+    constants: dict[str, object] = {}
+    wanted = {"RECIPE_JSON", "DATA_TEXT", "FIRST_ROW_HEADERS", "ROW_DELAY_SECONDS"}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        names = [target.id for target in node.targets if isinstance(target, ast.Name) and target.id in wanted]
+        if not names:
+            continue
+        try:
+            value = ast.literal_eval(node.value)
+        except (TypeError, ValueError):
+            continue
+        for name in names:
+            constants[name] = value
+
+    recipe_json = constants.get("RECIPE_JSON")
+    if not isinstance(recipe_json, str):
+        raise ValueError("File is not a Win Automation Picker exported workflow.")
+    data_text = constants.get("DATA_TEXT", "")
+    first_row_headers = constants.get("FIRST_ROW_HEADERS", True)
+    row_delay = constants.get("ROW_DELAY_SECONDS", 0.0)
+    if not isinstance(data_text, str):
+        raise ValueError("Exported workflow DATA_TEXT must be a string.")
+    if not isinstance(first_row_headers, bool):
+        raise ValueError("Exported workflow FIRST_ROW_HEADERS must be a boolean.")
+    if not isinstance(row_delay, (int, float)) or isinstance(row_delay, bool):
+        raise ValueError("Exported workflow ROW_DELAY_SECONDS must be a number.")
+    return ExportedWorkflow(
+        recipe=AutomationRecipe.from_json(recipe_json),
+        data_text=data_text,
+        first_row_headers=first_row_headers,
+        row_delay_seconds=max(0.0, float(row_delay)),
+    )
+
+
+def read_exported_workflow(path: str | Path) -> ExportedWorkflow:
+    source_path = Path(path)
+    return parse_exported_workflow(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+
+
+def read_exported_variables(path: str | Path) -> dict[str, str]:
+    """Read embedded workflow defaults without importing or executing the script."""
+    return dict(read_exported_workflow(path).recipe.variables)
 
 
 def _python_string(value: str) -> str:
@@ -82,7 +141,9 @@ def generate_python_script(
             '"""Exported Win Automation Picker workflow."""',
             "from __future__ import annotations",
             "",
+            "import argparse",
             "import json",
+            "from pathlib import Path",
             "import time",
             "",
             "from win_automation_picker.automation import get_element_text, press_keys, sample_element_color, selector_exists",
@@ -140,13 +201,30 @@ def generate_python_script(
             "    press_keys(keys, selector=selector)",
             "",
             "",
-            "def main() -> None:",
+            "def load_runtime_variables(argv=None):",
+            "    parser = argparse.ArgumentParser(description='Run an exported Windows automation workflow.')",
+            "    parser.add_argument('--vars-json', default='{}', help='Per-PC variables as a JSON object.')",
+            "    parser.add_argument('--vars-file', default='', help='UTF-8 JSON file containing per-PC variables.')",
+            "    args = parser.parse_args(argv)",
+            "    values = {}",
+            "    if args.vars_file:",
+            "        values.update(json.loads(Path(args.vars_file).read_text(encoding='utf-8')))",
+            "    if args.vars_json:",
+            "        values.update(json.loads(args.vars_json))",
+            "    if not isinstance(values, dict):",
+            "        raise ValueError('Runtime variables must be a JSON object.')",
+            "    return {str(key): str(value) for key, value in values.items()}",
+            "",
+            "",
+            "def main(argv=None) -> None:",
             "    recipe = AutomationRecipe.from_json(RECIPE_JSON)",
             "    dataset = DataSet.from_text(DATA_TEXT, first_row_headers=FIRST_ROW_HEADERS)",
-            "    rows = dataset.rows or [None]",
+            "    runtime_variables = load_runtime_variables(argv)",
+            "    rows = dataset.rows or [{}]",
             "    total = len(rows)",
             "",
             "    for row_index, row in enumerate(rows, start=1):",
+            "        values = {**recipe.variables, **row, **runtime_variables}",
             '        print(f"Running row {row_index}/{total}")',
             "",
             "        def on_step(step_index, step):",
@@ -156,7 +234,7 @@ def generate_python_script(
             '            state = "OK" if result.ok else "FAIL"',
             '            print(f"  MONITOR {state}: {result.label} | actual={result.actual!r} expected={result.expected!r}")',
             "",
-            "        run_recipe(recipe, row=row, on_step=on_step, on_monitor=on_monitor)",
+            "        run_recipe(recipe, row=values, on_step=on_step, on_monitor=on_monitor)",
             "        if ROW_DELAY_SECONDS and row_index < total:",
             "            time.sleep(ROW_DELAY_SECONDS)",
             "",

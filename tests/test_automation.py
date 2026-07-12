@@ -35,6 +35,7 @@ class FakeWrapper:
         self._children = children or []
         self.invoked = False
         self.clicked = False
+        self.value = ""
 
     def children(self) -> list["FakeWrapper"]:
         return self._children
@@ -47,6 +48,9 @@ class FakeWrapper:
 
     def click_input(self) -> None:
         self.clicked = True
+
+    def get_value(self) -> str:
+        return self.value
 
 
 class FakeDesktop:
@@ -166,6 +170,22 @@ def test_selector_exists_returns_boolean(monkeypatch) -> None:
 
     assert automation.selector_exists(selector)
     assert not automation.selector_exists(selector)
+
+
+def test_element_snapshot_reads_value_and_masks_password(monkeypatch) -> None:
+    selector = UISelector(root=SelectorSegment(control_type="Edit", name="Input"))
+    wrapper = FakeWrapper(FakeInfo(control_type="Edit", name="Input"))
+    wrapper.value = "Seq 1"
+    monkeypatch.setattr(automation, "resolve_selector", lambda *_args, **_kwargs: wrapper)
+
+    snapshot = automation.get_element_snapshot(selector)
+    assert snapshot.value == "Seq 1"
+    assert not snapshot.is_password
+
+    wrapper.element_info.is_password = True
+    masked = automation.get_element_snapshot(selector)
+    assert masked.value == ""
+    assert masked.is_password
 
 
 def test_color_parsing_and_matching() -> None:

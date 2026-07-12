@@ -78,6 +78,22 @@ def build_parser() -> argparse.ArgumentParser:
     submit_python.add_argument("--arg", action="append", default=[], help="Argument passed to the Python script.")
     submit_python.set_defaults(func=_cmd_submit_python)
 
+    submit_workflow = subparsers.add_parser(
+        "submit-workflow",
+        help="Submit an exported workflow for the slave's embedded runner.",
+    )
+    _add_submit_args(submit_workflow)
+    submit_workflow.add_argument("--package", required=True, help="Exported workflow under packages/.")
+    submit_workflow.set_defaults(func=_cmd_submit_workflow)
+
+    submit_monitor = subparsers.add_parser(
+        "submit-monitor",
+        help="Evaluate only monitor blocks from an exported workflow.",
+    )
+    _add_submit_args(submit_monitor)
+    submit_monitor.add_argument("--package", required=True, help="Exported workflow under packages/.")
+    submit_monitor.set_defaults(func=_cmd_submit_monitor)
+
     submit_shell = subparsers.add_parser("submit-shell", help="Submit a shell command job.")
     _add_submit_args(submit_shell)
     command_group = submit_shell.add_mutually_exclusive_group(required=True)
@@ -218,6 +234,30 @@ def _cmd_submit_python(args: argparse.Namespace) -> int:
         payload={
             "package": args.package,
             "args": list(args.arg),
+            "timeout_seconds": float(args.timeout or 0.0),
+        },
+    )
+    return _submit(args, job)
+
+
+def _cmd_submit_workflow(args: argparse.Namespace) -> int:
+    job = _job(
+        args,
+        kind="workflow",
+        payload={
+            "package": args.package,
+            "timeout_seconds": float(args.timeout or 0.0),
+        },
+    )
+    return _submit(args, job)
+
+
+def _cmd_submit_monitor(args: argparse.Namespace) -> int:
+    job = _job(
+        args,
+        kind="monitor",
+        payload={
+            "package": args.package,
             "timeout_seconds": float(args.timeout or 0.0),
         },
     )

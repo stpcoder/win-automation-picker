@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -55,6 +58,24 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
+      - name: Smoke test Tk interfaces
+        shell: pwsh
+        run: |
+          python -c "import tkinter as tk; from win_automation_picker.app import PickerApp; root = tk.Tk(); root.withdraw(); app = PickerApp(root); app.update_idletasks(); app.destroy(); root.destroy()"
+          python -c "from win_automation_picker.ftp_app import RigFtpApp; from win_automation_picker.app import PickerApp; app = RigFtpApp(); editor = PickerApp(app); app.update_idletasks(); editor.update_idletasks(); editor.destroy(); app.destroy()"
+
+      - name: Build integrated AE Workbench executable
+        run: >
+          python -m PyInstaller
+          --noconfirm
+          --clean
+          --onefile
+          --windowed
+          --name AEWorkbench
+          --icon src/win_automation_picker/assets/rig_commander.ico
+          --add-data "src/win_automation_picker/assets;win_automation_picker/assets"
+          src/win_automation_picker/ae_workbench.py
+
       - name: Build GUI executable
         run: >
           python -m PyInstaller
@@ -103,11 +124,32 @@ jobs:
           --add-data "src/win_automation_picker/assets;win_automation_picker/assets"
           src/win_automation_picker/rig_ftp_cli.py
 
+      - name: Smoke test built executables
+        shell: pwsh
+        run: |
+          function Assert-GuiStarts([string]$Path) {
+            $process = Start-Process $Path -PassThru
+            Start-Sleep -Seconds 5
+            if ($process.HasExited) {
+              throw "$Path exited during startup with code $($process.ExitCode)"
+            }
+            Stop-Process -Id $process.Id -Force
+          }
+
+          Assert-GuiStarts "dist\AEWorkbench.exe"
+          Assert-GuiStarts "dist\WinAutomationPicker.exe"
+          Assert-GuiStarts "dist\RigFtpCommander.exe"
+          & "dist\RigCommander.exe" --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "RigCommander.exe --help failed" }
+          & "dist\RigFtpCli.exe" --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "RigFtpCli.exe --help failed" }
+
       - name: Upload executable artifacts
         uses: actions/upload-artifact@v7
         with:
           name: windows-executables
           path: |
+            dist/AEWorkbench.exe
             dist/WinAutomationPicker.exe
             dist/RigCommander.exe
             dist/RigFtpCommander.exe
@@ -144,10 +186,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload latest release/WinAutomationPicker.exe release/RigCommander.exe release/RigFtpCommander.exe release/RigFtpCli.exe --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload latest release/AEWorkbench.exe release/WinAutomationPicker.exe release/RigCommander.exe release/RigFtpCommander.exe release/RigFtpCli.exe --clobber --repo "$GITHUB_REPOSITORY"
             gh release edit latest --latest --title "Latest Windows build" --repo "$GITHUB_REPOSITORY"
           else
-            gh release create latest release/WinAutomationPicker.exe release/RigCommander.exe release/RigFtpCommander.exe release/RigFtpCli.exe \
+            gh release create latest release/AEWorkbench.exe release/WinAutomationPicker.exe release/RigCommander.exe release/RigFtpCommander.exe release/RigFtpCli.exe \
               --latest \
               --title "Latest Windows build" \
               --notes "Automatically built Windows executables from the main branch." \

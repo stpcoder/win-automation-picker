@@ -35,6 +35,14 @@ class ColorSample:
         return f"#{self.red:02X}{self.green:02X}{self.blue:02X}"
 
 
+@dataclass(frozen=True)
+class ElementSnapshot:
+    value: str = ""
+    is_password: bool = False
+    control_type: str = ""
+    name: str = ""
+
+
 INVOKE_CONTROL_TYPES = {
     "button",
     "checkbox",
@@ -160,6 +168,7 @@ def _wrapper_summary(wrapper: Any) -> dict[str, Any]:
         "class_name": _safe_attr(info, "class_name", ""),
         "handle": _safe_attr(info, "handle", None),
         "process_id": _safe_attr(info, "process_id", None),
+        "is_password": _is_password(wrapper),
         "rect": rect.__dict__,
     }
 
@@ -489,7 +498,12 @@ def selector_exists(selector: UISelector, *, timeout: float = 1.0) -> bool:
 
 def get_element_text(selector: UISelector, *, timeout: float = 1.0) -> str:
     wrapper = resolve_selector(selector, timeout=max(0.0, timeout))
+    if _is_password(wrapper):
+        return ""
     candidates: list[str] = []
+    value = _wrapper_value(wrapper)
+    if value:
+        candidates.append(value)
     for attr in ("window_text", "texts"):
         func = getattr(wrapper, attr, None)
         if not callable(func):
@@ -508,6 +522,72 @@ def get_element_text(selector: UISelector, *, timeout: float = 1.0) -> str:
         if str(value).strip():
             candidates.append(str(value))
     return "\n".join(dict.fromkeys(item.strip() for item in candidates if item.strip()))
+
+
+def get_element_snapshot(selector: UISelector, *, timeout: float = 1.0) -> ElementSnapshot:
+    wrapper = resolve_selector(selector_for_action(selector, "type"), timeout=max(0.0, timeout))
+    info = _info(wrapper)
+    is_password = _is_password(wrapper)
+    return ElementSnapshot(
+        value="" if is_password else _wrapper_value(wrapper),
+        is_password=is_password,
+        control_type=str(_safe_attr(info, "control_type", "") or ""),
+        name=str(_safe_attr(info, "name", "") or ""),
+    )
+
+
+def _is_password(wrapper_or_info: Any) -> bool:
+    info = _info(wrapper_or_info)
+    for candidate in (wrapper_or_info, info):
+        value = _safe_attr(candidate, "is_password", False)
+        if callable(value):
+            try:
+                value = value()
+            except Exception:
+                value = False
+        if bool(value):
+            return True
+    return False
+
+
+def _wrapper_value(wrapper: Any) -> str:
+    get_value = getattr(wrapper, "get_value", None)
+    if callable(get_value):
+        try:
+            value = get_value()
+            if value is not None:
+                return str(value)
+        except Exception:
+            pass
+
+    value_pattern = getattr(wrapper, "iface_value", None)
+    if value_pattern is not None:
+        try:
+            value = value_pattern.CurrentValue
+            if value is not None:
+                return str(value)
+        except Exception:
+            pass
+
+    legacy_properties = getattr(wrapper, "legacy_properties", None)
+    if callable(legacy_properties):
+        try:
+            properties = legacy_properties()
+            value = properties.get("Value") if isinstance(properties, dict) else None
+            if value is not None:
+                return str(value)
+        except Exception:
+            pass
+
+    window_text = getattr(wrapper, "window_text", None)
+    if callable(window_text):
+        try:
+            value = window_text()
+            if value is not None:
+                return str(value)
+        except Exception:
+            pass
+    return ""
 
 
 def sample_element_color(selector: UISelector, *, timeout: float = 1.0) -> ColorSample:

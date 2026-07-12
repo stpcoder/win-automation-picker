@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import io
 import json
 import re
@@ -19,7 +19,7 @@ from .automation import (
     selector_exists,
     type_text,
 )
-from .selector import UISelector
+from .selector import SelectorSegment, UISelector
 
 
 TEMPLATE_PATTERN = re.compile(r"\$\{([^}]+)\}")
@@ -36,6 +36,9 @@ class ConditionResult:
     expected: str
     operator: str
     element_id: str = ""
+    monitor_tab: str = ""
+    monitor_channel: str = ""
+    monitor_state: str = ""
     message: str = ""
     details: list[dict[str, Any]] = field(default_factory=list)
 
@@ -48,9 +51,51 @@ class ConditionResult:
             "expected": self.expected,
             "operator": self.operator,
             "element_id": self.element_id,
+            "monitor_tab": self.monitor_tab,
+            "monitor_channel": self.monitor_channel,
+            "monitor_state": self.monitor_state,
             "message": self.message,
             "details": list(self.details),
         }
+
+
+@dataclass(frozen=True)
+class RecipeValidationIssue:
+    path: tuple[int, ...]
+    message: str
+
+
+def validate_recipe(recipe: "AutomationRecipe") -> list[RecipeValidationIssue]:
+    issues: list[RecipeValidationIssue] = []
+    container_kinds = {"repeat", "if_exists", "if_text", "if_color", "monitor_group"}
+    selector_kinds = {"click", "type", "if_exists", "if_text", "if_color", "monitor_text", "monitor_color"}
+    condition_kinds = {"if_exists", "if_text", "if_color", "monitor_text", "monitor_color", "monitor_group"}
+
+    def visit(step: AutomationStep, path: tuple[int, ...]) -> None:
+        label = step.block_title()
+        if step.kind in selector_kinds and step.selector is None:
+            issues.append(RecipeValidationIssue(path, f"'{label}' 블록에 대상이 연결되지 않았습니다."))
+        if step.kind == "key" and not step.keys.strip():
+            issues.append(RecipeValidationIssue(path, f"'{label}' 블록의 키 조합이 비어 있습니다."))
+        if step.kind == "repeat" and step.repeat_count < 1:
+            issues.append(RecipeValidationIssue(path, f"'{label}' 블록의 반복 횟수는 1 이상이어야 합니다."))
+        if step.kind in container_kinds and not step.children:
+            issues.append(RecipeValidationIssue(path, f"'{label}' 블록 안에 실행할 블록을 넣으세요."))
+        if step.kind == "monitor_group":
+            invalid = [child.block_title() for child in step.children if child.kind not in condition_kinds]
+            if invalid:
+                issues.append(
+                    RecipeValidationIssue(
+                        path,
+                        f"'{label}' 묶음에는 조건 블록만 넣을 수 있습니다: {', '.join(invalid[:3])}",
+                    )
+                )
+        for child_index, child in enumerate(step.children):
+            visit(child, (*path, child_index))
+
+    for index, step in enumerate(recipe.steps):
+        visit(step, (index,))
+    return issues
 
 
 def _clean_header(value: str, fallback: str) -> str:
@@ -137,6 +182,37 @@ def render_template(template: str, row: dict[str, str] | None = None) -> str:
     return TEMPLATE_PATTERN.sub(replace, template)
 
 
+def render_selector(selector: UISelector, row: dict[str, str] | None = None) -> UISelector:
+    def render_segment(segment: SelectorSegment) -> SelectorSegment:
+        return replace(
+            segment,
+            control_type=render_template(segment.control_type, row),
+            name=render_template(segment.name, row),
+            automation_id=render_template(segment.automation_id, row),
+            class_name=render_template(segment.class_name, row),
+        )
+
+    marker = selector.window_marker
+    rendered_marker = None
+    if marker is not None:
+        rendered_marker = replace(
+            marker,
+            name_contains=render_template(marker.name_contains, row),
+            name_equals=render_template(marker.name_equals, row),
+            name_regex=render_template(marker.name_regex, row),
+            automation_id=render_template(marker.automation_id, row),
+            control_type=render_template(marker.control_type, row),
+            class_name=render_template(marker.class_name, row),
+            description=render_template(marker.description, row),
+        )
+    return replace(
+        selector,
+        root=render_segment(selector.root),
+        path=[render_segment(segment) for segment in selector.path],
+        window_marker=rendered_marker,
+    )
+
+
 @dataclass(frozen=True)
 class AutomationStep:
     kind: str
@@ -161,6 +237,7 @@ class AutomationStep:
     monitor_tab: str = ""
     monitor_channel: str = ""
     monitor_state: str = ""
+    recording_id: str = ""
     children: list["AutomationStep"] = field(default_factory=list)
 
     @classmethod
@@ -278,6 +355,8 @@ class AutomationStep:
         children: list["AutomationStep"],
         *,
         label: str = "",
+        element_id: str = "",
+        element_role: str = "condition",
         block_name: str = "",
         block_color: str = "",
         description: str = "",
@@ -289,6 +368,8 @@ class AutomationStep:
             selector=selector,
             timeout=max(0.0, float(timeout)),
             label=label,
+            element_id=element_id,
+            element_role=element_role,
             block_name=block_name,
             block_color=block_color,
             description=description,
@@ -305,6 +386,8 @@ class AutomationStep:
         *,
         operator: str = "contains",
         label: str = "",
+        element_id: str = "",
+        element_role: str = "condition",
         block_name: str = "",
         block_color: str = "",
         description: str = "",
@@ -316,6 +399,8 @@ class AutomationStep:
             selector=selector,
             timeout=max(0.0, float(timeout)),
             label=label,
+            element_id=element_id,
+            element_role=element_role,
             block_name=block_name,
             block_color=block_color,
             description=description,
@@ -334,6 +419,8 @@ class AutomationStep:
         *,
         tolerance: float = 20.0,
         label: str = "",
+        element_id: str = "",
+        element_role: str = "condition",
         block_name: str = "",
         block_color: str = "",
         description: str = "",
@@ -345,6 +432,8 @@ class AutomationStep:
             selector=selector,
             timeout=max(0.0, float(timeout)),
             label=label,
+            element_id=element_id,
+            element_role=element_role,
             block_name=block_name,
             block_color=block_color,
             description=description,
@@ -492,6 +581,7 @@ class AutomationStep:
             monitor_tab=str(data.get("monitor_tab", "")),
             monitor_channel=str(data.get("monitor_channel", "")),
             monitor_state=str(data.get("monitor_state", "")),
+            recording_id=str(data.get("recording_id", "")),
             children=[cls.from_mapping(item) for item in children_data],
         )
 
@@ -519,6 +609,7 @@ class AutomationStep:
             "monitor_tab": self.monitor_tab,
             "monitor_channel": self.monitor_channel,
             "monitor_state": self.monitor_state,
+            "recording_id": self.recording_id,
             "children": [child.to_mapping() for child in self.children],
         }
 
@@ -572,6 +663,7 @@ class AutomationStep:
 class AutomationRecipe:
     steps: list[AutomationStep] = field(default_factory=list)
     monitor_view: dict[str, Any] = field(default_factory=dict)
+    variables: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_json(cls, text: str) -> "AutomationRecipe":
@@ -579,25 +671,38 @@ class AutomationRecipe:
         if isinstance(data, list):
             steps_data = data
             monitor_view = {}
+            variables = {}
         else:
             steps_data = data.get("steps", [])
             monitor_view = data.get("monitor_view", {})
+            variables = data.get("variables", {})
         if not isinstance(monitor_view, dict):
             monitor_view = {}
-        return cls(steps=[AutomationStep.from_mapping(item) for item in steps_data], monitor_view=monitor_view)
+        if not isinstance(variables, dict):
+            variables = {}
+        return cls(
+            steps=[AutomationStep.from_mapping(item) for item in steps_data],
+            monitor_view=monitor_view,
+            variables={str(key): str(value) for key, value in variables.items()},
+        )
 
     def to_json(self, *, indent: int = 2) -> str:
         return json.dumps(
             {
                 "steps": [step.to_mapping() for step in self.steps],
                 "monitor_view": dict(self.monitor_view),
+                "variables": dict(self.variables),
             },
             indent=indent,
             ensure_ascii=True,
         )
 
     def append(self, step: AutomationStep) -> "AutomationRecipe":
-        return AutomationRecipe(steps=[*self.steps, step], monitor_view=dict(self.monitor_view))
+        return AutomationRecipe(
+            steps=[*self.steps, step],
+            monitor_view=dict(self.monitor_view),
+            variables=dict(self.variables),
+        )
 
     def move_step(self, index: int, delta: int) -> tuple["AutomationRecipe", int]:
         if index < 0 or index >= len(self.steps):
@@ -609,17 +714,51 @@ class AutomationRecipe:
         steps = list(self.steps)
         step = steps.pop(index)
         steps.insert(new_index, step)
-        return AutomationRecipe(steps=steps, monitor_view=dict(self.monitor_view)), new_index
+        return AutomationRecipe(
+            steps=steps,
+            monitor_view=dict(self.monitor_view),
+            variables=dict(self.variables),
+        ), new_index
 
     def delete_step(self, index: int) -> "AutomationRecipe":
         if index < 0 or index >= len(self.steps):
             raise WindowsAutomationError(f"Step index out of range: {index + 1}")
         steps = list(self.steps)
         del steps[index]
-        return AutomationRecipe(steps=steps, monitor_view=dict(self.monitor_view))
+        return AutomationRecipe(
+            steps=steps,
+            monitor_view=dict(self.monitor_view),
+            variables=dict(self.variables),
+        )
+
+
+def monitor_only_recipe(recipe: AutomationRecipe) -> AutomationRecipe:
+    monitor_kinds = {"monitor_text", "monitor_color", "monitor_group"}
+    steps: list[AutomationStep] = []
+
+    def collect(items: list[AutomationStep]) -> None:
+        for step in items:
+            if step.kind in monitor_kinds:
+                steps.append(step)
+            else:
+                collect(step.children)
+
+    collect(recipe.steps)
+    return AutomationRecipe(
+        steps=steps,
+        monitor_view=dict(recipe.monitor_view),
+        variables=dict(recipe.variables),
+    )
 
 
 def evaluate_condition(step: AutomationStep, *, row: dict[str, str] | None = None) -> ConditionResult:
+    result_metadata = {
+        "label": render_template(step.display_label(), row),
+        "element_id": render_template(step.element_id, row),
+        "monitor_tab": render_template(step.monitor_tab, row),
+        "monitor_channel": render_template(step.monitor_channel, row),
+        "monitor_state": render_template(step.monitor_state, row),
+    }
     if step.kind == "monitor_group":
         if not step.children:
             raise WindowsAutomationError("Monitor group has no condition blocks.")
@@ -638,70 +777,67 @@ def evaluate_condition(step: AutomationStep, *, row: dict[str, str] | None = Non
             for result in child_results
         )
         return ConditionResult(
-            label=step.display_label(),
             kind=step.kind,
             ok=ok,
             actual=actual,
             expected=expected,
             operator=("not " if step.condition_invert else "") + operator,
-            element_id=step.element_id,
             message=message,
             details=details,
+            **result_metadata,
         )
 
     if not step.selector:
         raise WindowsAutomationError(f"Condition step is missing a selector: {step.display_label()}")
+    selector = render_selector(step.selector, row)
 
     if step.kind == "if_exists":
-        actual_bool = selector_exists(step.selector, timeout=step.timeout)
+        actual_bool = selector_exists(selector, timeout=step.timeout)
         ok = not actual_bool if step.condition_invert else actual_bool
         actual = "exists" if actual_bool else "missing"
         expected = "missing" if step.condition_invert else "exists"
         return ConditionResult(
-            label=step.display_label(),
             kind=step.kind,
             ok=ok,
             actual=actual,
             expected=expected,
             operator="exists",
-            element_id=step.element_id,
             message=f"{actual} expected {expected}",
+            **result_metadata,
         )
 
     if step.kind in {"if_text", "monitor_text"}:
-        actual = get_element_text(step.selector, timeout=step.timeout)
+        actual = get_element_text(selector, timeout=step.timeout)
         expected = render_template(step.condition_value, row)
         operator = (step.condition_operator or "contains").casefold()
         ok = _text_condition(actual, expected, operator)
         if step.condition_invert:
             ok = not ok
         return ConditionResult(
-            label=step.display_label(),
             kind=step.kind,
             ok=ok,
             actual=actual,
             expected=expected,
             operator=("not " if step.condition_invert else "") + operator,
-            element_id=step.element_id,
             message=f"text {operator} {expected!r}: {actual!r}",
+            **result_metadata,
         )
 
     if step.kind in {"if_color", "monitor_color"}:
-        sample = sample_element_color(step.selector, timeout=step.timeout)
+        sample = sample_element_color(selector, timeout=step.timeout)
         actual = sample.hex
         expected = render_template(step.condition_value, row)
         ok = color_matches(actual, expected, tolerance=step.color_tolerance)
         if step.condition_invert:
             ok = not ok
         return ConditionResult(
-            label=step.display_label(),
             kind=step.kind,
             ok=ok,
             actual=actual,
             expected=expected,
             operator=("not near" if step.condition_invert else "near"),
-            element_id=step.element_id,
             message=f"color {actual} near {expected} tolerance={step.color_tolerance:g} at {sample.x},{sample.y}",
+            **result_metadata,
         )
 
     raise WindowsAutomationError(f"Unsupported condition step kind: {step.kind}")
@@ -741,28 +877,40 @@ def run_recipe(
             raise WindowsAutomationError("Run stopped.")
         step_counter += 1
         if on_step:
-            on_step(step_counter, step)
+            on_step(
+                step_counter,
+                replace(
+                    step,
+                    label=render_template(step.label, row),
+                    block_name=render_template(step.block_name, row),
+                    element_id=render_template(step.element_id, row),
+                    monitor_tab=render_template(step.monitor_tab, row),
+                    monitor_channel=render_template(step.monitor_channel, row),
+                    monitor_state=render_template(step.monitor_state, row),
+                ),
+            )
 
         if step.kind == "click":
             if not step.selector:
                 raise WindowsAutomationError(f"Step {step_counter} is missing a selector.")
-            click(step.selector, timeout=step.timeout)
+            click(render_selector(step.selector, row), timeout=step.timeout)
         elif step.kind == "type":
             if not step.selector:
                 raise WindowsAutomationError(f"Step {step_counter} is missing a selector.")
             type_text(
-                step.selector,
+                render_selector(step.selector, row),
                 render_template(step.text, row),
                 clear=step.clear,
                 method=step.input_method,
                 timeout=step.timeout,
             )
         elif step.kind == "wait":
-            time.sleep(max(0.0, step.seconds))
+            _interruptible_sleep(max(0.0, step.seconds), stop_event)
         elif step.kind == "key":
             if not step.keys:
                 raise WindowsAutomationError(f"Step {step_counter} is missing keys.")
-            press_keys(step.keys, selector=step.selector, timeout=step.timeout)
+            selector = render_selector(step.selector, row) if step.selector else None
+            press_keys(render_template(step.keys, row), selector=selector, timeout=step.timeout)
         elif step.kind == "repeat":
             if not step.children:
                 raise WindowsAutomationError(f"Repeat block {step_counter} has no child steps.")
@@ -789,3 +937,19 @@ def run_recipe(
 
     for step in recipe.steps:
         run_step(step)
+
+
+def _interruptible_sleep(seconds: float, stop_event: threading.Event | None) -> None:
+    if seconds <= 0:
+        return
+    if stop_event is None:
+        time.sleep(seconds)
+        return
+    deadline = time.monotonic() + seconds
+    while True:
+        if stop_event.is_set():
+            raise WindowsAutomationError("Run stopped.")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        time.sleep(min(0.2, remaining))

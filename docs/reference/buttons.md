@@ -1,65 +1,100 @@
 # 버튼/메뉴 사전
 
-## Win Automation Picker
+## AE Workbench 상단
+
+| 버튼 | 설명 |
+| --- | --- |
+| `연결 확인` | FTP 전용 root의 로그인·쓰기·읽기·삭제 권한 확인 |
+| `Rig 설정` | Master 연결 설정 화면으로 이동 |
+| `1 오늘 작업` | 일일 실행, 캠페인, PC·CH 상태 |
+| `2 자동화 준비` | SEQ와 프로그램 매크로 제작·등록 |
+| `3 Rig 설정` | Master, 원격 PC/CH, Agent와 고급 정책 |
+
+## 오늘 작업
+
+| 버튼/메뉴 | 설명 |
+| --- | --- |
+| `자동화 새로고침` | 서버의 FLOW와 SEQ 라이브러리 다시 읽기 |
+| `Rig 대상 불러오기` | 설정한 PC/CH를 실행표 행으로 생성 |
+| `행 편집` | 대상 추가, 행 복제, 선택 행 삭제 |
+| `실행 시작` | 체크된 각 PC/CH 행을 별도 job으로 제출 |
+| `모니터링` | `PC · CH 상태`로 이동 |
+| `긴급 중단` | 대상 PC에 stop signal 전송 |
+| `운영 도구 열기` | raw 패키지 등록과 단일 PC 고급 실행 표시 |
+| `Scratch 수정` | 선택한 서버 FLOW를 source project로 안전하게 복원 |
+
+## 자동화 준비
+
+| 버튼/메뉴 | 설명 |
+| --- | --- |
+| `파일` | `*.aework.json` 열기·저장 |
+| `SEQ 편집` | 현재 recipe를 Test Sequence Generator에서 열기 |
+| `검사 · 패키지 준비` | SEQ 검사 후 checksummed `*.rigseq.zip` 생성 |
+| `SEQ 더보기` | 검사만 실행, recipe/package/tool 경로 선택 |
+| `Scratch 편집` | 현재 프로그램 매크로를 블록 작업실에서 열기 |
+| `검사 · Python 준비` | Scratch 구조 검사와 최신 FLOW export |
+| `Scratch 더보기` | 새 매크로, 구성 검사만 실행, 다른 source 선택 |
+| `값 편집` | 감지된 로컬 시험 변수를 입력·저장 |
+| `시험` / `중지` | 현재 PC에서 실제 매크로 실행·정상 중단 |
+| `버튼 관리` | 프로그램 매크로 등록, 이름/메모, 순서, 삭제 |
+| `검사 상세 보기` | 기본 화면에서 숨긴 SEQ·매크로 검사 로그 펼치기 |
+| `준비 상태 확인` | recipe/package와 source/FLOW hash gate 확인 |
+| `서버 라이브러리 등록` | 검증된 FLOW와 SEQ 등록; 실행은 시작하지 않음 |
+| `오늘 작업 열기` | 일일 실행 화면으로 이동 |
+
+## Scratch 상단과 녹화
+
+| 버튼 | 설명 |
+| --- | --- |
+| `불러오기` / `저장` | 매크로 source project 열기·저장 |
+| `Python 내보내기` | 단독 실행 가능한 Python FLOW 생성 |
+| `실행` / `데이터 실행` | 기본값 1회 또는 데이터 행별 실행 |
+| `중지` | 실행 중단 요청 |
+| `연속 녹화 시작` / `녹화 정지` | 외부 프로그램 클릭·입력·키 세션 기록 |
+| `대상 확인` | 블록을 만들지 않고 component 조사 |
+| `클릭 녹화` / `입력 녹화` | 한 component의 클릭·입력 블록 생성 |
+| `대상 고급 설정` | element 역할과 동일 프로그램 창 구분 조건 |
+
+## Scratch 블록 작업실
+
+| 버튼/값 | 설명 |
+| --- | --- |
+| `보기=작게` | 46px 블록과 2px 간격의 기본 조밀 보기 |
+| `보기=보통` | 58px 블록과 5px 간격 |
+| `되돌리기` / `다시 실행` | 편집 undo/redo |
+| `변경 적용` | 선택 블록 설정 저장 |
+| `위로` / `아래로` | 같은 컨테이너 안에서 이동 |
+| `앞 블록 안으로` | 바로 앞 반복·조건·AND/OR 안으로 이동 |
+| `컨테이너 밖으로` | 부모 컨테이너 바로 다음으로 이동 |
+| `복제` / `풀기` / `삭제` | 블록 tree 복제, container 제거, 삭제 |
+| `대상 다시 선택` | 선택 블록의 UIA selector 교체 |
+| `현재 값 읽기` | 텍스트·색상 조건값 다시 읽기 |
+| `선택 블록 시험` | 선택 블록만 실행·판정 |
+| `Rig 버튼으로 등록` | 현재 source를 프로그램 매크로 목록에 등록 |
+
+## Rig 설정
 
 | 위치 | 버튼/메뉴 | 설명 |
 | --- | --- | --- |
-| `Capture` | `Inspect` | 클릭 위치 selector만 확인 |
-| `Capture` | `Click block` | 클릭 step 생성 |
-| `Capture` | `Type block` | 입력 step 생성 |
-| `Capture` | `Cancel` | 캡처 대기 취소 |
-| `Input` | `Clear` | 기존 입력값 삭제 후 입력 |
-| `Run` | `Run once` | workflow 1회 실행 |
-| `Run` | `Run rows` | `Data Rows` 행별 반복 실행 |
-| `Run` | `Stop` | 실행 중지 요청 |
-| `More > Actions` | `Save workflow` | workflow JSON 저장 |
-| `More > Actions` | `Load workflow` | workflow JSON 불러오기 |
-| `More > Actions` | `Export Python` | Python script 내보내기 |
-| `More > Actions` | `Test current click` | 현재 selector 클릭 테스트 |
-| `More > Actions` | `Test current type` | 현재 selector 입력 테스트 |
-| `More > Actions` | `Add wait block` | wait step 추가 |
-| `More > Actions` | `Add Enter block` | Enter key step 추가 |
-| `More > Actions` | `Add custom key block` | custom key step 추가 |
-| `Target Setup` | `Apply` | selected step metadata 저장 |
-| `Target Setup` | `Apply match` | current selector에 window match 적용 |
-| `Target Setup` | `Test windows` | 창 후보 디버그 |
+| `Master 연결` | `파일` | config 선택·불러오기·예제 생성 |
+| `Master 연결` | `저장` | 현재 `rig-ftp.info` 저장 |
+| `Master 연결` | `연결 확인` | FTP 권한 확인 |
+| `원격 PC · CH` | `PC 추가` | 별명, Node ID, IP, PC별 변수 등록 |
+| `원격 PC · CH` | `CH 관리` | 자유 CH/이름, Slot, COM, SoC, Binary, 자재 등록 |
+| `원격 PC · CH` | `서버 폴더 준비` | PC별 FTP spool 폴더 생성 |
+| `원격 PC · CH` | `Slave 설정 내보내기` | 각 PC용 `rig-ftp.info` 생성 |
+| `이 PC Agent` | `Agent 시작` / `Agent 중지` | slave polling 시작·중지 |
+| `Agent 더보기` | `한 번 확인` | pending job 1회 확인 |
+| `Agent 더보기` | `중단 신호 해제` | 이 PC stop signal 제거 |
 
-## Build 탭
+## 모니터링
 
-| 위치 | 버튼 | 설명 |
-| --- | --- | --- |
-| `Add Blocks > Capture` | `Click block` | 클릭 블록 추가 |
-| `Add Blocks > Capture` | `Type block` | 입력 블록 추가 |
-| `Add Blocks > Action` | `Wait` | 대기 블록 추가 |
-| `Add Blocks > Action` | `Press Enter` | Enter 입력 |
-| `Add Blocks > Action` | `Custom key` | 키 시퀀스 입력 |
-| `Add Blocks > Action` | `Repeat selected` | 선택 블록 반복 |
-| `Add Blocks > Logic` | `If selected exists` | 존재 조건 |
-| `Add Blocks > Logic` | `If selected text` | 텍스트 조건 |
-| `Add Blocks > Logic` | `If selected color` | 색상 조건 |
-| `Add Blocks > Logic` | `Monitor text` | 텍스트 모니터링 |
-| `Add Blocks > Logic` | `Monitor color` | 색상 모니터링 |
-| `Add Blocks > Logic` | `Group AND` | 조건 묶기 AND |
-| `Add Blocks > Logic` | `Group OR` | 조건 묶기 OR |
-
-## Rig FTP Commander
-
-| 위치 | 버튼/메뉴 | 설명 |
-| --- | --- | --- |
-| 상단 | `Browse` | config 선택 |
-| 상단 | `Load` | config 로드 |
-| 상단 | `Save` | config 저장 |
-| 상단 `More` | `Create example config` | 예제 config 생성 |
-| `Server Setup` | `Init folders` | FTP spool 폴더 초기화 |
-| `Server Setup > More` | `Export slave .info` | slave별 config 생성 |
-| `Macro Upload` | `Upload macro` | Python macro 업로드 |
-| `Run on Slaves` | `Submit macro` | 선택 macro 실행 요청 |
-| `Run on Slaves` | `Emergency stop` | stop signal 전송 |
-| `Run on Slaves > More` | `Ask for screenshot` | screenshot job 제출 |
-| `Slave Monitor` | `Refresh status` | slave heartbeat 읽기 |
-| `Slave Monitor` | `Refresh results` | 결과 로그 읽기 |
-| `Slave Monitor` | `View screenshot` | screenshot 요청/표시 |
-| `Slave Monitor > More` | `Export Excel` | 상태표 `.xlsx` 저장 |
-| `This PC Agent` | `Start agent` | slave polling 시작 |
-| `This PC Agent` | `Check once` | 한 번만 pending job 확인 |
-| `This PC Agent` | `Stop agent` | slave polling 중지 |
+| 버튼/메뉴 | 설명 |
+| --- | --- |
+| `새로고침` | 상태와 선택 PC 결과를 함께 읽기 |
+| `전체 화면 보기` | 이번 요청과 일치하는 최신 screenshot 요청·표시 |
+| `모니터 보드` | workflow의 구조화된 텍스트·색상 판정 표시 |
+| `더보기 > 선택 작업 긴급 중단` | 선택 PC의 현재 job만 중단 |
+| `더보기 > 선택 결과 분류` | failure class, 조치, 담당자와 근거 기록 |
+| `더보기 > Excel 내보내기` | PC State와 CH Inventory workbook 생성 |
+| `자동 상태 조회 시작/중지` | heartbeat와 결과 파일 주기 조회 |

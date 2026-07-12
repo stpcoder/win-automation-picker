@@ -1,0 +1,44 @@
+from win_automation_picker.scratch_editor import DropZone, choose_drop_zone, layout_for_density
+
+
+def test_compact_scratch_layout_keeps_blocks_visually_connected() -> None:
+    compact = layout_for_density("작게")
+    normal = layout_for_density("보통")
+
+    assert compact.block_height == 46
+    assert compact.stack_gap <= 2
+    assert compact.max_stack_width == 700
+    assert compact.block_height < normal.block_height
+    assert compact.stack_gap < normal.stack_gap
+
+
+def test_choose_drop_zone_prefers_deeper_nested_slot() -> None:
+    zones = [
+        DropZone((), 1, 20, 500, 120, 0),
+        DropZone((0,), 0, 50, 470, 122, 1),
+    ]
+
+    assert choose_drop_zone(zones, 120, 121) == zones[1]
+
+
+def test_choose_drop_zone_respects_horizontal_nesting() -> None:
+    zones = [
+        DropZone((), 1, 20, 500, 100, 0),
+        DropZone((0,), 0, 180, 470, 100, 1),
+    ]
+
+    assert choose_drop_zone(zones, 30, 100) == zones[0]
+
+
+def test_choose_drop_zone_keeps_parent_gutter_reachable_with_small_indent() -> None:
+    zones = [
+        DropZone((), 2, 20, 500, 100, 0),
+        DropZone((1,), 1, 42, 478, 100, 1),
+    ]
+
+    assert choose_drop_zone(zones, 22, 100) == zones[0]
+    assert choose_drop_zone(zones, 120, 100) == zones[1]
+
+
+def test_choose_drop_zone_returns_none_for_empty_workspace() -> None:
+    assert choose_drop_zone([], 10, 10) is None
