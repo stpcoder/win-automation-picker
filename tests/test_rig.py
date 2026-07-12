@@ -22,6 +22,7 @@ from win_automation_picker.rig import (
     build_firmware_flash_script,
     build_remote_script,
     build_serial_command_script,
+    build_serial_transition_script,
     encode_powershell,
     example_config,
     inspect_firmware_manifest,
@@ -29,9 +30,11 @@ from win_automation_picker.rig import (
     resolve_named_command,
     run_firmware_execution_plan,
     run_local_firmware_process,
+    run_serial_transition,
     run_device_update,
     select_hosts,
     select_serial_targets,
+    wait_for_device_download_probe,
 )
 
 
@@ -97,6 +100,120 @@ def test_serial_script_verifies_exact_com_hardware_identity_before_command() -> 
     assert "$_.DeviceID -eq $expectedPort" in script
     assert "VID_0403&PID_6001\\SERIAL-CH1" in script
     assert "Console identity mismatch on $expectedPort" in script
+
+
+def test_mtk_transition_sends_exit_twice_in_one_session_and_checks_lk_marker() -> None:
+    config = RigConfig.from_mapping(example_config())
+    port = config.host_by_id("rig-pc-01").port_by_id("ch2")
+
+    script = build_serial_transition_script(
+        port,
+        "exit",
+        repeat_count=2,
+        interval_ms=150,
+        expected_marker="LK2]",
+        ready_timeout_ms=3000,
+    )
+
+    assert "for ($index = 0; $index -lt 2; $index++)" in script
+    assert '$serial.Write("exit`r`n")' in script
+    assert "Start-Sleep -Milliseconds 150" in script
+    assert "$expectedMarker = 'LK2]'" in script
+    assert '[TX $($index + 1)/2]' in script
+    assert "{ break }" in script
+    assert script.count("$serial.Open()") == 1
+
+
+def test_mtk_transition_passes_emergency_stop_to_powershell(monkeypatch) -> None:
+    config = RigConfig.from_mapping(example_config())
+    target = select_serial_targets(config, ["rig-pc-01:ch2"])[0]
+
+    def cancel() -> bool:
+        return False
+
+    def fake_run(*_args, cancel_callback=None, **_kwargs):
+        assert cancel_callback is cancel
+        return CommandResult(target.label(), True, 0, stdout="LK2]")
+
+    monkeypatch.setattr(rig_module, "run_powershell_for_host", fake_run)
+
+    result = run_serial_transition(
+        target,
+        "exit",
+        repeat_count=2,
+        interval_ms=150,
+        expected_marker="LK2]",
+        timeout=5,
+        cancel_callback=cancel,
+    )
+
+    assert result.ok
+
+
+def test_download_probe_retries_until_late_usb_device_appears(monkeypatch) -> None:
+    config = RigConfig.from_mapping(example_config())
+    target = select_serial_targets(config, ["rig-pc-01:ch2"])[0]
+    results = iter(
+        [
+            CommandResult(
+                target.label(),
+                False,
+                1,
+                stdout="CHECK HASH OK abc",
+                stderr="Download device identity not found: VID_0E8D&PID_0003",
+            ),
+            CommandResult(
+                target.label(),
+                False,
+                1,
+                stderr="Download device identity not found: VID_0E8D&PID_0003",
+            ),
+            CommandResult(target.label(), True, 0, stdout="DEVICE PROBE OK"),
+        ]
+    )
+    phases: list[str] = []
+
+    def fake_probe(*_args, **kwargs):
+        phases.append(kwargs["phase"])
+        return next(results)
+
+    monkeypatch.setattr(rig_module, "run_device_probe", fake_probe)
+    monkeypatch.setattr(rig_module.time, "sleep", lambda _seconds: None)
+
+    result = wait_for_device_download_probe(
+        target,
+        xml_path="C:/fw/firmware.xml",
+        wait_seconds=5,
+        poll_interval_seconds=1,
+    )
+
+    assert result.ok
+    assert result.details["download_probe_attempts"] == 3
+    assert phases == ["download", "download-identity", "download-identity"]
+    assert "CHECK HASH OK abc" in result.stdout
+
+
+def test_download_probe_does_not_retry_static_preflight_failure(monkeypatch) -> None:
+    config = RigConfig.from_mapping(example_config())
+    target = select_serial_targets(config, ["rig-pc-01:ch2"])[0]
+    phases: list[str] = []
+
+    def fake_probe(*_args, **kwargs):
+        phases.append(kwargs["phase"])
+        return CommandResult(target.label(), False, 1, stderr="Firmware XML SHA-256 mismatch")
+
+    monkeypatch.setattr(rig_module, "run_device_probe", fake_probe)
+
+    result = wait_for_device_download_probe(
+        target,
+        xml_path="C:/fw/firmware.xml",
+        wait_seconds=120,
+        poll_interval_seconds=2,
+    )
+
+    assert not result.ok
+    assert result.details["download_probe_attempts"] == 1
+    assert phases == ["download"]
 
 
 def test_remote_script_wraps_non_local_hosts() -> None:
@@ -260,11 +377,15 @@ def test_device_probe_script_pins_com_usb_identity_and_adb_serial(tmp_path) -> N
     target, xml = _safe_device_target(tmp_path)
 
     download_script = build_device_probe_script(target, phase="download", xml_path=str(xml))
+    identity_script = build_device_probe_script(target, phase="download-identity")
     post_script = build_device_probe_script(target, phase="post")
 
     assert "COM7" in download_script
     assert "VID_05C6&PID_9008" in download_script
     assert "Get-CimInstance Win32_PnPEntity" in download_script
+    assert "Get-CimInstance Win32_PnPEntity" in identity_script
+    assert "Get-FileHash" not in identity_script
+    assert "CHECK TOOL_VERSION" not in identity_script
     assert "DEVICE-CH1" in post_script
     assert "-s $adbSerial get-state" in post_script
 

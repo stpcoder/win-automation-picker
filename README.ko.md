@@ -76,9 +76,12 @@ CH에는 같은 `.seq`를 동시에 실행할 수 있습니다.
 
 ![한 CH씩 안전 조건을 확인하는 Binary 업데이트](docs/assets/screenshots/13-binary-update.png)
 
-Binary는 Seq Generator의 checksummed `.rigbinary.json`을 불러와 CH의 Vendor/SoC와
-대조합니다. Qualcomm 물리 Download 스위치, MTK preloader 종료, COM/baud, 고정 ADB
-serial, USB Download identity와 외부 도구 결과 규칙이 모두 맞아야 실행됩니다.
+Binary는 `XML 선택 · 전체 검사`로 descriptor와 참조 payload 전체를 바로 검사하거나,
+Master/Slave 경로가 다를 때 Seq Generator의 checksummed `.rigbinary.json`을 불러옵니다.
+Qualcomm 물리 Download 스위치는 exact EDL serial이 나타날 때까지 제한 시간 동안 재탐색하고,
+Generic MTK는 설정에 따라 한 COM session에서 `exit` 2회와 LK marker를 확인한 뒤 진행합니다.
+정적 tool/XML/hash 검사는 한 번만 수행하고 이후에는 USB identity만 가볍게 조회합니다.
+COM/baud, 고정 ADB serial과 package 지문을 모두 통과한 한 CH만 실제 Downloader에 전달합니다.
 
 자세한 설정은 [실장기 직접 제어와 Binary](https://stpcoder.github.io/win-automation-picker/device-control/)를 참고하십시오.
 

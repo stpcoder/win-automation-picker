@@ -112,6 +112,12 @@ class SerialPortConfig:
     gpio_reset: str = ""
     gpio_download: str = ""
     firmware_partitions: tuple[str, ...] = ()
+    preloader_exit_count: int = 2
+    preloader_exit_interval_ms: int = 150
+    preloader_ready_marker: str = ""
+    preloader_ready_timeout_ms: int = 3000
+    download_wait_seconds: float = 90.0
+    download_poll_interval_seconds: float = 2.0
     adb: AdbConfig = field(default_factory=AdbConfig)
 
     @classmethod
@@ -140,6 +146,33 @@ class SerialPortConfig:
             storage_type = normalize_storage_type(str(data.get("storage_type") or "ufs"))
         except FirmwarePlanError as exc:
             raise RigConfigError(str(exc)) from exc
+        preloader_exit_count = int(data.get("preloader_exit_count", 2))
+        if preloader_exit_count < 1 or preloader_exit_count > 8:
+            raise RigConfigError(
+                f"Serial port {port_id!r} preloader_exit_count must be between 1 and 8."
+            )
+        preloader_exit_interval_ms = int(data.get("preloader_exit_interval_ms", 150))
+        if preloader_exit_interval_ms < 0 or preloader_exit_interval_ms > 10_000:
+            raise RigConfigError(
+                f"Serial port {port_id!r} preloader_exit_interval_ms must be between 0 and 10000."
+            )
+        preloader_ready_timeout_ms = int(data.get("preloader_ready_timeout_ms", 3000))
+        if preloader_ready_timeout_ms < 100 or preloader_ready_timeout_ms > 120_000:
+            raise RigConfigError(
+                f"Serial port {port_id!r} preloader_ready_timeout_ms must be between 100 and 120000."
+            )
+        download_wait_seconds = float(data.get("download_wait_seconds", 90.0))
+        download_poll_interval_seconds = float(
+            data.get("download_poll_interval_seconds", 2.0)
+        )
+        if download_wait_seconds < 1.0 or download_wait_seconds > 900.0:
+            raise RigConfigError(
+                f"Serial port {port_id!r} download_wait_seconds must be between 1 and 900."
+            )
+        if download_poll_interval_seconds < 0.25 or download_poll_interval_seconds > 30.0:
+            raise RigConfigError(
+                f"Serial port {port_id!r} download_poll_interval_seconds must be between 0.25 and 30."
+            )
 
         return cls(
             id=port_id,
@@ -180,6 +213,12 @@ class SerialPortConfig:
             gpio_reset=_clean(data.get("gpio_reset")),
             gpio_download=_clean(data.get("gpio_download")),
             firmware_partitions=tuple(str(item).strip() for item in firmware_partitions if str(item).strip()),
+            preloader_exit_count=preloader_exit_count,
+            preloader_exit_interval_ms=preloader_exit_interval_ms,
+            preloader_ready_marker=_clean(data.get("preloader_ready_marker")),
+            preloader_ready_timeout_ms=preloader_ready_timeout_ms,
+            download_wait_seconds=download_wait_seconds,
+            download_poll_interval_seconds=download_poll_interval_seconds,
             adb=AdbConfig.from_mapping(data.get("adb")),
         )
 
@@ -657,6 +696,12 @@ def example_config() -> dict[str, Any]:
                         "soc_model": "MTK25D",
                         "firmware_tool_id": "mtk-downloader",
                         "download_identity": "MediaTek PreLoader USB VCOM",
+                        "preloader_exit_count": 2,
+                        "preloader_exit_interval_ms": 150,
+                        "preloader_ready_marker": "LK2]",
+                        "preloader_ready_timeout_ms": 5000,
+                        "download_wait_seconds": 120,
+                        "download_poll_interval_seconds": 2,
                         "commands": {
                             "status": "STATUS",
                             "power_on": "POWER ON",
@@ -771,6 +816,37 @@ def run_serial_command(
         timeout=timeout,
         dry_run=dry_run,
         command=command,
+    )
+
+
+def run_serial_transition(
+    target: SerialTarget,
+    command: str,
+    *,
+    repeat_count: int,
+    interval_ms: int,
+    expected_marker: str = "",
+    ready_timeout_ms: int = 3000,
+    timeout: float,
+    dry_run: bool = False,
+    cancel_callback: Callable[[], bool] | None = None,
+) -> CommandResult:
+    script = build_serial_transition_script(
+        target.port,
+        command,
+        repeat_count=repeat_count,
+        interval_ms=interval_ms,
+        expected_marker=expected_marker,
+        ready_timeout_ms=ready_timeout_ms,
+    )
+    return run_powershell_for_host(
+        target.host,
+        script,
+        target=target.label(),
+        timeout=timeout,
+        dry_run=dry_run,
+        command=f"serial-transition:{command}x{repeat_count}",
+        cancel_callback=cancel_callback,
     )
 
 
@@ -1041,6 +1117,16 @@ def build_device_preflight_report(
                     else "Configure the exact Genio FTDI board-control serial."
                 ),
             )
+        else:
+            add(
+                "download_target_identity",
+                bool(target.port.download_identity),
+                (
+                    f"Expected download USB identity: {target.port.download_identity}."
+                    if target.port.download_identity
+                    else "Configure a target-specific USB download identity for the Vendor adapter."
+                ),
+            )
         if target.host.is_local():
             add(
                 "tool_path",
@@ -1166,6 +1252,22 @@ def build_device_preflight_report(
             if preloader_exit_confirmed
             else "Run or manually confirm the proven preloader exit procedure.",
         )
+        if (
+            not genio_board_control
+            and preloader_exit_confirmed
+            and target.port.commands.get("preloader_exit")
+        ):
+            add(
+                "mtk_preloader_sequence",
+                bool(target.port.commands.get("preloader_exit"))
+                and 1 <= target.port.preloader_exit_count <= 8,
+                (
+                    f"Send {target.port.commands.get('preloader_exit', '')!r} "
+                    f"{target.port.preloader_exit_count} time(s), "
+                    f"{target.port.preloader_exit_interval_ms} ms apart; "
+                    f"marker {target.port.preloader_ready_marker or '(not required)'}."
+                ),
+            )
 
     fallback_action = "PROVISION" if mode == "provision-only" else "FORMAT"
     expected_confirmation = (
@@ -1218,15 +1320,16 @@ def build_device_probe_script(
     xml_path: str = "",
     expected_xml_sha256: str = "",
 ) -> str:
-    if phase not in {"normal", "download", "post"}:
+    if phase not in {"normal", "download", "download-identity", "post"}:
         raise RigConfigError(f"Unknown device probe phase: {phase!r}.")
     tool = target.host.firmware_for_port(target.port)
+    is_download_phase = phase in {"download", "download-identity"}
     lines = [
         "$ErrorActionPreference = 'Stop'",
         f"$targetLabel = {_ps_quote(target.label())}",
         f"$expectedPort = {_ps_quote(target.port.port)}",
     ]
-    if phase != "download":
+    if not is_download_phase:
         lines.extend(
             [
                 "$ports = [System.IO.Ports.SerialPort]::GetPortNames()",
@@ -1238,7 +1341,7 @@ def build_device_probe_script(
         lines.append(
             "Write-Output \"CHECK NORMAL_COM SKIPPED $expectedPort may re-enumerate in download mode\""
         )
-    if target.port.console_identity and phase != "download":
+    if target.port.console_identity and not is_download_phase:
         lines.extend(
             [
                 f"$consoleIdentity = {_ps_quote(target.port.console_identity)}",
@@ -1249,6 +1352,7 @@ def build_device_probe_script(
                 "Write-Output \"CHECK CONSOLE_IDENTITY OK $consoleIdentity\"",
             ]
         )
+    downloader_resolved = False
     if phase == "download":
         if tool is None:
             lines.append("throw 'No downloader tool profile is configured.'")
@@ -1265,6 +1369,7 @@ def build_device_probe_script(
                     "Write-Output \"CHECK TOOL_VERSION OK $toolVersion\"",
                 ]
             )
+            downloader_resolved = True
         if xml_path.strip():
             lines.extend(
                 [
@@ -1282,6 +1387,7 @@ def build_device_probe_script(
                     "Write-Output \"CHECK HASH OK $actualHash\"",
                 ]
             )
+    if is_download_phase:
         if target.port.download_identity:
             lines.extend(
                 [
@@ -1296,6 +1402,14 @@ def build_device_probe_script(
             and tool.adapter_kind == "qualcomm-qdl"
             and target.port.download_serial
         ):
+            if not downloader_resolved:
+                lines.extend(
+                    [
+                        f"$downloader = {_ps_quote(tool.executable)}",
+                        "$downloaderCommand = Get-Command -Name $downloader -ErrorAction SilentlyContinue | Select-Object -First 1",
+                        "if (Test-Path -LiteralPath $downloader -PathType Leaf) { $downloader = (Resolve-Path -LiteralPath $downloader).Path } elseif ($downloaderCommand -and $downloaderCommand.Path) { $downloader = $downloaderCommand.Path } else { throw \"Downloader not found: $downloader\" }",
+                    ]
+                )
             lines.extend(
                 [
                     f"$downloadSerial = {_ps_quote(target.port.download_serial)}",
@@ -1393,22 +1507,41 @@ def run_device_update(
     if _cancellation_requested(cancel_callback):
         return _cancelled_command_result(target.label(), "device-update")
 
+    transition: CommandResult | None = None
     if preloader_command:
-        exit_result = run_serial_command(
+        transition_timeout = max(
+            3.0,
+            (
+                target.port.preloader_ready_timeout_ms
+                + target.port.preloader_exit_interval_ms
+                * max(0, target.port.preloader_exit_count - 1)
+            )
+            / 1000.0
+            + 2.0,
+        )
+        transition = run_serial_transition(
             target,
             preloader_command,
-            timeout=max(2.0, target.port.read_timeout_ms / 1000.0 + 1.0),
+            repeat_count=target.port.preloader_exit_count,
+            interval_ms=target.port.preloader_exit_interval_ms,
+            expected_marker=target.port.preloader_ready_marker,
+            ready_timeout_ms=target.port.preloader_ready_timeout_ms,
+            timeout=transition_timeout,
             dry_run=dry_run,
+            cancel_callback=cancel_callback,
         )
-        if not exit_result.ok:
-            return exit_result
+        if not transition.ok:
+            return transition
 
-    probe = run_device_probe(
+    probe = wait_for_device_download_probe(
         target,
-        phase="download",
         xml_path=xml_path,
         expected_xml_sha256=expected_xml_sha256,
-        timeout=min(60.0, float(timeout or 30.0)),
+        wait_seconds=min(
+            target.port.download_wait_seconds,
+            max(1.0, float(timeout or target.port.download_wait_seconds)),
+        ),
+        poll_interval_seconds=target.port.download_poll_interval_seconds,
         dry_run=dry_run,
         cancel_callback=cancel_callback,
     )
@@ -1505,7 +1638,10 @@ def run_device_update(
         if not post.ok:
             return post
 
-    outputs = [report.render(), probe.stdout, flash.stdout]
+    outputs = [report.render()]
+    if transition is not None:
+        outputs.append(transition.stdout)
+    outputs.extend([probe.stdout, flash.stdout])
     if post is not None:
         outputs.append(post.stdout)
     return CommandResult(
@@ -1517,6 +1653,116 @@ def run_device_update(
         command=f"device-update:{mode}",
         dry_run=dry_run,
         details=dict(flash.details),
+    )
+
+
+def wait_for_device_download_probe(
+    target: SerialTarget,
+    *,
+    xml_path: str,
+    expected_xml_sha256: str = "",
+    wait_seconds: float,
+    poll_interval_seconds: float,
+    dry_run: bool = False,
+    cancel_callback: Callable[[], bool] | None = None,
+) -> CommandResult:
+    deadline = time.monotonic() + max(1.0, wait_seconds)
+    attempt = 0
+    last_result: CommandResult | None = None
+    initial_stdout = ""
+    while True:
+        if _cancellation_requested(cancel_callback):
+            return _cancelled_command_result(target.label(), "device-probe:download-wait")
+        attempt += 1
+        remaining = max(1.0, deadline - time.monotonic())
+        last_result = run_device_probe(
+            target,
+            phase="download" if attempt == 1 else "download-identity",
+            xml_path=xml_path,
+            expected_xml_sha256=expected_xml_sha256,
+            timeout=min(30.0, remaining),
+            dry_run=dry_run,
+            cancel_callback=cancel_callback,
+        )
+        if attempt == 1:
+            initial_stdout = last_result.stdout
+        if last_result.ok or dry_run:
+            details = dict(last_result.details)
+            details["download_probe_attempts"] = attempt
+            stdout = last_result.stdout
+            if attempt > 1 and initial_stdout:
+                stdout = "\n".join(item for item in (initial_stdout, stdout) if item)
+            return CommandResult(
+                target=last_result.target,
+                ok=last_result.ok,
+                returncode=last_result.returncode,
+                stdout=stdout,
+                stderr=last_result.stderr,
+                command=last_result.command,
+                dry_run=last_result.dry_run,
+                details=details,
+            )
+        if not _download_probe_failure_is_transient(last_result):
+            details = dict(last_result.details)
+            details["download_probe_attempts"] = attempt
+            return CommandResult(
+                target=last_result.target,
+                ok=False,
+                returncode=last_result.returncode,
+                stdout=last_result.stdout,
+                stderr=last_result.stderr,
+                command=last_result.command,
+                dry_run=last_result.dry_run,
+                details=details,
+            )
+        if time.monotonic() >= deadline:
+            break
+        sleep_remaining = min(
+            max(0.25, poll_interval_seconds),
+            max(0.0, deadline - time.monotonic()),
+        )
+        while sleep_remaining > 0:
+            if _cancellation_requested(cancel_callback):
+                return _cancelled_command_result(
+                    target.label(),
+                    "device-probe:download-wait",
+                )
+            chunk = min(0.25, sleep_remaining)
+            time.sleep(chunk)
+            sleep_remaining -= chunk
+
+    assert last_result is not None
+    detail = last_result.stderr or last_result.stdout or "download-mode target was not detected"
+    return CommandResult(
+        target=target.label(),
+        ok=False,
+        returncode=last_result.returncode or 1,
+        stdout="\n".join(
+            item
+            for item in (
+                initial_stdout,
+                last_result.stdout if attempt > 1 else "",
+            )
+            if item
+        ),
+        stderr=(
+            f"Timed out after {attempt} download-mode probe attempt(s) over "
+            f"{wait_seconds:g} seconds. Last result: {detail}"
+        ),
+        command="device-probe:download-wait",
+        dry_run=dry_run,
+        details={"download_probe_attempts": attempt},
+    )
+
+
+def _download_probe_failure_is_transient(result: CommandResult) -> bool:
+    output = f"{result.stdout}\n{result.stderr}".casefold()
+    return any(
+        marker in output
+        for marker in (
+            "download device identity not found:",
+            "qdl edl serial not found:",
+        )
     )
 
 
@@ -1555,7 +1801,7 @@ def _build_generic_firmware_execution_plan(
             (
                 "vendor-provision",
                 "provision",
-                "Run vendor UFS provisioning",
+                "Run vendor provisioning or BROM bootstrap operation",
                 tool.provision_arguments,
             )
         )
@@ -2532,6 +2778,90 @@ def build_serial_command_script(port: SerialPortConfig, command: str) -> str:
             "  $output = New-Object System.Text.StringBuilder",
             "  $chunk = $serial.ReadExisting()",
             "  if ($chunk) { [void]$output.Append($chunk) }",
+            "  $output.ToString()",
+            "} finally {",
+            "  if ($serial.IsOpen) { $serial.Close() }",
+            "  $serial.Dispose()",
+            "}",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def build_serial_transition_script(
+    port: SerialPortConfig,
+    command: str,
+    *,
+    repeat_count: int,
+    interval_ms: int,
+    expected_marker: str = "",
+    ready_timeout_ms: int = 3000,
+) -> str:
+    if repeat_count < 1 or repeat_count > 8:
+        raise RigConfigError("Serial transition repeat_count must be between 1 and 8.")
+    if interval_ms < 0 or interval_ms > 10_000:
+        raise RigConfigError("Serial transition interval_ms must be between 0 and 10000.")
+    if ready_timeout_ms < 100 or ready_timeout_ms > 120_000:
+        raise RigConfigError(
+            "Serial transition ready_timeout_ms must be between 100 and 120000."
+        )
+    if not command or any(character in command for character in "\r\n"):
+        raise RigConfigError("Serial transition command must be one non-empty line.")
+
+    lines = [
+        "$ErrorActionPreference = 'Stop'",
+        f"$expectedPort = {_ps_quote(port.port)}",
+        "$ports = [System.IO.Ports.SerialPort]::GetPortNames()",
+        "if ($ports -notcontains $expectedPort) { throw \"Configured COM port is not present: $expectedPort\" }",
+    ]
+    if port.console_identity:
+        lines.extend(
+            [
+                f"$consoleIdentity = {_ps_quote(port.console_identity)}",
+                "$serialDevice = Get-CimInstance Win32_SerialPort | Where-Object { $_.DeviceID -eq $expectedPort } | Select-Object -First 1",
+                "if (-not $serialDevice) { throw \"Cannot read hardware identity for configured COM: $expectedPort\" }",
+                "$consoleText = \"$($serialDevice.Name) $($serialDevice.Description) $($serialDevice.PNPDeviceID)\"",
+                "if ($consoleText.IndexOf($consoleIdentity, [StringComparison]::OrdinalIgnoreCase) -lt 0) { throw \"Console identity mismatch on $expectedPort. Expected: $consoleIdentity / Actual: $consoleText\" }",
+            ]
+        )
+    lines.extend(
+        [
+            "$serial = New-Object System.IO.Ports.SerialPort",
+            f"$serial.PortName = {_ps_quote(port.port)}",
+            f"$serial.BaudRate = {int(port.baud)}",
+            f"$serial.ReadTimeout = {int(port.read_timeout_ms)}",
+            f"$serial.WriteTimeout = {int(port.write_timeout_ms)}",
+            "$serial.Open()",
+            "try {",
+            "  $output = New-Object System.Text.StringBuilder",
+            f"  $expectedMarker = {_ps_quote(expected_marker.strip())}",
+            f"  for ($index = 0; $index -lt {repeat_count}; $index++) {{",
+            f"    [void]$output.Append(\"[TX $($index + 1)/{repeat_count}] \")",
+            f"    [void]$output.AppendLine({_ps_string(command)})",
+            f"    $serial.Write({_ps_string(command + port.newline)})",
+            f"    if ($index -lt {repeat_count - 1}) {{ Start-Sleep -Milliseconds {interval_ms} }}",
+            "    $chunk = $serial.ReadExisting()",
+            "    if ($chunk) { [void]$output.Append($chunk) }",
+            "  }",
+            f"  $deadline = [DateTime]::UtcNow.AddMilliseconds({ready_timeout_ms})",
+            "  do {",
+            "    $chunk = $serial.ReadExisting()",
+            "    if ($chunk) { [void]$output.Append($chunk) }",
+            "    if ($expectedMarker -and $output.ToString().IndexOf($expectedMarker, [StringComparison]::OrdinalIgnoreCase) -ge 0) { break }",
+            "    Start-Sleep -Milliseconds 50",
+            "  } while ([DateTime]::UtcNow -lt $deadline)",
+        ]
+    )
+    marker = expected_marker.strip()
+    if marker:
+        lines.extend(
+            [
+                "  if ($output.ToString().IndexOf($expectedMarker, [StringComparison]::OrdinalIgnoreCase) -lt 0) { throw \"Serial transition marker not found: $expectedMarker. Output: $($output.ToString())\" }",
+            ]
+        )
+    lines.extend(
+        [
             "  $output.ToString()",
             "} finally {",
             "  if ($serial.IsOpen) { $serial.Close() }",

@@ -90,9 +90,13 @@ Open `2 자동화 준비 > 실장기 제어 · Binary` on the PC that owns the C
 supports printable ASCII, explicit Enter/Ctrl+C/Ctrl+V, per-character delay, keepalive Enter, and
 parallel execution of one `.seq` on up to four selected channels.
 
-Binary jobs import checksummed Seq Generator metadata and execute one channel at a time. The slave
-rechecks the SoC vendor, downloader allowlist, XML hash, COM port, USB download identity, Qualcomm
-physical switch or MediaTek preloader state, and optional post-download ADB serial.
+Binary jobs can inspect an XML/package and all referenced payloads directly, or import checksummed
+Seq Generator metadata when Master and Slave paths differ. They execute one channel at a time. The
+slave rechecks the SoC vendor, downloader allowlist, package fingerprint, COM port, exact USB download
+identity, Qualcomm EDL switch or a configurable two-command MediaTek LK transition, and optional
+post-download ADB serial. Late USB re-enumeration is retried only for the configured bounded window.
+Static tool/XML/hash checks run once; later retries probe only the exact USB identity to keep host and
+FTP-side load bounded.
 
 See the [Korean device-control guide](https://stpcoder.github.io/win-automation-picker/device-control/).
 

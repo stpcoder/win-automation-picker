@@ -47,6 +47,13 @@ class BinaryReleaseMetadata:
     recommended_gpio_power: str = ""
     recommended_gpio_reset: str = ""
     recommended_gpio_download: str = ""
+    recommended_preloader_exit_command: str = ""
+    recommended_preloader_exit_count: int | None = None
+    recommended_preloader_exit_interval_ms: int | None = None
+    recommended_preloader_ready_marker: str = ""
+    recommended_preloader_ready_timeout_ms: int | None = None
+    recommended_download_wait_seconds: float | None = None
+    recommended_download_poll_interval_seconds: float | None = None
     recommended_download_reentry_command: str = ""
     recommended_firmware_partitions: tuple[str, ...] = ()
     recommended_firmware_tool_id: str = ""
@@ -110,6 +117,37 @@ class BinaryReleaseMetadata:
             recommended_gpio_power=str(provisioning.get("gpio_power") or "").strip(),
             recommended_gpio_reset=str(provisioning.get("gpio_reset") or "").strip(),
             recommended_gpio_download=str(provisioning.get("gpio_download") or "").strip(),
+            recommended_preloader_exit_command=str(
+                provisioning.get("preloader_exit_command") or ""
+            ).strip(),
+            recommended_preloader_exit_count=(
+                int(provisioning["preloader_exit_count"])
+                if "preloader_exit_count" in provisioning
+                else None
+            ),
+            recommended_preloader_exit_interval_ms=(
+                int(provisioning["preloader_exit_interval_ms"])
+                if "preloader_exit_interval_ms" in provisioning
+                else None
+            ),
+            recommended_preloader_ready_marker=str(
+                provisioning.get("preloader_ready_marker") or ""
+            ).strip(),
+            recommended_preloader_ready_timeout_ms=(
+                int(provisioning["preloader_ready_timeout_ms"])
+                if "preloader_ready_timeout_ms" in provisioning
+                else None
+            ),
+            recommended_download_wait_seconds=(
+                float(provisioning["download_wait_seconds"])
+                if "download_wait_seconds" in provisioning
+                else None
+            ),
+            recommended_download_poll_interval_seconds=(
+                float(provisioning["download_poll_interval_seconds"])
+                if "download_poll_interval_seconds" in provisioning
+                else None
+            ),
             recommended_download_reentry_command=str(
                 provisioning.get("download_reentry_command") or ""
             ).strip(),
@@ -125,6 +163,28 @@ class BinaryReleaseMetadata:
             raise BinaryExchangeError("binary metadata requires SoC model, source folder, and XML path")
         if not re.fullmatch(r"[0-9a-f]{64}", metadata.xml_sha256):
             raise BinaryExchangeError("binary metadata XML SHA-256 is invalid")
+        if metadata.recommended_preloader_exit_count is not None and not (
+            1 <= metadata.recommended_preloader_exit_count <= 8
+        ):
+            raise BinaryExchangeError("binary metadata preloader_exit_count is out of range")
+        if metadata.recommended_preloader_exit_interval_ms is not None and not (
+            0 <= metadata.recommended_preloader_exit_interval_ms <= 10000
+        ):
+            raise BinaryExchangeError("binary metadata preloader_exit_interval_ms is out of range")
+        if metadata.recommended_preloader_ready_timeout_ms is not None and not (
+            100 <= metadata.recommended_preloader_ready_timeout_ms <= 120000
+        ):
+            raise BinaryExchangeError("binary metadata preloader_ready_timeout_ms is out of range")
+        if metadata.recommended_download_wait_seconds is not None and not (
+            1 <= metadata.recommended_download_wait_seconds <= 900
+        ):
+            raise BinaryExchangeError("binary metadata download_wait_seconds is out of range")
+        if metadata.recommended_download_poll_interval_seconds is not None and not (
+            0.25 <= metadata.recommended_download_poll_interval_seconds <= 30
+        ):
+            raise BinaryExchangeError(
+                "binary metadata download_poll_interval_seconds is out of range"
+            )
         return metadata
 
     def channel_values(self) -> dict[str, Any]:
@@ -178,6 +238,22 @@ class BinaryReleaseMetadata:
             values["gpio_reset"] = self.recommended_gpio_reset
         if self.recommended_gpio_download:
             values["gpio_download"] = self.recommended_gpio_download
+        if self.recommended_preloader_exit_command:
+            values["preloader_exit_command"] = self.recommended_preloader_exit_command
+        if self.recommended_preloader_exit_count is not None:
+            values["preloader_exit_count"] = self.recommended_preloader_exit_count
+        if self.recommended_preloader_exit_interval_ms is not None:
+            values["preloader_exit_interval_ms"] = self.recommended_preloader_exit_interval_ms
+        if self.recommended_preloader_ready_marker:
+            values["preloader_ready_marker"] = self.recommended_preloader_ready_marker
+        if self.recommended_preloader_ready_timeout_ms is not None:
+            values["preloader_ready_timeout_ms"] = self.recommended_preloader_ready_timeout_ms
+        if self.recommended_download_wait_seconds is not None:
+            values["download_wait_seconds"] = self.recommended_download_wait_seconds
+        if self.recommended_download_poll_interval_seconds is not None:
+            values["download_poll_interval_seconds"] = (
+                self.recommended_download_poll_interval_seconds
+            )
         if self.recommended_download_reentry_command:
             values["download_reentry_command"] = self.recommended_download_reentry_command
         if self.recommended_firmware_partitions:

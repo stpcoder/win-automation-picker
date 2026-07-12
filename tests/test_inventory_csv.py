@@ -70,6 +70,13 @@ def test_inventory_csv_dump_round_trips_physical_identity() -> None:
                     "gpio_reset": "1",
                     "gpio_download": "2",
                     "download_reentry_command": "DOWNLOAD REENTER",
+                    "preloader_exit_command": "exit",
+                    "preloader_exit_count": 2,
+                    "preloader_exit_interval_ms": 150,
+                    "preloader_ready_marker": "LK2]",
+                    "preloader_ready_timeout_ms": 5000,
+                    "download_wait_seconds": 120,
+                    "download_poll_interval_seconds": 1.5,
                     "package_selector": "layout1/ufs",
                     "daa_enabled": True,
                     "firmware_partitions": ["mmc0", "mmc0boot0"],
@@ -88,6 +95,12 @@ def test_inventory_csv_dump_round_trips_physical_identity() -> None:
     assert fixture["usb_location"] == "Hub-A / Port 1"
     assert fixture["board_control_serial"] == "FTDI-CH9"
     assert fixture["download_reentry_command"] == "DOWNLOAD REENTER"
+    assert fixture["preloader_exit_count"] == 2
+    assert fixture["preloader_exit_interval_ms"] == 150
+    assert fixture["preloader_ready_marker"] == "LK2]"
+    assert fixture["preloader_ready_timeout_ms"] == 5000
+    assert fixture["download_wait_seconds"] == 120
+    assert fixture["download_poll_interval_seconds"] == 1.5
     assert fixture["package_selector"] == "layout1/ufs"
     assert fixture["daa_enabled"] is True
     assert fixture["firmware_partitions"] == ["mmc0", "mmc0boot0"]

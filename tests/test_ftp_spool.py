@@ -1527,6 +1527,12 @@ def test_slave_rig_config_exports_com_adb_power_and_channel_tool() -> None:
                 power_on_command="POWER ON 11",
                 power_off_command="POWER OFF 11",
                 preloader_exit_command="exit",
+                preloader_exit_count=2,
+                preloader_exit_interval_ms=150,
+                preloader_ready_marker="LK2]",
+                preloader_ready_timeout_ms=5000,
+                download_wait_seconds=120,
+                download_poll_interval_seconds=1.5,
                 download_reentry_command="DOWNLOAD REENTER",
             ),
         ),
@@ -1548,6 +1554,12 @@ def test_slave_rig_config_exports_com_adb_power_and_channel_tool() -> None:
     assert port["firmware_tool_id"] == "mtk-downloader"
     assert port["adb"]["serial"] == "MTK-CH11"
     assert port["commands"]["preloader_exit"] == "exit"
+    assert port["preloader_exit_count"] == 2
+    assert port["preloader_exit_interval_ms"] == 150
+    assert port["preloader_ready_marker"] == "LK2]"
+    assert port["preloader_ready_timeout_ms"] == 5000
+    assert port["download_wait_seconds"] == 120
+    assert port["download_poll_interval_seconds"] == 1.5
     assert port["commands"]["download_reentry"] == "DOWNLOAD REENTER"
     assert port["board_control_serial"] == "FTDI-CH11"
     assert port["gpio_download"] == "2"

@@ -121,6 +121,12 @@
           "power_on_command": "POWER ON 11",
           "power_off_command": "POWER OFF 11",
           "preloader_exit_command": "exit",
+          "preloader_exit_count": 2,
+          "preloader_exit_interval_ms": 150,
+          "preloader_ready_marker": "LK2]",
+          "preloader_ready_timeout_ms": 5000,
+          "download_wait_seconds": 120,
+          "download_poll_interval_seconds": 2,
           "binary_name": "download.xml",
           "binary_version": "MTK25D_20260711",
           "binary_source_path": "D:/binary/MTK25D_20260711",
@@ -191,6 +197,8 @@
 | `channels[].board_control_serial` | Genio가 정확한 FTDI board를 reset/download하는 serial |
 | `channels[].bootstrap_*` | MTK Download Agent, SRAM 주소, ISA mode, DAA signature/auth |
 | `channels[].gpio_*` | 기본값과 다를 때 쓰는 MTK power/reset/download GPIO |
+| `channels[].preloader_exit_*` | Generic MTK 진입 명령 반복 횟수·간격과 LK marker 대기 |
+| `channels[].download_wait_seconds`, `download_poll_interval_seconds` | 물리 switch/serial 전환 뒤 USB Download 장치를 재탐색하는 제한 시간과 간격 |
 | `channels[].download_reentry_command` | Generic 단계형 Downloader에서 포맷 후 같은 실장기를 download mode로 돌리는 검증 명령 |
 | `run_profiles` | Master의 PC별 매크로 실행표 |
 
@@ -242,6 +250,12 @@
           "bootstrap_path": "D:/binary/Genio720/lk.bin",
           "bootstrap_address": "0x2001000",
           "bootstrap_mode": "aarch64",
+          "preloader_exit_count": 2,
+          "preloader_exit_interval_ms": 150,
+          "preloader_ready_marker": "LK2]",
+          "preloader_ready_timeout_ms": 5000,
+          "download_wait_seconds": 120,
+          "download_poll_interval_seconds": 2,
           "adb": {"enabled": true, "serial": "MTK-CH11"},
           "commands": {
             "preloader_exit": "exit",

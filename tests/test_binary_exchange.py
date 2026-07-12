@@ -100,6 +100,13 @@ def test_binary_metadata_imports_recommended_device_communication(tmp_path) -> N
                     "gpio_power": "0",
                     "gpio_reset": "1",
                     "gpio_download": "2",
+                    "preloader_exit_command": "exit",
+                    "preloader_exit_count": 2,
+                    "preloader_exit_interval_ms": 150,
+                    "preloader_ready_marker": "LK2]",
+                    "preloader_ready_timeout_ms": 5000,
+                    "download_wait_seconds": 120,
+                    "download_poll_interval_seconds": 1.5,
                     "download_reentry_command": "DOWNLOAD REENTER",
                     "firmware_partitions": ["mmc0", "mmc0boot0"],
                     "firmware_tool_id": "mtk-downloader",
@@ -119,5 +126,12 @@ def test_binary_metadata_imports_recommended_device_communication(tmp_path) -> N
     assert values["board_control_serial"] == "FTDI-CH11"
     assert values["daa_enabled"] is True
     assert values["package_selector"] == "ufs,safe_rtos"
+    assert values["preloader_exit_command"] == "exit"
+    assert values["preloader_exit_count"] == 2
+    assert values["preloader_exit_interval_ms"] == 150
+    assert values["preloader_ready_marker"] == "LK2]"
+    assert values["preloader_ready_timeout_ms"] == 5000
+    assert values["download_wait_seconds"] == 120
+    assert values["download_poll_interval_seconds"] == 1.5
     assert values["download_reentry_command"] == "DOWNLOAD REENTER"
     assert values["firmware_partitions"] == ["mmc0", "mmc0boot0"]
