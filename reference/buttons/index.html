@@ -388,6 +388,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../device-control/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    실장기 직접 제어와 Binary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../getting-started/" class="md-nav__link">
         
   
@@ -797,7 +825,7 @@
   <span class="md-ellipsis">
     
   
-    SEQ Generator와 SK Commander
+    SEQ Generator와 실장기 실행
   
 
     
@@ -1053,6 +1081,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="자동화 준비">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#binary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        실장기 제어 · Binary
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1228,6 +1273,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="자동화 준비">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#binary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        실장기 제어 · Binary
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1340,6 +1402,10 @@
 <td>서버의 FLOW와 SEQ 라이브러리 다시 읽기</td>
 </tr>
 <tr>
+<td><code>SEQ 방식</code></td>
+<td>선택 행 또는 전체 실행표를 <code>직접 COM</code>/<code>SK Commander</code>로 전환</td>
+</tr>
+<tr>
 <td><code>Rig 대상 불러오기</code></td>
 <td>설정한 PC/CH를 실행표 행으로 생성</td>
 </tr>
@@ -1433,6 +1499,61 @@
 <tr>
 <td><code>오늘 작업 열기</code></td>
 <td>일일 실행 화면으로 이동</td>
+</tr>
+</tbody>
+</table>
+<h3 id="binary">실장기 제어 · Binary</h3>
+<table>
+<thead>
+<tr>
+<th>버튼</th>
+<th>동작</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>선택 연결</code></td>
+<td>이 Slave PC의 선택 COM을 지속 연결</td>
+</tr>
+<tr>
+<td><code>COM 검색</code></td>
+<td>이 PC가 감지한 COM, description과 HWID 표시</td>
+</tr>
+<tr>
+<td><code>전송</code></td>
+<td>선택 CH에 출력 가능한 ASCII와 Enter 전송</td>
+</tr>
+<tr>
+<td><code>제어 키</code></td>
+<td>Enter, Ctrl+C/0x03, Ctrl+V/0x16 또는 검증된 ASCII 붙여넣기</td>
+</tr>
+<tr>
+<td><code>동시 실행</code></td>
+<td>선택한 최대 4개 CH에서 <code>.seq</code>를 병렬 실행</td>
+</tr>
+<tr>
+<td><code>정지</code></td>
+<td>직접 SEQ의 다음 command 전송 중단</td>
+</tr>
+<tr>
+<td><code>PC 환경</code></td>
+<td>원격 Windows/PowerShell/pyserial 점검 요청</td>
+</tr>
+<tr>
+<td><code>통신 점검</code></td>
+<td>원격 COM/ADB 상태 점검 요청</td>
+</tr>
+<tr>
+<td><code>전원</code></td>
+<td>CH별 ON/OFF/cycle 명령 요청</td>
+</tr>
+<tr>
+<td><code>원격 사전점검</code></td>
+<td>Tool/XML hash/USB identity/Vendor gate 검사</td>
+</tr>
+<tr>
+<td><code>Binary 업데이트 시작</code></td>
+<td>사전점검을 다시 수행한 뒤 한 CH Downloader 실행</td>
 </tr>
 </tbody>
 </table>
@@ -1539,6 +1660,24 @@
 </tbody>
 </table>
 <h2 id="rig">Rig 설정</h2>
+<table>
+<thead>
+<tr>
+<th>버튼</th>
+<th>동작</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>장치 도구 &gt; 도구 추가</code></td>
+<td>MTK/QC 외부 Downloader CLI와 결과 규칙 등록</td>
+</tr>
+<tr>
+<td><code>Slave 설정 내보내기</code></td>
+<td>PC별 FTP 및 장치 설정 파일 두 개 생성</td>
+</tr>
+</tbody>
+</table>
 <table>
 <thead>
 <tr>

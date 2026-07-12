@@ -388,6 +388,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../device-control/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    실장기 직접 제어와 Binary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../getting-started/" class="md-nav__link">
         
   
@@ -993,7 +1021,7 @@
   <span class="md-ellipsis">
     
   
-    SEQ Generator와 SK Commander
+    SEQ Generator와 실장기 실행
   
 
     
@@ -1477,13 +1505,13 @@
 </tr>
 <tr>
 <td>FTP 원격 실행</td>
-<td style="text-align: right;">85%</td>
-<td>PC별 매크로/값 전송, 내장 workflow 실행, 긴급 중단 지원</td>
+<td style="text-align: right;">90%</td>
+<td>PC별 매크로/값 전송, 내장 workflow, 최대 4 CH 직접 COM batch와 긴급 중단 지원</td>
 </tr>
 <tr>
 <td>SEQ Generator 연동</td>
-<td style="text-align: right;">88%</td>
-<td>profile 검증 bundle, SHA-256 재검사, CH별 SEQ/SK Commander 런처, binary metadata 교환 지원</td>
+<td style="text-align: right;">92%</td>
+<td>profile 검증 bundle, SHA-256 재검사, 직접 COM/SK 런처 선택, binary metadata 교환 지원</td>
 </tr>
 <tr>
 <td>원격 세션 모니터링</td>
@@ -1504,7 +1532,7 @@
 <li><strong>Scratch는 장식용 블록 목록이 아닙니다.</strong> 실제 recipe tree를 drag/drop으로 바꾸며
   repeat/if/AND/OR 중첩과 Python export 결과도 같은 트리를 사용합니다.</li>
 <li><strong>현장 호환성이 가장 큰 잔여 위험입니다.</strong> Mac에서는 UI와 데이터 흐름을 검증했지만
-  사내 SK Commander selector, prompt timing, 실제 성공 SEQ는 Windows 장비 증거가 필요합니다.</li>
+  사내 SK Commander selector, serial prompt/timing과 실제 성공 SEQ는 Windows 장비 증거가 필요합니다.</li>
 <li><strong>운영자는 JSON을 몰라도 됩니다.</strong> 시험 변수, 공통 변수, PC/CH inventory와 실행표를
   GUI에서 편집합니다. JSON/고급 Python은 기본 흐름 밖에 둡니다.</li>
 </ul>
@@ -1784,7 +1812,7 @@
 <li>Windows 로그인 전 service session에서 UI 자동화하는 기능은 지원하지 않습니다.</li>
 <li>Agent Windows 시작 프로그램 등록은 아직 수동입니다.</li>
 <li>일반 Python 패키지는 고급 기능이며 slave에 외부 Python과 필요한 모듈이 있어야 합니다.</li>
-<li>같은 PC의 여러 실행표 행은 UI 충돌을 막기 위해 순차적으로 런처를 실행합니다. 런처는 각 SK Commander 테스트를 시작한 뒤 종료하고, 장시간 상태 추적은 별도 monitor workflow로 구성해야 합니다.</li>
+<li>같은 PC의 <code>직접 COM</code> 행은 고유 COM을 확인하고 최대 네 개를 병렬 실행합니다. SK Commander 행은 UI 충돌을 막기 위해 순차 실행하며 장시간 상태 추적은 별도 monitor workflow로 구성합니다.</li>
 <li>Campaign 보드는 계획/실행/판정/triage를 연결하지만 자재 또는 제품 root cause를 자동 확정하지 않습니다. AE가 evidence를 검토해 분류해야 합니다.</li>
 </ul>
 <h3 id="_8">호환성과 검증</h3>
@@ -1804,7 +1832,7 @@
 <li>[ ] CH 식별 조건과 상태 조건을 한 창에서 시험했다.</li>
 <li>[ ] 화면 요청 최소 간격과 파일 보관 개수를 확인했다.</li>
 <li>[ ] 전체 전송 전 실행표의 대상 PC와 매크로를 다시 확인했다.</li>
-<li>[ ] SEQ 행마다 SK Commander 런처, 슬롯, 필요한 CH를 지정했다.</li>
+<li>[ ] SEQ 행마다 직접 COM/런처 방식, 슬롯, CH, COM과 baud를 확인했다.</li>
 <li>[ ] 패키지 상세의 Compatibility와 Field Verified 상태를 확인했다.</li>
 </ul>
 

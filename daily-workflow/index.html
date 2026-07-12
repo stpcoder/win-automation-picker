@@ -464,6 +464,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#binary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        실장기 직접 제어와 Binary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#c" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -559,6 +570,34 @@
     
   
     AE Workbench 통합 흐름
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../device-control/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    실장기 직접 제어와 Binary
   
 
     
@@ -988,7 +1027,7 @@
   <span class="md-ellipsis">
     
   
-    SEQ Generator와 SK Commander
+    SEQ Generator와 실장기 실행
   
 
     
@@ -1337,6 +1376,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#binary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        실장기 직접 제어와 Binary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#c" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1516,13 +1566,24 @@ MTK · Preloader exit 후 Download
 <li>PC를 선택하고 <code>CH 관리</code>에서 <code>CH9~CH12</code>, Slot, COM, SoC, Binary, 자재를 등록합니다.</li>
 <li>CH가 없는 프로그램은 <code>QC-DL</code>, <code>Main</code> 같은 자유 이름을 사용합니다.</li>
 <li><code>서버 폴더 준비</code>로 각 Node의 FTP spool 폴더를 만듭니다.</li>
-<li><code>Slave 설정 내보내기</code>로 PC별 <code>rig-ftp.info</code>를 생성합니다.</li>
+<li><code>장치 도구</code>에서 검증된 MTK/QC Downloader와 결과 규칙을 등록합니다.</li>
+<li><code>Slave 설정 내보내기</code>로 PC별 <code>rig-ftp.info</code>와 <code>rig-commander.config.json</code>을 생성합니다.</li>
 </ol>
 <h3 id="slave-agent">Slave Agent</h3>
 <p><img alt="Slave PC에서 실행하는 Agent 화면" src="../assets/screenshots/11-slave-agent.png" /></p>
-<p>각 원격 PC에 <code>AEWorkbench.exe</code>와 해당 PC용 <code>rig-ftp.info</code>를 같은 폴더에 둡니다.
+<p>각 원격 PC에 <code>AEWorkbench.exe</code>, 해당 PC용 <code>rig-ftp.info</code>,
+<code>rig-commander.config.json</code>을 같은 폴더에 둡니다.
 <code>3 Rig 설정 &gt; 이 PC Agent</code>에서 Node ID를 확인하고 <code>Agent 시작</code>을 누릅니다. 평소에는
 창을 유지하고, <code>한 번 확인</code>과 <code>중단 신호 해제</code>는 <code>더보기</code>에서 사용합니다.</p>
+<h2 id="binary">실장기 직접 제어와 Binary</h2>
+<p><img alt="네 COM을 동시에 보는 직접 시리얼 콘솔" src="../assets/screenshots/12-four-channel-console.png" /></p>
+<ul>
+<li>실장기 PC에서 <code>2 자동화 준비 &gt; 실장기 제어 · Binary &gt; 4채널 콘솔</code>을 엽니다.</li>
+<li>선택 CH를 연결하고 ASCII 명령, Enter/Ctrl+C, 문자 지연 또는 검증된 SEQ를 보냅니다.</li>
+<li>Master에서 Binary를 바꿀 때는 같은 작업 영역의 <code>Binary 업데이트</code>를 사용합니다.</li>
+<li>한 CH씩 PC 환경·통신·XML hash·Vendor 조건을 점검한 후 실행합니다.</li>
+</ul>
+<p>전체 절차는 <a href="../device-control/">실장기 직접 제어와 Binary</a>를 따릅니다.</p>
 <h2 id="c">C. 매일 시험 시작</h2>
 <p><img alt="자동화 선택과 PC/CH 실행표만 남긴 오늘 작업" src="../assets/screenshots/01-today-work.png" /></p>
 <ol>
@@ -1531,13 +1592,17 @@ MTK · Preloader exit 후 Download
 <li><code>1 오늘 작업 &gt; 실행</code>에서 <code>자동화 새로고침</code>을 누릅니다.</li>
 <li>자동화 라이브러리에서 <code>[FLOW]</code> 프로그램 매크로와 <code>[SEQ]</code>를 확인합니다.</li>
 <li>실행할 <code>[SEQ]</code>를 선택합니다.</li>
+<li><code>SEQ 방식</code>에서 <code>직접 COM</code> 또는 <code>SK Commander</code>를 고릅니다.</li>
 <li><code>Rig 대상 불러오기</code>로 PC/CH 행을 만듭니다.</li>
-<li>셀을 더블클릭해 <code>sequence_name</code>, 자재, launcher, attempt를 확인·수정합니다.</li>
+<li>CH, COM, baud, <code>sequence_name</code>, 자재와 attempt를 확인·수정합니다.</li>
+<li><code>SK Commander</code> 방식이면 각 행의 launcher도 확인합니다.</li>
 <li>제외할 행은 첫 열 체크를 끕니다.</li>
 <li><code>실행 시작</code>을 누릅니다.</li>
 </ol>
 <p>한 행은 한 PC/CH/attempt입니다. PC01과 PC02가 다른 SEQ를 사용해도 같은 매크로를
 재사용하고 실행표 값만 다르게 입력합니다.</p>
+<p><code>직접 COM</code> 행은 같은 PC·Campaign·attempt 기준 최대 네 개가 한 묶음으로 동시에 실행됩니다.
+<code>SK Commander</code> 행은 Windows UI 포커스 충돌을 피하기 위해 Slave가 순서대로 런처를 실행합니다.</p>
 <p><code>운영 도구 열기</code>는 다음 저빈도 기능만 표시합니다.</p>
 <ul>
 <li>파일을 서버 라이브러리에 직접 등록</li>

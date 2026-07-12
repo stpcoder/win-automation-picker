@@ -388,6 +388,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../device-control/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    실장기 직접 제어와 Binary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../getting-started/" class="md-nav__link">
         
   
@@ -797,7 +825,7 @@
   <span class="md-ellipsis">
     
   
-    SEQ Generator와 SK Commander
+    SEQ Generator와 실장기 실행
   
 
     
@@ -1084,6 +1112,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#rig-commanderconfigjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        rig-commander.config.json
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#password_env" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1198,6 +1237,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#rig-commanderconfigjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        rig-commander.config.json
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#password_env" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1284,6 +1334,20 @@
 <span class="w">    </span><span class="nt">&quot;channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;CH1&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;line&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;line-a&quot;</span>
 <span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;device_tools&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mtk-downloader&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;vendor&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mediatek&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;executable&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;C:/Tools/MediaTek/VendorDownload.exe&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;arguments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;--xml&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;{xml}&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;--port&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;{port}&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;--mode&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;{mode}&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;execution_enabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;cli_evidence_ref&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;docs/vendor-cli/mtk-downloader.md&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;allowed_modes&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;download-only&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;format-all-download&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;success_exit_codes&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;success_markers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;Download OK&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;failure_markers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;FAIL&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;ERROR&quot;</span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">],</span>
 <span class="w">  </span><span class="nt">&quot;slaves&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">    </span><span class="p">{</span>
 <span class="w">      </span><span class="nt">&quot;node_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;rig-pc-04&quot;</span><span class="p">,</span>
@@ -1300,8 +1364,19 @@
 <span class="w">          </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;SK Commander 3&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;slot_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;S3&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;com_port&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;COM7&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;baud_rate&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">115200</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;firmware_port&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;COM7&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;soc_vendor&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mediatek&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;soc_model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;MTK25D&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;firmware_tool_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mtk-downloader&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;download_identity&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;MediaTek PreLoader USB VCOM&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;adb_executable&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;adb.exe&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;adb_serial&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;MTK-CH11&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;adb_enabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;adb_required_after_update&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;power_on_command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;POWER ON 11&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;power_off_command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;POWER OFF 11&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;preloader_exit_command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;exit&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;binary_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;download.xml&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;binary_version&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;MTK25D_20260711&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;binary_source_path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;D:/binary/MTK25D_20260711&quot;</span><span class="p">,</span>
@@ -1326,11 +1401,16 @@
 <span class="w">  </span><span class="nt">&quot;run_profiles&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">    </span><span class="p">{</span>
 <span class="w">      </span><span class="nt">&quot;enabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;alias&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;PC04&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;alias&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;PC04 / CH11&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;target&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;rig-pc-04&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;package&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;workflow.py&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;package&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;row-hammer.rigseq.zip&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;variables&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;sequenceinput_value&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Seq 4&quot;</span>
+<span class="w">        </span><span class="nt">&quot;channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;CH11&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;slot_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;S3&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;sequence_backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;serial&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;com_port&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;COM7&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;baud_rate&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;115200&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;sequence_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;RH_4C_SM8850_V04&quot;</span>
 <span class="w">      </span><span class="p">}</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">]</span>
@@ -1378,12 +1458,16 @@
 <td>job 실행 시 기본 변수</td>
 </tr>
 <tr>
+<td><code>device_tools</code></td>
+<td>실제 CLI와 결과 규칙을 확인한 외부 MTK/QC Downloader</td>
+</tr>
+<tr>
 <td><code>slaves</code></td>
 <td>master에서 보는 slave roster</td>
 </tr>
 <tr>
 <td><code>slaves[].channels</code></td>
-<td>자유 이름 CH/slot과 SoC, binary provenance, 자재, test, SEQ 초기값</td>
+<td>자유 CH, COM/baud/ADB/전원, SoC, binary provenance, 자재와 SEQ</td>
 </tr>
 <tr>
 <td><code>run_profiles</code></td>
@@ -1391,7 +1475,44 @@
 </tr>
 </tbody>
 </table>
+<p><code>run_profiles[].variables.sequence_backend</code>은 <code>serial</code>(화면의 <code>직접 COM</code>) 또는
+<code>sk_commander</code>입니다. 직접 COM 행에는 <code>com_port</code>와 <code>baud_rate</code>가 필요합니다.</p>
 <p><code>저장</code>은 현재 실행표도 <code>run_profiles</code>에 저장합니다. <code>Slave 설정 내보내기</code>로 생성되는 slave용 파일에서는 다른 PC의 실행표를 제거합니다. 실행표 변수는 일반 문자열로 저장되므로 비밀번호나 token은 저장하지 말고 실행 직전에 입력하십시오.</p>
+<h2 id="rig-commanderconfigjson">rig-commander.config.json</h2>
+<p>이 파일은 직접 편집하는 기본 경로가 아닙니다. <code>Slave 설정 내보내기</code>가 각 PC의 CH와
+<code>device_tools</code>를 기준으로 자동 생성합니다.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;hosts&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;rig-pc-04&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;address&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;localhost&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;transport&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;local&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;firmware_tools&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mtk-downloader&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;vendor&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mediatek&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;executable&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;C:/Tools/MediaTek/VendorDownload.exe&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;execution_enabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;allowed_modes&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;download-only&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;format-all-download&quot;</span><span class="p">]</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;ports&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;CH11&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;port&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;COM7&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;baud&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">115200</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;soc_vendor&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mediatek&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;soc_model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;MTK25D&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;firmware_tool_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mtk-downloader&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;adb&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;enabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;serial&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;MTK-CH11&quot;</span><span class="p">},</span>
+<span class="w">          </span><span class="nt">&quot;commands&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;preloader_exit&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;exit&quot;</span><span class="p">}</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><code>execution_enabled</code>는 실제 도구 버전의 CLI, 성공/실패 문구를 확인한 뒤 GUI에서만 켭니다.</p>
 <p>CH 이름은 <code>CH1</code> 형식을 강제하지 않습니다. <code>CH9</code>, <code>CH10</code>, <code>PC04-RIG2</code>를 사용할 수 있고 CH가 없는 단일 창은 <code>channel_id</code>를 비우고 <code>name</code>을 <code>Main</code>처럼 입력합니다. 각 항목에는 <code>channel_id</code>, <code>slot_id</code>, <code>name</code> 중 하나가 반드시 있어야 합니다.</p>
 <p>Heartbeat와 잘못된 동적 CH 누적을 제한하기 위해 Slave PC 한 대에는 최대 64개 CH/slot 항목을 등록할 수 있습니다.</p>
 <h2 id="password_env">password_env 사용</h2>

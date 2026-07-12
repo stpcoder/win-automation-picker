@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://stpcoder.github.io/win-automation-picker/getting-started/">
+        <link rel="canonical" href="https://stpcoder.github.io/win-automation-picker/device-control/">
       
       
-        <link rel="prev" href="../device-control/">
+        <link rel="prev" href="../ae-workbench/">
       
       
-        <link rel="next" href="../interface/">
+        <link rel="next" href="../getting-started/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>설치와 실행 - AE Workbench Manual</title>
+        <title>실장기 직접 제어와 Binary - AE Workbench Manual</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#_1" class="md-skip">
+        <a href="#binary" class="md-skip">
           콘텐츠로 이동
         </a>
       
@@ -116,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              설치와 실행
+              실장기 직접 제어와 Binary
             
           </span>
         </div>
@@ -385,34 +385,6 @@
                 
   
   
-  
-  
-    <li class="md-nav__item">
-      <a href="../device-control/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    실장기 직접 제어와 Binary
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
     
   
   
@@ -432,7 +404,7 @@
   <span class="md-ellipsis">
     
   
-    설치와 실행
+    실장기 직접 제어와 Binary
   
 
     
@@ -450,7 +422,7 @@
   <span class="md-ellipsis">
     
   
-    설치와 실행
+    실장기 직접 제어와 Binary
   
 
     
@@ -476,10 +448,143 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        통신 구조
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        최초 CH 설정
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4채널 콘솔
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4채널 콘솔">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#seq" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SEQ 직접 실행
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#master-com-seq" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Master에서 직접 COM SEQ 배포
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#downloader" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Downloader 도구 등록
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#seq-generator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seq Generator 준비
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#binary_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Binary 업데이트
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Binary 업데이트">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#qualcomm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Qualcomm
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mediatek" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MediaTek
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#_2" class="md-nav__link">
     <span class="md-ellipsis">
       
-        실행 파일 다운로드
+        전원 제어
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slave" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Slave 내보내기
       
     </span>
   </a>
@@ -490,18 +595,7 @@
   <a href="#_3" class="md-nav__link">
     <span class="md-ellipsis">
       
-        권한
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#_4" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        권장 통합 실행
+        중단 정책
       
     </span>
   </a>
@@ -512,7 +606,7 @@
   <a href="#windows-11" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Windows 11 장치 확인
+        Windows 11 확인
       
     </span>
   </a>
@@ -520,32 +614,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#_5" class="md-nav__link">
+  <a href="#_4" class="md-nav__link">
     <span class="md-ellipsis">
       
-        매크로 생성기만 실행
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#ftp" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        FTP 운영 프로그램 실행
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#_6" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        로컬 개발 환경에서 실행
+        공개 기술 기준
       
     </span>
   </a>
@@ -556,6 +628,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    설치와 실행
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -1226,10 +1326,143 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        통신 구조
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        최초 CH 설정
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4채널 콘솔
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4채널 콘솔">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#seq" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SEQ 직접 실행
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#master-com-seq" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Master에서 직접 COM SEQ 배포
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#downloader" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Downloader 도구 등록
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#seq-generator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seq Generator 준비
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#binary_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Binary 업데이트
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Binary 업데이트">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#qualcomm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Qualcomm
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mediatek" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MediaTek
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#_2" class="md-nav__link">
     <span class="md-ellipsis">
       
-        실행 파일 다운로드
+        전원 제어
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slave" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Slave 내보내기
       
     </span>
   </a>
@@ -1240,18 +1473,7 @@
   <a href="#_3" class="md-nav__link">
     <span class="md-ellipsis">
       
-        권한
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#_4" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        권장 통합 실행
+        중단 정책
       
     </span>
   </a>
@@ -1262,7 +1484,7 @@
   <a href="#windows-11" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Windows 11 장치 확인
+        Windows 11 확인
       
     </span>
   </a>
@@ -1270,32 +1492,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#_5" class="md-nav__link">
+  <a href="#_4" class="md-nav__link">
     <span class="md-ellipsis">
       
-        매크로 생성기만 실행
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#ftp" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        FTP 운영 프로그램 실행
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#_6" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        로컬 개발 환경에서 실행
+        공개 기술 기준
       
     </span>
   </a>
@@ -1322,94 +1522,242 @@
   
 
 
-<h1 id="_1">설치와 실행</h1>
-<h2 id="_2">실행 파일 다운로드</h2>
-<p>GitHub Releases의 <code>latest</code>에서 다음 파일을 받습니다.</p>
+<h1 id="binary">실장기 직접 제어와 Binary 업데이트</h1>
+<p><code>2 자동화 준비 &gt; 실장기 제어 · Binary</code>는 SK Commander 화면 매크로와 별개로
+COM에 직접 연결하는 작업 영역입니다. 한 PC에 연결된 최대 4개 실장기를 동시에 보고,
+검증된 외부 MTK/Qualcomm Downloader를 한 CH씩 실행합니다.</p>
+<h2 id="_1">통신 구조</h2>
 <table>
 <thead>
 <tr>
-<th>파일</th>
-<th>설명</th>
+<th>작업</th>
+<th>실행 위치</th>
+<th>통신 방식</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>AEWorkbench.exe</code></td>
-<td>권장 통합 앱</td>
+<td>실시간 4채널 콘솔</td>
+<td>COM이 실제 연결된 Slave PC</td>
+<td>pyserial 지속 연결</td>
 </tr>
 <tr>
-<td><code>WinAutomationPicker.exe</code></td>
-<td>매크로 생성기</td>
+<td>같은 SEQ 동시 전송</td>
+<td>해당 Slave PC</td>
+<td>CH별 독립 thread와 COM</td>
 </tr>
 <tr>
-<td><code>RigFtpCommander.exe</code></td>
-<td>FTP master/slave GUI</td>
+<td>전원·통신·Binary 요청</td>
+<td>Master에서 선택한 Slave로 제출</td>
+<td>FTP의 짧은 job 파일</td>
 </tr>
 <tr>
-<td><code>RigFtpCli.exe</code></td>
-<td>FTP master/slave CLI</td>
-</tr>
-<tr>
-<td><code>RigCommander.exe</code></td>
-<td>터미널 기반 rig 제어 CLI</td>
+<td>결과 확인</td>
+<td>Master</td>
+<td>FTP 결과·로그 새로고침</td>
 </tr>
 </tbody>
 </table>
-<p>다운로드 주소:</p>
-<div class="highlight"><pre><span></span><code>https://github.com/stpcoder/win-automation-picker/releases/latest/download/AEWorkbench.exe
-https://github.com/stpcoder/win-automation-picker/releases/latest/download/WinAutomationPicker.exe
-https://github.com/stpcoder/win-automation-picker/releases/latest/download/RigFtpCommander.exe
-https://github.com/stpcoder/win-automation-picker/releases/latest/download/RigFtpCli.exe
-https://github.com/stpcoder/win-automation-picker/releases/latest/download/RigCommander.exe
-</code></pre></div>
-<div class="admonition note">
-<p class="admonition-title">SmartScreen 경고</p>
-<p>코드 서명된 exe가 아니므로 Windows SmartScreen 경고가 나올 수 있습니다. 사내 배포 정책에 맞게 허용 후 실행합니다.</p>
-</div>
-<h2 id="_3">권한</h2>
-<p>대상 프로그램이 관리자 권한으로 실행 중이면 <code>WinAutomationPicker.exe</code>도 관리자 권한으로 실행해야 클릭/입력 자동화가 제대로 됩니다.</p>
-<h2 id="_4">권장 통합 실행</h2>
+<p>FTP는 실시간 터미널 스트림으로 사용하지 않습니다. Slave Agent는 poll할 때만 FTP에
+접속하고, 콘솔 수신은 로컬 메모리에서 처리하므로 다른 FTP 사용자의 연결을 계속
+점유하지 않습니다.</p>
+<h2 id="ch">최초 CH 설정</h2>
 <ol>
-<li><code>AEWorkbench.exe</code>를 실행합니다.</li>
-<li>처음 구축할 때는 <code>3 Rig 설정</code>, 프로그램을 만들 때는 <code>2 자동화 준비</code>를 사용합니다.</li>
-<li>평소에는 첫 화면 <code>1 오늘 작업</code>에서 자동화와 PC/CH 값만 확인합니다.</li>
+<li><code>3 Rig 설정 &gt; Master · 원격 PC &gt; 원격 PC · CH</code>를 엽니다.</li>
+<li>PC를 선택하고 <code>CH 관리</code>를 누릅니다.</li>
+<li><code>장치</code> 탭에서 자유 CH 이름, Slot, Vendor와 SoC를 입력합니다.</li>
+<li><code>통신 · 전원</code> 탭에서 Console COM과 baud를 입력합니다.</li>
+<li>필요하면 <code>ADB 사용</code>을 켜고 ADB serial, Download COM, USB 식별자와 전원 명령을 입력합니다.</li>
+<li>MTK에서 실제로 검증한 명령이 있을 때만 <code>preloader 종료 명령</code>을 입력합니다.</li>
 </ol>
-<p>실장기 COM을 직접 볼 때는 <code>2 자동화 준비 &gt; 실장기 제어 · Binary</code>를 엽니다. Binary를
-사용하는 Slave는 <code>rig-ftp.info</code>와 <code>rig-commander.config.json</code>이 EXE 옆에 모두 있어야 합니다.
-4. 자세한 순서는 <a href="../daily-workflow/">Mobile DRAM AE 업무 흐름</a>을 따릅니다.</p>
-<p>SEQ를 Workbench에서 편집·검증·빌드하려면 Test Sequence Generator release의
-<code>TestSeqGenerator.exe</code>와 <code>SeqTool.exe</code>가 서로 같은 폴더에 있어야 합니다. 그 폴더를
-<code>AEWorkbench.exe</code> 옆의 <code>TestSeqGenerator/</code>로 두면 자동으로 발견합니다.</p>
-<h2 id="windows-11">Windows 11 장치 확인</h2>
-<p>최신 Release는 GitHub <code>windows-latest</code> runner에서 GUI/EXE 시작과 전체 테스트를 수행합니다.
-실제 사내 PC에서는 다음 명령으로 Windows build, PowerShell과 serial backend를 먼저 확인합니다.</p>
+<p>CH 이름은 <code>CH1</code>로 고정되지 않습니다. <code>CH9</code>, <code>CH11</code>, <code>QC-DL</code>, <code>PC04-RIG2</code>를 그대로
+사용할 수 있습니다. 한 PC의 Console COM은 서로 달라야 합니다.</p>
+<h2 id="4">4채널 콘솔</h2>
+<p><img alt="COM을 지속 연결하는 4채널 실장기 콘솔" src="../assets/screenshots/12-four-channel-console.png" /></p>
+<ol>
+<li>실장기 PC에서 <code>AEWorkbench.exe</code>를 실행합니다.</li>
+<li>상단 Node ID와 같은 PC를 선택합니다.</li>
+<li>사용할 CH 체크를 켜고 <code>선택 연결</code>을 누릅니다.</li>
+<li>각 패널에서 <code>COM @ baud</code>, SoC와 현재 부팅 상태를 확인합니다.</li>
+<li>공통 명령을 입력하고 <code>전송</code>을 누릅니다.</li>
+</ol>
+<p><code>COM 검색</code>은 Windows가 현재 감지한 port, description과 HWID를 보여줍니다. USB 재연결로
+COM 번호가 바뀌었으면 이 값을 확인하고 <code>Rig 설정 &gt; CH 관리</code>에서 수정합니다.</p>
+<p>입력칸은 출력 가능한 ASCII만 받습니다. <code>;</code>, <code>-</code>, <code>_</code>, <code>/</code>, <code>0x</code>는 사용할 수 있지만
+한글과 제어 문자는 거부합니다. 제어 문자는 <code>제어 키</code>에서 보냅니다.</p>
+<table>
+<thead>
+<tr>
+<th>컨트롤</th>
+<th>동작</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Enter</code></td>
+<td>CH에 설정된 CRLF 전송</td>
+</tr>
+<tr>
+<td><code>Ctrl+C 중단 문자</code></td>
+<td><code>0x03</code> 전송</td>
+</tr>
+<tr>
+<td><code>Ctrl+V 제어 문자 (0x16)</code></td>
+<td>terminal control byte <code>0x16</code> 전송</td>
+</tr>
+<tr>
+<td><code>클립보드 ASCII 붙여넣기</code></td>
+<td>검증된 ASCII를 명령 입력칸에 넣고 전송 전에 확인</td>
+</tr>
+<tr>
+<td><code>exit 2회</code></td>
+<td>150 ms 간격으로 <code>exit</code>와 Enter를 두 번 전송해 boot context 전환</td>
+</tr>
+<tr>
+<td><code>글자 지연 ms</code></td>
+<td>불안정한 입력을 한 byte씩 지연 전송</td>
+</tr>
+<tr>
+<td><code>주기 Enter 초</code></td>
+<td>0이면 꺼짐, 양수이면 CH별 keepalive Enter</td>
+</tr>
+</tbody>
+</table>
+<p>수신 버퍼에서 최신 marker를 찾아 <code>PRELOADER</code>, <code>BOOTLOADER</code>, <code>LK</code>, <code>OS CONSOLE</code>,
+<code>OS LOGIN</code>으로 표시합니다. 예를 들어 <code>LK2]</code>가 들어오면 <code>LK</code>가 표시됩니다. marker가
+없어도 원문은 콘솔에 계속 남습니다. 메모리는 CH별 최대 약 256 KB, 화면은 최근 5,000줄로
+제한되어 장시간 실행해도 무한히 커지지 않습니다.</p>
+<h3 id="seq">SEQ 직접 실행</h3>
+<ol>
+<li><code>SEQ 선택</code>에서 검증된 <code>.seq</code>를 고릅니다.</li>
+<li>실행할 CH만 체크합니다.</li>
+<li><code>동시 실행</code>을 누릅니다.</li>
+<li>각 Grid와 command의 <code>PASS</code> 또는 <code>FAIL</code> 진행을 패널에서 확인합니다.</li>
+<li>중단이 필요하면 <code>정지</code>를 누릅니다.</li>
+</ol>
+<p>Grid header <code>#...</code>는 로그 구간으로 사용하고, command는 <code>;</code>로 나눕니다. 선택 CH는
+서로 다른 thread에서 실행되므로 네 장치가 순서대로 기다리지 않습니다. 같은 COM을 다른
+터미널이나 SK Commander가 열고 있으면 연결이 실패하므로 먼저 해당 COM을 닫아야 합니다.
+현장 SEQ 규칙에 맞지 않는 <code>cmd1; cmd2;</code> 형태의 구분자 뒤 공백과 마지막 <code>;</code> 누락은
+전송 전에 차단합니다.
+SEQ 실행 중에는 주기 Enter와 수동 명령이 자동으로 잠시 중지됩니다. 최근 TX/RX와 command
+판정은 <code>work_dir/serial-console/*.log</code>와 <code>*.json</code>에 CH별로 저장됩니다.
+각 raw log는 최대 약 256 KB이고 JSON의 command 응답은 최근 4 KB만 보관합니다. 파일 수는
+<code>고급 정책 &gt; 로그 보관 개수</code>를 넘으면 이 전용 폴더의 오래된 소유 파일만 정리합니다.</p>
+<h3 id="master-com-seq">Master에서 직접 COM SEQ 배포</h3>
+<p><img alt="PC와 CH별 직접 COM 실행표" src="../assets/screenshots/01-today-work.png" /></p>
+<ol>
+<li>Generator에서 검사한 <code>*.rigseq.zip</code>을 서버 라이브러리에 등록합니다.</li>
+<li><code>1 오늘 작업 &gt; 실행</code>에서 <code>[SEQ]</code>를 선택합니다.</li>
+<li><code>SEQ 방식</code>을 <code>직접 COM</code>으로 바꾸고 <code>Rig 대상 불러오기</code>를 누릅니다.</li>
+<li>각 행의 CH, COM, baud, SEQ와 자재 값을 확인합니다.</li>
+<li>제외할 CH의 첫 열 체크를 끄고 <code>실행 시작</code>을 누릅니다.</li>
+</ol>
+<p>Master는 같은 Node, Campaign ID, attempt의 직접 COM 행을 한 job으로 묶습니다. Slave는 서로
+다른 COM인지 다시 검사한 뒤 최대 4개 CH를 독립 thread에서 동시에 실행합니다. attempt 1과
+attempt 2는 별도 묶음이므로 반복 순서는 유지됩니다. 행별 방식을 바꾸려면 해당 행을 선택한
+뒤 상단 <code>SEQ 방식</code>을 바꾸거나 <code>SEQ 방식</code> 셀을 더블클릭합니다.</p>
+<p>Slave는 Grid/command 진행을 heartbeat에 주기적으로 기록하고, 최종 CH별 manifest와 console을
+<code>work_dir/serial-results/{job-CH}/</code>에 저장합니다. FTP에는 제한된 결과와 로그만 올라가며 raw
+serial stream을 실시간 socket처럼 계속 전송하지 않습니다.</p>
+<h2 id="downloader">Downloader 도구 등록</h2>
+<p><img alt="실제 CLI 근거와 결과 규칙을 등록하는 장치 도구 화면" src="../assets/screenshots/14-device-tools.png" /></p>
+<p><code>3 Rig 설정 &gt; Master · 원격 PC &gt; 장치 도구</code>에서 실제 회사 도구를 등록합니다.</p>
+<ol>
+<li>Vendor와 <code>.exe</code> 경로를 정합니다.</li>
+<li>인자를 한 줄에 하나씩 입력합니다.</li>
+<li><code>{xml}</code>, <code>{port}</code>, <code>{mode}</code>, <code>{channel}</code>, <code>{adb_serial}</code> placeholder를 사용합니다.</li>
+<li>도구가 요구하는 Download/Format mode 값과 timeout을 입력합니다.</li>
+<li>실제 버전의 <code>--help</code> 또는 사내 문서를 <code>CLI 근거 문서</code>에 기록합니다.</li>
+<li>성공 문구와 실패 문구를 각각 한 줄 이상 등록합니다.</li>
+<li>현장 dry-run을 확인한 뒤에만 <code>실제 실행 허용</code>을 켭니다.</li>
+</ol>
+<p>Workbench는 Qualcomm/MTK의 비공개 프로토콜을 추측해 구현하지 않습니다. 등록한 외부
+Downloader를 실행하고, exit code·성공 문구·실패 문구와 전체 stdout/stderr를 검사합니다.
+도구 버전이 바뀌면 실행 허용을 끄고 CLI와 결과 규칙을 다시 확인합니다.</p>
+<h2 id="seq-generator">Seq Generator 준비</h2>
+<p>Test Sequence Generator의 <code>Provision</code> 탭에서 다음 값을 설정합니다.</p>
+<ul>
+<li>Vendor, SoC, Binary root와 XML</li>
+<li>대상 Slot/CH, Console COM과 baud</li>
+<li>예상 USB/COM Download 식별자</li>
+<li>여러 ADB 장치 중 하나를 고정하는 ADB serial</li>
+<li>Download 후 ADB online을 필수로 볼지 여부</li>
+<li>Downloader ID와 실제 경로</li>
+</ul>
+<p><code>Build Preflight Plan</code>이 <code>READY</code>인지 확인하고 <code>Export Release Metadata</code>로
+<code>*.rigbinary.json</code>을 만듭니다. 파일에는 XML 경로와 SHA-256, 원본 폴더, COM/baud/ADB
+힌트만 들어가며 proprietary binary 파일 자체는 복사하지 않습니다.</p>
+<h2 id="binary_1">Binary 업데이트</h2>
+<p><img alt="대상·안전 조건·실행을 분리한 Binary 업데이트 화면" src="../assets/screenshots/13-binary-update.png" /></p>
+<ol>
+<li>Master에서 대상 PC와 CH를 선택합니다.</li>
+<li><code>PC 환경</code>으로 Windows, PowerShell과 serial backend를 점검합니다.</li>
+<li><code>통신 점검</code>으로 대상 COM과 ADB 상태를 확인합니다.</li>
+<li><code>*.rigbinary.json</code>을 불러옵니다.</li>
+<li>Slave에서 보이는 XML 경로를 확인합니다.</li>
+<li>Vendor의 물리 조건을 확인합니다.</li>
+<li><code>원격 사전점검</code>을 실행합니다.</li>
+<li>결과가 PASS일 때 <code>Binary 업데이트 시작</code>을 누릅니다.</li>
+</ol>
+<p>Metadata Vendor/SoC와 CH 프로필이 다르면 제출 단계에서 차단됩니다. Slave에서는 다시
+Downloader 경로, XML 존재, XML SHA-256, COM, USB Download 식별자, 허용 모드와 결과
+규칙을 확인합니다.</p>
+<h3 id="qualcomm">Qualcomm</h3>
+<ul>
+<li>물리 Download/EDL 스위치를 실제로 누르거나 고정한 뒤 체크합니다.</li>
+<li>CH의 Download 식별자에는 현장에서 확인한 EDL 장치 문자열을 저장합니다.</li>
+<li>여러 장치가 연결됐을 때 ADB 명령은 항상 CH의 serial을 사용합니다.</li>
+<li><code>Format + Download</code>는 해당 도구 프로필에서 명시적으로 허용한 경우만 가능합니다.</li>
+</ul>
+<h3 id="mediatek">MediaTek</h3>
+<ul>
+<li>검증된 절차로 preloader를 종료한 뒤 확인 체크를 켭니다.</li>
+<li>CH에 <code>preloader_exit</code> 명령이 검증되어 있으면 <code>등록 명령으로 종료</code>를 사용할 수 있습니다.</li>
+<li><code>Format + Download</code>는 도구 프로필 허용과 아래 확인문이 모두 필요합니다.</li>
+</ul>
+<div class="highlight"><pre><span></span><code>FORMAT rig-pc-04:CH11
+</code></pre></div>
+<p>확인문은 선택한 Node/CH와 정확히 같아야 합니다.</p>
+<h2 id="_2">전원 제어</h2>
+<p><code>전원 &gt; 켜기/끄기/다시 켜기</code>는 CH 프로필의 <code>power_on</code>, <code>power_off</code> 명령을 Console
+COM과 baud로 전송합니다. 명령이 비어 있으면 실행하지 않고 설정 오류를 반환합니다.
+장비마다 명령이 다르므로 예제 <code>POWER ON</code>을 실제 근거 없이 그대로 사용하면 안 됩니다.</p>
+<h2 id="slave">Slave 내보내기</h2>
+<p><code>Slave 설정 내보내기</code>는 PC별 폴더에 두 파일을 만듭니다.</p>
+<div class="highlight"><pre><span></span><code>PC04/
+  rig-ftp.info
+  rig-commander.config.json
+</code></pre></div>
+<p>두 파일과 <code>AEWorkbench.exe</code>를 같은 폴더에 둡니다. <code>rig-commander.config.json</code>에는 해당
+PC의 CH, COM, baud, ADB, 전원 명령과 Downloader 프로필이 들어갑니다. 설정을 바꿨으면
+다시 내보내고 Slave 파일을 교체합니다.</p>
+<h2 id="_3">중단 정책</h2>
+<ul>
+<li>콘솔의 직접 SEQ는 <code>정지</code>로 다음 command 전송을 막습니다.</li>
+<li>FTP 긴급 중단은 대기 작업을 차단하고 실행 중 직접 COM 묶음이 다음 stop 확인 시 멈추게 합니다.</li>
+<li>직접 COM 묶음에서 한 CH가 실패해도 다른 CH는 자체 결과를 확정하며, 작업 전체는 FAIL입니다.</li>
+<li>외부 Downloader가 이미 실행된 Binary 작업은 강제 종료하지 않습니다.</li>
+<li>업데이트 중 프로세스 강제 종료, USB 분리 또는 전원 OFF는 하지 않습니다.</li>
+<li>Binary 작업은 한 job에 한 CH만 허용합니다.</li>
+</ul>
+<h2 id="windows-11">Windows 11 확인</h2>
+<p><code>PC 환경</code> 또는 다음 명령은 OS build, x64/ARM64, PowerShell과 pyserial 포함 여부를
+검사합니다.</p>
 <div class="highlight"><pre><span></span><code><span class="n">RigCommander</span><span class="p">.</span><span class="n">exe</span> <span class="n">device</span> <span class="n">system-check</span>
 </code></pre></div>
-<p>COM과 UI Automation은 로그인된 interactive Windows 11 desktop에서 한 CH dry-run으로 최종
-확인합니다. 표준 CI runner에는 실제 COM 실장기와 SK Commander가 없습니다.</p>
-<h2 id="_5">매크로 생성기만 실행</h2>
-<ol>
-<li><code>WinAutomationPicker.exe</code>를 실행합니다.</li>
-<li>대상 업무 프로그램을 켭니다.</li>
-<li><code>대상 확인</code>을 눌러 대상 프로그램의 버튼이나 입력칸을 클릭해 봅니다.</li>
-<li><code>매크로 만들기</code> 위쪽 캡처 품질 배지가 정상인지 확인합니다.</li>
-<li><code>이벤트 &gt; 클릭 녹화</code> 블록을 작업실로 끌어 놓고 실제 드래그 편집이 되는지 확인합니다.</li>
-</ol>
-<h2 id="ftp">FTP 운영 프로그램 실행</h2>
-<ol>
-<li>master PC에서 <code>RigFtpCommander.exe</code>를 실행합니다.</li>
-<li><code>3 Rig 설정 &gt; Master · 원격 PC &gt; Master 연결</code>에 FTP 정보를 입력합니다.</li>
-<li><code>연결 확인</code> 후 설정 파일 영역의 <code>저장</code>을 눌러 <code>rig-ftp.info</code>를 저장합니다.</li>
-<li>slave PC에는 <code>AEWorkbench.exe</code>, 해당 PC용 <code>rig-ftp.info</code>,
-   <code>rig-commander.config.json</code>을 같은 폴더에 둡니다.</li>
-</ol>
-<h2 id="_6">로컬 개발 환경에서 실행</h2>
-<p>개발 환경에서는 다음처럼 실행할 수 있습니다.</p>
-<div class="highlight"><pre><span></span><code><span class="n">python</span> <span class="n">-m</span> <span class="n">pip</span> <span class="n">install</span> <span class="n">-e</span> <span class="p">.</span>
-<span class="n">python</span> <span class="n">-m</span> <span class="n">win_automation_picker</span>
-<span class="n">python</span> <span class="n">-m</span> <span class="n">win_automation_picker</span><span class="p">.</span><span class="n">ae_workbench</span>
-<span class="n">python</span> <span class="n">-m</span> <span class="n">win_automation_picker</span><span class="p">.</span><span class="n">rig_ftp_commander</span>
-</code></pre></div>
+<p>GitHub Actions는 <code>windows-latest</code>에서 GUI 생성, EXE 시작, <code>device system-check</code>와 전체
+테스트를 실행합니다. 표준 GitHub runner는 사내 Windows 11 desktop/COM 하드웨어가
+아니므로 최종 확인은 실제 로그인된 Windows 11 실장기 PC에서 한 CH dry-run으로 합니다.</p>
+<h2 id="_4">공개 기술 기준</h2>
+<ul>
+<li>Android 공식 ADB 문서: <a href="https://developer.android.com/tools/adb">여러 장치에서는 <code>-s serial</code>로 대상을 고정</a></li>
+<li>Qualcomm 공식 bring-up 문서: <a href="https://docs.qualcomm.com/doc/80-77183-266/80-77183-266.pdf">EDL/QDL과 <code>05c6:9008</code> 장치 식별 예시</a></li>
+<li>MediaTek 공식 Genio Tools 문서: <a href="https://mediatek.gitlab.io/genio/doc/android/tools/genio-tools.html">Windows 지원과 외부 <code>genio-flash</code> 사용 방식</a></li>
+<li>Microsoft .NET 문서: <a href="https://learn.microsoft.com/en-us/dotnet/api/system.io.ports">Windows serial port API</a></li>
+</ul>
+<p>공개 문서는 일반적인 경계를 정하는 근거입니다. 사내 SK Commander, YJ/실장기 wiring,
+Vendor Downloader 인자와 성공 문구는 현장 증거가 우선합니다.</p>
 
 
 
@@ -1445,7 +1793,7 @@ https://github.com/stpcoder/win-automation-picker/releases/latest/download/RigCo
       <nav class="md-footer__inner md-grid" aria-label="하단/푸터" >
         
           
-          <a href="../device-control/" class="md-footer__link md-footer__link--prev" aria-label="이전: 실장기 직접 제어와 Binary">
+          <a href="../ae-workbench/" class="md-footer__link md-footer__link--prev" aria-label="이전: AE Workbench 통합 흐름">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -1455,20 +1803,20 @@ https://github.com/stpcoder/win-automation-picker/releases/latest/download/RigCo
                 이전
               </span>
               <div class="md-ellipsis">
-                실장기 직접 제어와 Binary
+                AE Workbench 통합 흐름
               </div>
             </div>
           </a>
         
         
           
-          <a href="../interface/" class="md-footer__link md-footer__link--next" aria-label="다음: 화면 구성">
+          <a href="../getting-started/" class="md-footer__link md-footer__link--next" aria-label="다음: 설치와 실행">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 다음
               </span>
               <div class="md-ellipsis">
-                화면 구성
+                설치와 실행
               </div>
             </div>
             <div class="md-footer__button md-icon">

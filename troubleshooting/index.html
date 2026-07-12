@@ -386,6 +386,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../device-control/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    실장기 직접 제어와 Binary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../getting-started/" class="md-nav__link">
         
   
@@ -795,7 +823,7 @@
   <span class="md-ellipsis">
     
   
-    SEQ Generator와 SK Commander
+    SEQ Generator와 실장기 실행
   
 
     
@@ -1197,6 +1225,50 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#4-com" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4채널 콘솔에서 COM 연결 실패
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        명령이 일부만 입력됨
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#com" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        직접 COM 실행표가 제출되지 않음
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#binary-blocked" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Binary 사전점검이 BLOCKED
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1360,6 +1432,50 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#4-com" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4채널 콘솔에서 COM 연결 실패
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        명령이 일부만 입력됨
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#com" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        직접 COM 실행표가 제출되지 않음
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#binary-blocked" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Binary 사전점검이 BLOCKED
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1484,6 +1600,45 @@
 <li>screenshot은 수동 요청 위주로 사용합니다.</li>
 <li>오래된 결과와 screenshot은 retention 설정으로 정리합니다.</li>
 </ul>
+<h2 id="4-com">4채널 콘솔에서 COM 연결 실패</h2>
+<ol>
+<li><code>PC 환경</code> 또는 <code>RigCommander.exe device system-check</code>를 실행합니다.</li>
+<li><code>Rig 설정 &gt; 원격 PC · CH</code>의 COM과 baud가 Device Manager 값과 같은지 확인합니다.</li>
+<li>PuTTY, QTTY, SK Commander 등 같은 COM을 연 프로그램을 닫습니다.</li>
+<li>실시간 콘솔은 Master가 아니라 COM이 연결된 Slave PC에서 엽니다.</li>
+<li>USB가 재인식됐다면 <code>CH 새로고침</code> 후 실제 COM 번호를 다시 저장합니다.</li>
+</ol>
+<h2 id="_8">명령이 일부만 입력됨</h2>
+<ol>
+<li><code>글자 지연 ms</code>를 5~30부터 올려 봅니다.</li>
+<li>명령은 출력 가능한 ASCII만 입력합니다. Enter와 Ctrl 키는 <code>제어 키</code>를 사용합니다.</li>
+<li>CH의 line ending이 장비 사양과 같은지 <code>rig-commander.config.json</code>에서 확인합니다.</li>
+<li>주기 Enter가 시험 command와 충돌하면 값을 0으로 끕니다.</li>
+</ol>
+<h2 id="com">직접 COM 실행표가 제출되지 않음</h2>
+<ul>
+<li><code>직접 COM 실행에는 COM 포트가 필요</code>이면 해당 CH의 Console COM을 저장합니다.</li>
+<li><code>same COM twice</code>이면 같은 PC의 두 CH가 같은 COM을 가리키므로 Device Manager와 설정을 바로잡습니다.</li>
+<li>같은 PC/Campaign/attempt에 5행 이상이면 최대 네 CH씩 attempt 또는 실행 체크를 나눕니다.</li>
+<li><code>whitespace after ';'</code>이면 <code>cmd1;cmd2;</code>처럼 세미콜론 뒤 공백을 제거합니다.</li>
+<li><code>must end with ';'</code>이면 각 command line의 마지막 세미콜론을 추가하고 Generator Validate를 다시 실행합니다.</li>
+</ul>
+<p>실행 중 한 CH만 FAIL이면 <code>work_dir/serial-results/{job-CH}/manifest.json</code>에서 실패 command,
+timeout과 최근 response를 확인합니다. 다른 CH 결과는 같은 batch 안에서도 별도로 보존됩니다.</p>
+<h2 id="binary-blocked">Binary 사전점검이 BLOCKED</h2>
+<p>결과의 첫 <code>BLOCK</code> 행을 먼저 해결합니다.</p>
+<ul>
+<li><code>execution_allowlist</code>: 장치 도구의 실제 실행 허용이 꺼져 있음</li>
+<li><code>cli_evidence</code>/<code>result_rules</code>: CLI 근거 또는 성공/실패 문구 누락</li>
+<li><code>xml_sha256</code>: Seq Generator export 뒤 XML이 변경됨</li>
+<li><code>tool_vendor</code>: CH Vendor와 Downloader Vendor 불일치</li>
+<li><code>qc_physical_switch</code>: Qualcomm 물리 Download 스위치 미확인</li>
+<li><code>mtk_preloader_exit</code>: MTK preloader 종료 미확인</li>
+<li><code>format_confirmation</code>: <code>FORMAT node:CH</code> 확인문 불일치</li>
+<li><code>ADB target</code>: 여러 장치 중 고정 serial 누락 또는 offline</li>
+</ul>
+<p>Downloader가 이미 시작된 상태에서는 프로세스를 강제 종료하지 말고 도구 로그가 끝날 때까지
+기다립니다. 다음 CH 작업은 긴급 중단으로 시작 전에 차단할 수 있습니다.</p>
 
 
 
