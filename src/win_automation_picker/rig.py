@@ -550,6 +550,7 @@ class DevicePreflightReport:
     storage_type: str = "ufs"
     package_kind: str = ""
     package_fingerprint: str = ""
+    execution_fingerprint: str = ""
     execution_steps: tuple[dict[str, Any], ...] = ()
 
     @property
@@ -570,6 +571,7 @@ class DevicePreflightReport:
             "storage_type": self.storage_type,
             "package_kind": self.package_kind,
             "package_fingerprint": self.package_fingerprint,
+            "execution_fingerprint": self.execution_fingerprint,
             "execution_steps": [dict(step) for step in self.execution_steps],
         }
 
@@ -582,8 +584,12 @@ class DevicePreflightReport:
             f"Tool: {self.tool_id or '(missing)'}",
             f"Adapter: {self.adapter_kind}",
             f"Storage: {self.storage_type.upper()}",
-            "",
         ]
+        if self.package_fingerprint:
+            lines.append(f"Package fingerprint: {self.package_fingerprint[:12]}")
+        if self.execution_fingerprint:
+            lines.append(f"Execution fingerprint: {self.execution_fingerprint[:12]}")
+        lines.append("")
         lines.extend(
             f"[{'OK' if check.ok else 'BLOCK'}] {check.id}: {check.detail}"
             for check in self.checks
@@ -1307,6 +1313,9 @@ def build_device_preflight_report(
         storage_type=target.port.storage_type,
         package_kind=inspection.package_kind if inspection else "",
         package_fingerprint=inspection.fingerprint if inspection else "",
+        execution_fingerprint=(
+            execution_plan.package_fingerprint if execution_plan is not None else ""
+        ),
         execution_steps=tuple(step.to_mapping() for step in execution_plan.steps)
         if execution_plan
         else (),
@@ -1504,11 +1513,41 @@ def run_device_update(
         blocked = "; ".join(check.detail for check in report.checks if not check.ok)
         raise RigConfigError(f"Device update preflight blocked for {target.label()}: {blocked}")
 
+    device_journal_dir = _device_update_journal_dir(journal_root, target.label(), report)
+    device_manifest: dict[str, Any] = {
+        "schema": "rig-device-update-run/v1",
+        "target": target.label(),
+        "vendor": target.port.soc_vendor,
+        "soc_model": target.port.soc_model,
+        "mode": mode,
+        "started_at": _timestamp_utc(),
+        "finished_at": "",
+        "ok": False,
+        "cancelled": False,
+        "preflight": report.to_mapping(),
+        "stages": [],
+    }
+    _write_firmware_journal(device_journal_dir, device_manifest)
+
     if _cancellation_requested(cancel_callback):
-        return _cancelled_command_result(target.label(), "device-update")
+        cancelled = _cancelled_command_result(target.label(), "device-update")
+        _record_device_update_stage(
+            device_journal_dir,
+            device_manifest,
+            "cancelled",
+            "Operator cancelled before device transition",
+            cancelled,
+            started_at=_timestamp_utc(),
+        )
+        return _finalize_device_update_result(
+            cancelled,
+            device_journal_dir,
+            device_manifest,
+        )
 
     transition: CommandResult | None = None
     if preloader_command:
+        transition_started_at = _timestamp_utc()
         transition_timeout = max(
             3.0,
             (
@@ -1530,9 +1569,22 @@ def run_device_update(
             dry_run=dry_run,
             cancel_callback=cancel_callback,
         )
+        _record_device_update_stage(
+            device_journal_dir,
+            device_manifest,
+            "preloader-transition",
+            "Send the configured MTK preloader transition and verify its marker",
+            transition,
+            started_at=transition_started_at,
+        )
         if not transition.ok:
-            return transition
+            return _finalize_device_update_result(
+                transition,
+                device_journal_dir,
+                device_manifest,
+            )
 
+    probe_started_at = _timestamp_utc()
     probe = wait_for_device_download_probe(
         target,
         xml_path=xml_path,
@@ -1545,89 +1597,89 @@ def run_device_update(
         dry_run=dry_run,
         cancel_callback=cancel_callback,
     )
+    _record_device_update_stage(
+        device_journal_dir,
+        device_manifest,
+        "download-probe",
+        "Wait for the configured download-mode identity",
+        probe,
+        started_at=probe_started_at,
+    )
     if not probe.ok:
-        return probe
+        return _finalize_device_update_result(
+            probe,
+            device_journal_dir,
+            device_manifest,
+        )
 
     tool = target.host.firmware_for_port(target.port)
     if tool is None:
         raise RigConfigError(f"Host {target.host.id!r} has no firmware tool config.")
-    if tool.adapter_kind == "generic":
-        generic_plan = _build_generic_firmware_execution_plan(
+    firmware_journal_root = (
+        str(device_journal_dir / "firmware") if device_journal_dir is not None else journal_root
+    )
+    flash_started_at = _timestamp_utc()
+    try:
+        flash = _execute_device_firmware_after_probe(
             target,
             tool,
             xml_path=xml_path,
             mode=mode,
-        )
-        if generic_plan is None:
-            flash = run_firmware_flash(
-                target,
-                xml_path=xml_path,
-                mode=mode,
-                timeout=timeout,
-                dry_run=dry_run,
-                use_channel_tool=True,
-                cancel_callback=cancel_callback,
-            )
-        else:
-            _require_execution_plan_confirmation(generic_plan, format_confirmation)
-            flash = run_firmware_execution_plan(
-                target,
-                tool,
-                generic_plan,
-                timeout=timeout,
-                dry_run=dry_run,
-                journal_root=journal_root,
-                progress_callback=progress_callback,
-                cancel_callback=cancel_callback,
-            )
-    else:
-        try:
-            inspection = inspect_firmware_package(
-                xml_path,
-                vendor=target.port.soc_vendor,
-                adapter_kind=tool.adapter_kind,
-                storage_type=target.port.storage_type,
-            )
-            execution_plan = build_firmware_execution_plan(
-                inspection,
-                target=target.label(),
-                executable=tool.executable,
-                mode=mode,
-                programmer_path=tool.programmer_path,
-                device_serial=target.port.download_serial,
-                storage_slot=target.port.storage_slot,
-                package_selector=target.port.package_selector,
-                bootstrap_path=target.port.bootstrap_path,
-                bootstrap_address=target.port.bootstrap_address,
-                bootstrap_mode=target.port.bootstrap_mode,
-                partitions=target.port.firmware_partitions,
-                board_control_serial=target.port.board_control_serial,
-                gpio_power=target.port.gpio_power,
-                gpio_reset=target.port.gpio_reset,
-                gpio_download=target.port.gpio_download,
-                daa_enabled=target.port.daa_enabled,
-                bootstrap_sign_path=target.port.bootstrap_sign_path,
-                bootstrap_auth_path=target.port.bootstrap_auth_path,
-            )
-        except FirmwarePlanError as exc:
-            raise RigConfigError(str(exc)) from exc
-        _require_execution_plan_confirmation(execution_plan, format_confirmation)
-        flash = run_firmware_execution_plan(
-            target,
-            tool,
-            execution_plan,
             timeout=timeout,
             dry_run=dry_run,
-            journal_root=journal_root,
+            journal_root=firmware_journal_root,
+            format_confirmation=format_confirmation,
             progress_callback=progress_callback,
             cancel_callback=cancel_callback,
         )
+    except (FirmwarePlanError, RigConfigError, RigExecutionError) as exc:
+        failed_plan = CommandResult(
+            target=target.label(),
+            ok=False,
+            returncode=2,
+            stderr=str(exc),
+            command="device-update:firmware-plan",
+            dry_run=dry_run,
+        )
+        _record_device_update_stage(
+            device_journal_dir,
+            device_manifest,
+            "firmware-plan",
+            "Build and confirm the firmware execution plan",
+            failed_plan,
+            started_at=flash_started_at,
+        )
+        _finalize_device_update_result(
+            failed_plan,
+            device_journal_dir,
+            device_manifest,
+        )
+        journal_note = (
+            f" Device update journal: {device_journal_dir.resolve()}."
+            if device_journal_dir is not None
+            else ""
+        )
+        error_type = RigConfigError if isinstance(exc, FirmwarePlanError) else type(exc)
+        raise error_type(f"{exc}{journal_note}") from exc
+    _record_device_update_stage(
+        device_journal_dir,
+        device_manifest,
+        "firmware",
+        "Validate and execute the firmware plan",
+        flash,
+        started_at=flash_started_at,
+    )
     if not flash.ok:
-        return flash
+        return _finalize_device_update_result(
+            flash,
+            device_journal_dir,
+            device_manifest,
+        )
 
     adb = target.port.adb
     post = None
     if adb.required_after_update:
+        post_started_at = _timestamp_utc()
         post = run_device_probe(
             target,
             phase="post",
@@ -1635,8 +1687,20 @@ def run_device_update(
             dry_run=dry_run,
             cancel_callback=cancel_callback,
         )
+        _record_device_update_stage(
+            device_journal_dir,
+            device_manifest,
+            "post-probe",
+            "Verify the exact ADB target after firmware update",
+            post,
+            started_at=post_started_at,
+        )
         if not post.ok:
-            return post
+            return _finalize_device_update_result(
+                post,
+                device_journal_dir,
+                device_manifest,
+            )
 
     outputs = [report.render()]
     if transition is not None:
@@ -1644,7 +1708,7 @@ def run_device_update(
     outputs.extend([probe.stdout, flash.stdout])
     if post is not None:
         outputs.append(post.stdout)
-    return CommandResult(
+    completed = CommandResult(
         target=target.label(),
         ok=True,
         returncode=0,
@@ -1653,6 +1717,87 @@ def run_device_update(
         command=f"device-update:{mode}",
         dry_run=dry_run,
         details=dict(flash.details),
+    )
+    return _finalize_device_update_result(
+        completed,
+        device_journal_dir,
+        device_manifest,
+    )
+
+
+def _execute_device_firmware_after_probe(
+    target: SerialTarget,
+    tool: FirmwareToolConfig,
+    *,
+    xml_path: str,
+    mode: str,
+    timeout: float | None,
+    dry_run: bool,
+    journal_root: str,
+    format_confirmation: str,
+    progress_callback: Callable[[dict[str, Any]], None] | None,
+    cancel_callback: Callable[[], bool] | None,
+) -> CommandResult:
+    if tool.adapter_kind == "generic":
+        generic_plan = _build_generic_firmware_execution_plan(
+            target,
+            tool,
+            xml_path=xml_path,
+            mode=mode,
+        )
+        if generic_plan is None:
+            raise RigConfigError(
+                "Generic firmware profile did not produce a fingerprinted execution plan."
+            )
+        _require_execution_plan_confirmation(generic_plan, format_confirmation)
+        return run_firmware_execution_plan(
+            target,
+            tool,
+            generic_plan,
+            timeout=timeout,
+            dry_run=dry_run,
+            journal_root=journal_root,
+            progress_callback=progress_callback,
+            cancel_callback=cancel_callback,
+        )
+
+    inspection = inspect_firmware_package(
+        xml_path,
+        vendor=target.port.soc_vendor,
+        adapter_kind=tool.adapter_kind,
+        storage_type=target.port.storage_type,
+    )
+    execution_plan = build_firmware_execution_plan(
+        inspection,
+        target=target.label(),
+        executable=tool.executable,
+        mode=mode,
+        programmer_path=tool.programmer_path,
+        device_serial=target.port.download_serial,
+        storage_slot=target.port.storage_slot,
+        package_selector=target.port.package_selector,
+        bootstrap_path=target.port.bootstrap_path,
+        bootstrap_address=target.port.bootstrap_address,
+        bootstrap_mode=target.port.bootstrap_mode,
+        partitions=target.port.firmware_partitions,
+        board_control_serial=target.port.board_control_serial,
+        gpio_power=target.port.gpio_power,
+        gpio_reset=target.port.gpio_reset,
+        gpio_download=target.port.gpio_download,
+        daa_enabled=target.port.daa_enabled,
+        bootstrap_sign_path=target.port.bootstrap_sign_path,
+        bootstrap_auth_path=target.port.bootstrap_auth_path,
+    )
+    _require_execution_plan_confirmation(execution_plan, format_confirmation)
+    return run_firmware_execution_plan(
+        target,
+        tool,
+        execution_plan,
+        timeout=timeout,
+        dry_run=dry_run,
+        journal_root=journal_root,
+        progress_callback=progress_callback,
+        cancel_callback=cancel_callback,
     )
 
 
@@ -1793,6 +1938,12 @@ def _build_generic_firmware_execution_plan(
                     "Return fixture to download mode",
                     (reentry_command,),
                 ),
+                (
+                    "fixture-wait-download",
+                    "fixture-probe",
+                    "Wait for the exact download-mode target",
+                    (),
+                ),
                 ("vendor-download", "download", "Run vendor downloader", tool.download_arguments),
             ]
         )
@@ -1803,6 +1954,22 @@ def _build_generic_firmware_execution_plan(
                 "provision",
                 "Run vendor provisioning or BROM bootstrap operation",
                 tool.provision_arguments,
+            )
+        )
+    elif mode in tool.allowed_modes and tool.arguments:
+        phase = {
+            "download-only": "download",
+            "format-all-download": "format-download",
+            "provision-only": "provision",
+        }.get(mode)
+        if phase is None:
+            raise RigConfigError(f"Unsupported generic firmware mode: {mode!r}.")
+        templates.append(
+            (
+                f"vendor-{phase}",
+                phase,
+                "Run the configured vendor firmware command",
+                tool.arguments,
             )
         )
     else:
@@ -1822,7 +1989,7 @@ def _build_generic_firmware_execution_plan(
         )
     ]
     for step_id, phase, label, arguments in templates:
-        if phase == "fixture":
+        if phase in {"fixture", "fixture-probe"}:
             rendered_arguments = tuple(arguments)
         else:
             rendered_arguments = render_firmware_argument_templates(
@@ -2025,7 +2192,19 @@ def run_firmware_execution_plan(
                 step,
                 cancel_callback=monitored_cancel,
             )
-        if result is None and effective_step.phase == "fixture":
+        if result is None and effective_step.phase == "fixture-probe":
+            if effective_step.arguments:
+                raise RigConfigError(
+                    f"Fixture probe step {effective_step.id!r} does not accept arguments."
+                )
+            result = wait_for_device_download_probe(
+                target,
+                wait_seconds=target.port.download_wait_seconds,
+                poll_interval_seconds=target.port.download_poll_interval_seconds,
+                dry_run=dry_run,
+                cancel_callback=monitored_cancel,
+            )
+        elif result is None and effective_step.phase == "fixture":
             if len(effective_step.arguments) != 1:
                 raise RigConfigError(
                     f"Fixture transition step {effective_step.id!r} requires one serial command."
@@ -2836,6 +3015,7 @@ def build_serial_transition_script(
             f"$serial.WriteTimeout = {int(port.write_timeout_ms)}",
             "$serial.Open()",
             "try {",
+            "  $serial.DiscardInBuffer()",
             "  $output = New-Object System.Text.StringBuilder",
             f"  $expectedMarker = {_ps_quote(expected_marker.strip())}",
             f"  for ($index = 0; $index -lt {repeat_count}; $index++) {{",
@@ -2862,6 +3042,9 @@ def build_serial_transition_script(
                 "  if ($output.ToString().IndexOf($expectedMarker, [StringComparison]::OrdinalIgnoreCase) -lt 0) { throw \"Serial transition marker not found: $expectedMarker. Output: $($output.ToString())\" }",
             ]
         )
+    lines.append(
+        f"  [void]$output.AppendLine(\"[TRANSITION_OK] writes={repeat_count} marker=$expectedMarker\")"
+    )
     lines.extend(
         [
             "  $output.ToString()",
@@ -3207,6 +3390,124 @@ def _cancelled_command_result(target: str, command: str) -> CommandResult:
 
 def results_to_json(results: Sequence[CommandResult]) -> str:
     return json.dumps([result.to_mapping() for result in results], indent=2, ensure_ascii=True)
+
+
+def _device_update_journal_dir(
+    journal_root: str,
+    target: str,
+    report: DevicePreflightReport,
+) -> Path | None:
+    if not journal_root.strip():
+        return None
+    safe_target = "".join(
+        character if character.isalnum() or character in "_.-" else "_"
+        for character in target
+    ).strip("_.") or "target"
+    safe_mode = "".join(
+        character if character.isalnum() or character in "_.-" else "_"
+        for character in report.mode
+    ).strip("_.") or "mode"
+    fingerprint = (
+        report.execution_fingerprint[:12]
+        or report.package_fingerprint[:12]
+        or "unverified"
+    )
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    nonce = f"{time.time_ns() & 0xFFFFFF:06x}"
+    directory = Path(journal_root).expanduser() / (
+        f"{stamp}-{safe_target}-{safe_mode}-{fingerprint}-{nonce}"
+    )
+    directory.mkdir(parents=True, exist_ok=False)
+    return directory
+
+
+def _record_device_update_stage(
+    journal_dir: Path | None,
+    manifest: dict[str, Any],
+    stage_id: str,
+    label: str,
+    result: CommandResult,
+    *,
+    started_at: str,
+) -> None:
+    stages = manifest.setdefault("stages", [])
+    if not isinstance(stages, list):
+        raise RigExecutionError("Device update journal stages must be a list.")
+    safe_id = "".join(
+        character if character.isalnum() or character in "_.-" else "_"
+        for character in stage_id
+    ).strip("_.") or "stage"
+    log_name = f"{len(stages) + 1:02d}-{safe_id}.log"
+    _write_firmware_step_log(journal_dir, log_name, result)
+    details: dict[str, Any] = {}
+    if "download_probe_attempts" in result.details:
+        details["download_probe_attempts"] = result.details["download_probe_attempts"]
+    firmware_journal = str(result.details.get("firmware_journal") or "")
+    if firmware_journal:
+        if journal_dir is not None:
+            try:
+                firmware_journal = Path(firmware_journal).resolve().relative_to(
+                    journal_dir.resolve()
+                ).as_posix()
+            except ValueError:
+                pass
+        details["firmware_journal"] = firmware_journal
+    stages.append(
+        {
+            "id": stage_id,
+            "label": label,
+            "started_at": started_at,
+            "finished_at": _timestamp_utc(),
+            "ok": result.ok,
+            "returncode": result.returncode,
+            "command": result.command,
+            "dry_run": result.dry_run,
+            "log": log_name if journal_dir is not None else "",
+            "details": details,
+        }
+    )
+    manifest["finished_at"] = stages[-1]["finished_at"]
+    manifest["ok"] = False
+    manifest["cancelled"] = result.returncode == 130
+    _write_firmware_journal(journal_dir, manifest)
+
+
+def _finalize_device_update_result(
+    result: CommandResult,
+    journal_dir: Path | None,
+    manifest: dict[str, Any],
+) -> CommandResult:
+    details = dict(result.details)
+    if journal_dir is not None:
+        details["device_update_journal"] = str(journal_dir.resolve())
+    firmware_journal = str(details.get("firmware_journal") or "")
+    if firmware_journal and journal_dir is not None:
+        try:
+            manifest["firmware_journal"] = Path(firmware_journal).resolve().relative_to(
+                journal_dir.resolve()
+            ).as_posix()
+        except ValueError:
+            manifest["firmware_journal"] = firmware_journal
+    manifest["finished_at"] = _timestamp_utc()
+    manifest["ok"] = result.ok
+    manifest["cancelled"] = result.returncode == 130
+    manifest["result"] = {
+        "ok": result.ok,
+        "returncode": result.returncode,
+        "command": result.command,
+        "dry_run": result.dry_run,
+    }
+    _write_firmware_journal(journal_dir, manifest)
+    return CommandResult(
+        target=result.target,
+        ok=result.ok,
+        returncode=result.returncode,
+        stdout=result.stdout,
+        stderr=result.stderr,
+        command=result.command,
+        dry_run=result.dry_run,
+        details=details,
+    )
 
 
 def _firmware_journal_dir(

@@ -38,6 +38,7 @@ from win_automation_picker.ftp_spool import (
     run_slave_once,
     save_triage_record,
     submit_job,
+    _prune_firmware_journals,
     _prune_staged_sequence_dirs,
     _monitor_grid_progress,
     _update_channel_status,
@@ -1574,8 +1575,17 @@ def test_rig_job_uploads_structured_firmware_journal_and_progress(
 ) -> None:
     backend = LocalSpoolBackend(tmp_path / "spool")
     initialize_spool(backend, nodes=["rig-pc-04"])
-    journal = tmp_path / "work" / "firmware" / "run-1"
+    device_journal = tmp_path / "work" / "firmware" / "device-run-1"
+    journal = device_journal / "firmware" / "run-1"
     journal.mkdir(parents=True)
+    (device_journal / "manifest.json").write_text(
+        json.dumps({"schema": "rig-device-update-run/v1", "stages": []}),
+        encoding="utf-8",
+    )
+    (device_journal / "01-download-probe.log").write_text(
+        "CHECK DOWNLOAD_IDENTITY OK",
+        encoding="utf-8",
+    )
     (journal / "manifest.json").write_text(
         json.dumps({"schema": "rig-firmware-run/v1", "steps": []}),
         encoding="utf-8",
@@ -1607,6 +1617,7 @@ def test_rig_job_uploads_structured_firmware_journal_and_progress(
                         "command": "firmware-plan:download-only",
                         "dry_run": False,
                         "details": {
+                            "device_update_journal": str(device_journal),
                             "firmware_journal": str(journal),
                             "firmware_plan": {
                                 "adapter_kind": "qualcomm-qdl",
@@ -1639,8 +1650,34 @@ def test_rig_job_uploads_structured_firmware_journal_and_progress(
     assert result.stdout == "firmware complete"
     assert result.details["rig_target"] == "rig-pc-04:CH11"
     assert result.details["artifact_path"] == "artifacts/rig-pc-04/firmware-job.zip"
-    assert "01-qdl-version.log" in result.details["artifact_members"]
+    assert "01-download-probe.log" in result.details["artifact_members"]
+    assert "firmware/run-1/01-qdl-version.log" in result.details["artifact_members"]
     status = json.loads(
         backend.read_bytes("status/rig-pc-04.json").decode("utf-8")
     )
     assert status["firmware_progress"]["step_id"] == "qdl-version"
+
+
+def test_firmware_journal_pruning_removes_owned_nested_device_evidence(tmp_path) -> None:
+    root = tmp_path / "journals"
+    old = root / "old-device-update"
+    current = root / "current-device-update"
+    for journal in (old, current):
+        nested = journal / "firmware" / "run-001"
+        nested.mkdir(parents=True)
+        (journal / "manifest.json").write_text(
+            json.dumps({"schema": "rig-device-update-run/v1"}),
+            encoding="utf-8",
+        )
+        (journal / "01-download-probe.log").write_text("OK", encoding="utf-8")
+        (nested / "manifest.json").write_text(
+            json.dumps({"schema": "rig-firmware-run/v1"}),
+            encoding="utf-8",
+        )
+        (nested / "01-version.log").write_text("OK", encoding="utf-8")
+    os.utime(old, (1, 1))
+
+    _prune_firmware_journals(root, preserve=current, limit=1)
+
+    assert not old.exists()
+    assert (current / "firmware" / "run-001" / "manifest.json").is_file()

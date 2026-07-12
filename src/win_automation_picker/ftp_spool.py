@@ -4265,7 +4265,9 @@ def _execute_rig(
             item for item in (stderr, str(row.get("stderr") or "")) if item
         )
 
-    journal_value = str(details.get("firmware_journal") or "")
+    journal_value = str(
+        details.get("device_update_journal") or details.get("firmware_journal") or ""
+    )
     if journal_value:
         journal = Path(journal_value)
         if config.max_artifact_files <= 0:
@@ -4323,7 +4325,10 @@ def _prune_firmware_journals(root: Path, *, preserve: Path, limit: int) -> None:
             manifest = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
         except Exception:
             continue
-        if isinstance(manifest, dict) and manifest.get("schema") == "rig-firmware-run/v1":
+        if isinstance(manifest, dict) and manifest.get("schema") in {
+            "rig-firmware-run/v1",
+            "rig-device-update-run/v1",
+        }:
             owned.append(path)
     owned.sort(key=lambda path: path.stat().st_mtime, reverse=True)
     keep = max(1, int(limit))
@@ -4331,13 +4336,30 @@ def _prune_firmware_journals(root: Path, *, preserve: Path, limit: int) -> None:
     removable = [path for path in owned if path.resolve() != preserve_resolved]
     retained_without_preserve = max(0, keep - 1)
     for path in removable[retained_without_preserve:]:
-        for member in path.iterdir():
-            if member.is_file() and not member.is_symlink() and (
+        _remove_owned_firmware_journal(path)
+
+
+def _remove_owned_firmware_journal(path: Path) -> None:
+    directories: list[Path] = [path]
+    visited: list[Path] = []
+    while directories:
+        directory = directories.pop()
+        visited.append(directory)
+        for member in directory.iterdir():
+            if member.is_symlink():
+                continue
+            if member.is_dir():
+                directories.append(member)
+                continue
+            if member.is_file() and (
                 member.name == "manifest.json" or member.suffix.casefold() == ".log"
             ):
                 member.unlink()
-        if not list(path.iterdir()):
-            path.rmdir()
+    for member in sorted(visited, key=lambda item: len(item.parts), reverse=True):
+        if member.is_symlink():
+            continue
+        if member.is_dir() and not any(member.iterdir()):
+            member.rmdir()
 
 
 def capture_screenshot(

@@ -121,6 +121,8 @@ def test_mtk_transition_sends_exit_twice_in_one_session_and_checks_lk_marker() -
     assert "$expectedMarker = 'LK2]'" in script
     assert '[TX $($index + 1)/2]' in script
     assert "{ break }" in script
+    assert "$serial.DiscardInBuffer()" in script
+    assert "[TRANSITION_OK] writes=2 marker=$expectedMarker" in script
     assert script.count("$serial.Open()") == 1
 
 
@@ -362,7 +364,7 @@ def test_device_preflight_enforces_vendor_gate_hash_and_exact_format_token(tmp_p
         mode="format-all-download",
         expected_xml_sha256=sha256,
         physical_switch_confirmed=True,
-        format_confirmation="FORMAT PC04:CH1",
+        format_confirmation=blocked.expected_format_confirmation,
     )
 
     assert not blocked.ready
@@ -370,6 +372,12 @@ def test_device_preflight_enforces_vendor_gate_hash_and_exact_format_token(tmp_p
         "qc_physical_switch",
         "format_confirmation",
     }
+    assert blocked.expected_format_confirmation.startswith("FORMAT PC04:CH1 ")
+    assert len(blocked.execution_fingerprint) == 64
+    assert [step["id"] for step in blocked.execution_steps] == [
+        "vendor-version",
+        "vendor-format-download",
+    ]
     assert ready.ready
 
 
@@ -804,4 +812,159 @@ def test_device_update_rechecks_confirmation_after_payload_changes(
             expected_xml_sha256=xml_digest,
             physical_switch_confirmed=True,
             format_confirmation=initial.expected_format_confirmation,
+            journal_root=str(tmp_path / "journals"),
         )
+    journal = next((tmp_path / "journals").iterdir())
+    manifest = json.loads((journal / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["ok"] is False
+    assert [stage["id"] for stage in manifest["stages"]] == [
+        "download-probe",
+        "firmware-plan",
+    ]
+
+
+def test_device_update_journal_captures_probe_firmware_and_postcheck(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    target, xml = _safe_device_target(tmp_path)
+    xml_digest = hashlib.sha256(xml.read_bytes()).hexdigest()
+    preflight = build_device_preflight_report(
+        target,
+        xml_path=str(xml),
+        mode="download-only",
+        expected_xml_sha256=xml_digest,
+        physical_switch_confirmed=True,
+    )
+
+    monkeypatch.setattr(
+        rig_module,
+        "wait_for_device_download_probe",
+        lambda *_args, **_kwargs: CommandResult(
+            target.label(),
+            True,
+            0,
+            stdout="CHECK DOWNLOAD_IDENTITY OK VID_05C6&PID_9008",
+            command="device-probe:download-wait",
+            details={"download_probe_attempts": 2},
+        ),
+    )
+    monkeypatch.setattr(
+        rig_module,
+        "_execute_device_firmware_after_probe",
+        lambda *_args, **_kwargs: CommandResult(
+            target.label(),
+            True,
+            0,
+            stdout="PASS",
+            command="firmware:download-only",
+        ),
+    )
+    monkeypatch.setattr(
+        rig_module,
+        "run_device_probe",
+        lambda *_args, **_kwargs: CommandResult(
+            target.label(),
+            True,
+            0,
+            stdout="CHECK ADB OK DEVICE-CH1",
+            command="device-probe:post",
+        ),
+    )
+
+    result = run_device_update(
+        target,
+        xml_path=str(xml),
+        mode="download-only",
+        expected_xml_sha256=xml_digest,
+        physical_switch_confirmed=True,
+        format_confirmation=preflight.expected_format_confirmation,
+        journal_root=str(tmp_path / "journals"),
+    )
+
+    assert result.ok
+    journal = Path(result.details["device_update_journal"])
+    manifest = json.loads((journal / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["schema"] == "rig-device-update-run/v1"
+    assert manifest["ok"] is True
+    assert [stage["id"] for stage in manifest["stages"]] == [
+        "download-probe",
+        "firmware",
+        "post-probe",
+    ]
+    assert manifest["stages"][0]["details"]["download_probe_attempts"] == 2
+    assert all((journal / stage["log"]).is_file() for stage in manifest["stages"])
+
+
+def test_generic_format_plan_waits_for_download_identity_after_reentry(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    target, xml = _safe_device_target(tmp_path, vendor="mediatek")
+    configured = target.host.firmware_for_port(target.port)
+    assert configured is not None
+    tool = replace(
+        configured,
+        format_arguments=("--format", "{xml}"),
+        download_arguments=("--download", "{xml}"),
+    )
+    target = replace(
+        target,
+        host=replace(target.host, firmware_tools=(tool,)),
+        port=replace(
+            target.port,
+            commands={**target.port.commands, "download_reentry": "DOWNLOAD REENTER"},
+        ),
+    )
+    plan = rig_module._build_generic_firmware_execution_plan(
+        target,
+        tool,
+        xml_path=str(xml),
+        mode="format-all-download",
+    )
+    assert plan is not None
+    assert {Path(item.path).name for item in plan.integrity_files} == {
+        "firmware.xml",
+        "image.bin",
+    }
+    assert [step.id for step in plan.steps] == [
+        "vendor-version",
+        "vendor-format",
+        "fixture-reenter-download",
+        "fixture-wait-download",
+        "vendor-download",
+    ]
+
+    calls: list[str] = []
+
+    def fake_local(_tool, step, **_kwargs):
+        calls.append(step.id)
+        return CommandResult(target.label(), True, 0, command=f"firmware:{step.id}")
+
+    def fake_remote(_host, _script, *, command, **_kwargs):
+        calls.append(command.removeprefix("firmware:"))
+        return CommandResult(target.label(), True, 0, command=command)
+
+    def fake_serial(_target, command, **_kwargs):
+        calls.append(f"serial:{command}")
+        return CommandResult(target.label(), True, 0, command="serial")
+
+    def fake_probe(_target, **_kwargs):
+        calls.append("download-probe")
+        return CommandResult(target.label(), True, 0, command="device-probe:download-wait")
+
+    monkeypatch.setattr(rig_module, "run_local_firmware_process", fake_local)
+    monkeypatch.setattr(rig_module, "run_powershell_for_host", fake_remote)
+    monkeypatch.setattr(rig_module, "run_serial_command", fake_serial)
+    monkeypatch.setattr(rig_module, "wait_for_device_download_probe", fake_probe)
+
+    result = run_firmware_execution_plan(target, tool, plan)
+
+    assert result.ok
+    assert calls == [
+        "vendor-version",
+        "vendor-format",
+        "serial:DOWNLOAD REENTER",
+        "download-probe",
+        "vendor-download",
+    ]
