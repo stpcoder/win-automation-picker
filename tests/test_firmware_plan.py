@@ -100,6 +100,9 @@ def test_qdl_format_plan_validates_then_formats_without_reset_then_downloads(tmp
     assert "--skip-reset" in next(
         step for step in plan.steps if step.id == "qdl-format"
     ).arguments
+    format_arguments = next(step for step in plan.steps if step.id == "qdl-format").arguments
+    assert format_arguments[-2:] == ("erase", "0/1024+256")
+    assert not any("WIPE_PARTITIONS.xml" in argument for argument in format_arguments)
     assert "--serial=0AA94EFD" in next(
         step for step in plan.steps if step.id == "qdl-download"
     ).arguments
@@ -117,6 +120,28 @@ def test_qdl_format_plan_never_invents_a_wipe_descriptor(tmp_path) -> None:
     )
 
     with pytest.raises(FirmwarePlanError, match="vendor-supplied"):
+        build_firmware_execution_plan(
+            inspection,
+            target="PC04:CH9",
+            executable="qdl.exe",
+            mode="format-all-download",
+        )
+
+
+def test_qdl_pure_erase_xml_requires_bounded_numeric_sector_range(tmp_path) -> None:
+    selected = _qc_package(tmp_path / "qc")
+    (selected.parent / "rawprogram0_WIPE_PARTITIONS.xml").write_text(
+        '<data><erase label="userdata" physical_partition_number="0" '
+        'start_sector="NUM_DISK_SECTORS-256." num_partition_sectors="256" /></data>',
+        encoding="utf-8",
+    )
+    inspection = inspect_firmware_package(
+        selected,
+        vendor="qualcomm",
+        adapter_kind="qualcomm-qdl",
+    )
+
+    with pytest.raises(FirmwarePlanError, match="bounded numeric"):
         build_firmware_execution_plan(
             inspection,
             target="PC04:CH9",
@@ -223,7 +248,8 @@ def test_genio_plan_keeps_bootstrap_sram_address_separate_from_storage(tmp_path)
     ]
     format_step = next(step for step in plan.steps if step.id == "genio-format")
     assert "--bootstrap-addr" in format_step.arguments
-    assert "0x2001000" in format_step.arguments
+    assert str(int("0x2001000", 16)) in format_step.arguments
+    assert "0x2001000" not in format_step.arguments
     assert "erase-mmc" in format_step.arguments
     assert "--skip-erase" in plan.steps[-1].arguments
     first_destructive = next(index for index, step in enumerate(plan.steps) if step.destructive)

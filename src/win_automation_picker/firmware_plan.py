@@ -888,11 +888,12 @@ def _build_qdl_execution_plan(
                 raise FirmwarePlanError(
                     "Format + Download requires vendor-supplied wipe/blank/erase XML; it is never synthesized."
                 )
+            format_operands = _qdl_format_operands(inspection, root)
             format_args = (
                 *common,
                 "--skip-reset",
                 str(programmer),
-                *_absolute_package_paths(root, inspection.format_descriptors),
+                *format_operands,
             )
             steps.append(
                 FirmwareExecutionStep(
@@ -986,12 +987,16 @@ def _build_genio_execution_plan(
         raise FirmwarePlanError("MTK Download Agent must stay inside the selected package root.")
     common = ["--path", inspection.root_path]
     if bootstrap[0]:
+        # Genio Tools 1.7.x documents hexadecimal input but its argparse
+        # declaration uses type=int. Pass the same address in decimal so the
+        # public Windows CLI accepts it; keep canonical hex in the plan digest.
+        bootstrap_cli_address = str(int(bootstrap[1], 16))
         common.extend(
             [
                 "--bootstrap",
                 bootstrap[0],
                 "--bootstrap-addr",
-                bootstrap[1],
+                bootstrap_cli_address,
                 "--bootstrap-mode",
                 bootstrap[2],
             ]
@@ -1141,6 +1146,31 @@ def _qdl_common_args(
             raise FirmwarePlanError("QDL storage slot must be an integer.")
         args.extend(["--slot", storage_slot.strip()])
     return tuple(args)
+
+
+def _qdl_format_operands(
+    inspection: FirmwarePackageInspection,
+    root: Path,
+) -> tuple[str, ...]:
+    operands: list[str] = []
+    for descriptor in inspection.format_descriptors:
+        regions = tuple(region for region in inspection.regions if region.descriptor == descriptor)
+        if regions and all(region.operation == "erase" for region in regions):
+            for region in regions:
+                try:
+                    address, _ = validate_qdl_write_address(
+                        region.address,
+                        sector_size=region.sector_size,
+                    )
+                except FirmwarePlanError as exc:
+                    raise FirmwarePlanError(
+                        f"QDL erase descriptor {descriptor} requires a bounded numeric "
+                        "physical_partition/start+length range."
+                    ) from exc
+                operands.extend(("erase", address))
+            continue
+        operands.append(str((root / descriptor).resolve()))
+    return tuple(operands)
 
 
 def _parse_qualcomm_descriptor(
