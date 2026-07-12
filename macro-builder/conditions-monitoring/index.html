@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Windows UI Automation macro builder and FTP master/slave orchestration manual.">
+        <meta name="description" content="Integrated SEQ, Windows automation, and FTP rig orchestration manual.">
       
       
       
@@ -27,7 +27,7 @@
     
     
       
-        <title>조건과 모니터링 블록 - Win Automation Picker Manual</title>
+        <title>조건과 모니터링 블록 - AE Workbench Manual</title>
       
     
     
@@ -96,7 +96,7 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="상단/헤더">
-    <a href="../.." title="Win Automation Picker Manual" class="md-header__button md-logo" aria-label="Win Automation Picker Manual" data-md-component="logo">
+    <a href="../.." title="AE Workbench Manual" class="md-header__button md-logo" aria-label="AE Workbench Manual" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -110,7 +110,7 @@
       <div class="md-header__ellipsis">
         <div class="md-header__topic">
           <span class="md-ellipsis">
-            Win Automation Picker Manual
+            AE Workbench Manual
           </span>
         </div>
         <div class="md-header__topic" data-md-component="header-topic">
@@ -220,13 +220,13 @@
 
 <nav class="md-nav md-nav--primary" aria-label="네비게이션" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="../.." title="Win Automation Picker Manual" class="md-nav__button md-logo" aria-label="Win Automation Picker Manual" data-md-component="logo">
+    <a href="../.." title="AE Workbench Manual" class="md-nav__button md-logo" aria-label="AE Workbench Manual" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
 
     </a>
-    Win Automation Picker Manual
+    AE Workbench Manual
   </label>
   
     <div class="md-nav__source">
@@ -332,6 +332,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../../daily-workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mobile DRAM AE 업무 흐름
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../ae-workbench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AE Workbench 통합 흐름
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../getting-started/" class="md-nav__link">
         
   
@@ -368,6 +424,34 @@
     
   
     화면 구성
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../ux-readiness/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UX 완성도와 지원 범위
   
 
     
@@ -484,7 +568,7 @@
   <span class="md-ellipsis">
     
   
-    블록 디자인
+    Scratch식 블록 작업실
   
 
     
@@ -565,10 +649,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#if" class="md-nav__link">
+  <a href="#if-monitor" class="md-nav__link">
     <span class="md-ellipsis">
       
-        If 블록
+        If와 Monitor의 차이
       
     </span>
   </a>
@@ -576,10 +660,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#monitor" class="md-nav__link">
+  <a href="#_2" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Monitor 블록
+        텍스트 조건
       
     </span>
   </a>
@@ -587,10 +671,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#group-and-or" class="md-nav__link">
+  <a href="#_3" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Group AND / OR
+        색상 조건
       
     </span>
   </a>
@@ -598,10 +682,54 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#ch" class="md-nav__link">
+  <a href="#and-or" class="md-nav__link">
     <span class="md-ellipsis">
       
-        CH 번호가 겹칠 때
+        AND / OR 묶기
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        모니터 보드에 연결
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sk-commander-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SK Commander 4개 창 예시
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        한 번 확인과 자동 확인
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        보드 화면 커스터마이즈
       
     </span>
   </a>
@@ -749,6 +877,62 @@
     
   
     FTP master/slave 개요
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rig-ftp/ae-campaign/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AE 캠페인 운영
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rig-ftp/seq-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SEQ Generator와 SK Commander
   
 
     
@@ -1025,10 +1209,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#if" class="md-nav__link">
+  <a href="#if-monitor" class="md-nav__link">
     <span class="md-ellipsis">
       
-        If 블록
+        If와 Monitor의 차이
       
     </span>
   </a>
@@ -1036,10 +1220,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#monitor" class="md-nav__link">
+  <a href="#_2" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Monitor 블록
+        텍스트 조건
       
     </span>
   </a>
@@ -1047,10 +1231,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#group-and-or" class="md-nav__link">
+  <a href="#_3" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Group AND / OR
+        색상 조건
       
     </span>
   </a>
@@ -1058,10 +1242,54 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#ch" class="md-nav__link">
+  <a href="#and-or" class="md-nav__link">
     <span class="md-ellipsis">
       
-        CH 번호가 겹칠 때
+        AND / OR 묶기
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        모니터 보드에 연결
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sk-commander-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SK Commander 4개 창 예시
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        한 번 확인과 자동 확인
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        보드 화면 커스터마이즈
       
     </span>
   </a>
@@ -1088,102 +1316,180 @@
   
 
 
-<h1 id="_1">조건과 모니터링 블록</h1>
-<h2 id="if">If 블록</h2>
-<p>If 블록은 실행 흐름을 제어합니다.</p>
+<h1 id="_1">조건과 모니터링</h1>
+<h2 id="if-monitor">If와 Monitor의 차이</h2>
 <table>
 <thead>
 <tr>
-<th>버튼</th>
+<th>종류</th>
+<th>실행 흐름</th>
+<th>사용 예</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>만약 ...</code></td>
+<td>조건이 맞을 때만 안쪽 블록 실행</td>
+<td>PASS이면 다음 버튼 클릭</td>
+</tr>
+<tr>
+<td><code>텍스트/색상 상태</code></td>
+<td>클릭 없이 상태만 읽어 통과/실패 기록</td>
+<td>CH11의 현재 테스트 상태 확인</td>
+</tr>
+</tbody>
+</table>
+<p><code>모니터링 &gt; 한 번 확인</code>과 <code>자동 시작</code>은 모니터 규칙만 평가합니다. 클릭, 입력, 키 블록은 실행하지 않습니다.</p>
+<h2 id="_2">텍스트 조건</h2>
+<ol>
+<li><code>텍스트 상태</code> 또는 <code>만약 텍스트라면</code>을 원하는 위치로 끌어 놓습니다.</li>
+<li>텍스트가 표시되는 component를 클릭합니다.</li>
+<li>오른쪽에서 조건을 선택합니다.</li>
+</ol>
+<table>
+<thead>
+<tr>
 <th>조건</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>If selected exists</code></td>
-<td>선택한 대상이 현재 화면에서 찾히면 실행</td>
-</tr>
-<tr>
-<td><code>If selected text</code></td>
-<td>선택한 대상의 텍스트가 기대값과 맞으면 실행</td>
-</tr>
-<tr>
-<td><code>If selected color</code></td>
-<td>선택한 대상 위치의 색상이 기대 색상과 가까우면 실행</td>
-</tr>
-</tbody>
-</table>
-<p>사용 순서:</p>
-<ol>
-<li>먼저 대상 버튼/상태칸을 <code>Click block</code> 또는 <code>Inspect</code>로 잡습니다.</li>
-<li><code>Sequence</code> 또는 <code>Macro Workspace</code>에서 블록을 선택합니다.</li>
-<li><code>Logic &gt; If selected text</code> 같은 조건 버튼을 누릅니다.</li>
-<li>조건값을 입력합니다.</li>
-<li>선택 블록이 조건 컨테이너 안으로 들어갔는지 확인합니다.</li>
-</ol>
-<h2 id="monitor">Monitor 블록</h2>
-<p>Monitor 블록은 실행 흐름을 바꾸지 않고 상태만 기록합니다.</p>
-<table>
-<thead>
-<tr>
-<th>버튼</th>
-<th>기록 내용</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>Monitor text</code></td>
-<td>대상 텍스트가 조건을 만족하는지</td>
-</tr>
-<tr>
-<td><code>Monitor color</code></td>
-<td>대상 위치 색상이 기대 색상과 가까운지</td>
-</tr>
-</tbody>
-</table>
-<p>예: SK Commander 상태등 모니터링</p>
-<ol>
-<li><code>Inspect</code>로 상태 표시 component를 클릭합니다.</li>
-<li>파란색 실행중 상태라면 <code>Monitor color</code>를 누릅니다.</li>
-<li>기대 색상에 <code>#0000FF</code> 또는 실제 추출한 색상을 입력합니다.</li>
-<li>허용 오차를 입력합니다.</li>
-<li><code>Monitor Mapping</code>에 <code>Board=SK Commander</code>, <code>CH=CH1</code>, <code>State=RUNNING</code>을 입력합니다.</li>
-<li><code>Apply mapping</code>을 누릅니다.</li>
-</ol>
-<h2 id="group-and-or">Group AND / OR</h2>
-<p>여러 조건을 하나의 모니터링 블록처럼 묶을 수 있습니다.</p>
-<table>
-<thead>
-<tr>
-<th>버튼</th>
 <th>의미</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>Group AND</code></td>
-<td>모든 조건이 맞아야 OK</td>
+<td><code>contains</code></td>
+<td>일부 문자열 포함</td>
 </tr>
 <tr>
-<td><code>Group OR</code></td>
-<td>하나 이상 맞으면 OK</td>
+<td><code>equals</code></td>
+<td>전체 문자열이 정확히 같음</td>
+</tr>
+<tr>
+<td><code>starts_with</code></td>
+<td>지정 문자열로 시작</td>
+</tr>
+<tr>
+<td><code>ends_with</code></td>
+<td>지정 문자열로 끝남</td>
+</tr>
+<tr>
+<td><code>regex</code></td>
+<td>정규식과 일치</td>
+</tr>
+<tr>
+<td><code>not_empty</code></td>
+<td>비어 있지 않음</td>
 </tr>
 </tbody>
 </table>
-<p>예:</p>
 <ol>
-<li>CH 식별용 조건 블록을 만듭니다.</li>
-<li>상태 색상 조건 블록을 만듭니다.</li>
-<li><code>Sequence</code>에서 두 조건 블록을 선택합니다.</li>
-<li><code>Group AND</code>를 누릅니다.</li>
-<li>그룹 블록에 <code>Monitor Mapping</code>을 설정합니다.</li>
+<li><code>기대값</code>을 입력하고 <code>변경 적용</code>을 누릅니다.</li>
+<li>실제 화면 값으로 갱신하려면 <code>현재 값 읽기</code>를 누릅니다.</li>
 </ol>
-<h2 id="ch">CH 번호가 겹칠 때</h2>
-<p><code>CH1</code>이 <code>CH11</code>에 잘못 매칭되면 <code>Window match</code> mode를 <code>equals</code> 또는 <code>regex</code>로 바꿉니다.</p>
-<p>예:</p>
-<div class="highlight"><pre><span></span><code>\bch\s*11\b
-</code></pre></div>
-<p>이 정규식은 <code>CH11</code>, <code>Ch 11</code>, <code>ch   11</code>처럼 공백과 대소문자가 섞인 경우를 구분합니다.</p>
+<h2 id="_3">색상 조건</h2>
+<ol>
+<li><code>색상 상태</code> 또는 <code>만약 색상이라면</code>을 끌어 놓습니다.</li>
+<li>상태 표시 component의 중심을 클릭합니다.</li>
+<li>캡처 시점의 색상이 <code>#RRGGBB</code> 기대값으로 자동 입력됩니다.</li>
+<li><code>색상 오차</code>를 조정합니다. 기본값은 <code>24</code>입니다.</li>
+<li>색이 바뀐 뒤 다시 샘플링하려면 <code>현재 값 읽기</code>를 누릅니다.</li>
+</ol>
+<p>색상 비교는 RGB 거리 기준입니다. 안티앨리어싱이나 테마 차이로 픽셀이 조금 달라질 수 있으므로 정확히 같은 값만 요구하기보다 작은 오차를 둡니다.</p>
+<h2 id="and-or">AND / OR 묶기</h2>
+<p>작업실에서 직접 묶는 방법:</p>
+<ol>
+<li><code>AND 조건 묶음</code> 또는 <code>OR 조건 묶음</code>을 놓습니다.</li>
+<li>텍스트/색상 조건 블록을 묶음 안으로 끌어 넣습니다.</li>
+</ol>
+<p>모니터링 표에서 묶는 방법:</p>
+<ol>
+<li>Ctrl 또는 Shift로 같은 위치의 규칙을 두 개 이상 선택합니다.</li>
+<li><code>선택 규칙 AND 묶기</code> 또는 <code>선택 규칙 OR 묶기</code>를 누릅니다.</li>
+</ol>
+<p>AND 예시:</p>
+<ul>
+<li>창 안 텍스트가 <code>CH11</code>을 포함함</li>
+<li>상태등 색상이 초록색임</li>
+<li>두 조건이 모두 맞으면 <code>CH11 / PASS</code></li>
+</ul>
+<p>OR 예시:</p>
+<ul>
+<li>결과 텍스트가 <code>FAIL</code></li>
+<li>또는 상태등이 빨간색임</li>
+<li>하나만 맞아도 <code>FAIL</code></li>
+</ul>
+<h2 id="_4">모니터 보드에 연결</h2>
+<p>규칙을 선택하고 오른쪽 또는 <code>모니터링</code> 탭에서 다음 값을 설정합니다.</p>
+<table>
+<thead>
+<tr>
+<th>필드</th>
+<th>예시</th>
+<th>의미</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>탭</code> / <code>보드</code></td>
+<td><code>SK Commander</code></td>
+<td>사용자 지정 모니터 화면 이름</td>
+</tr>
+<tr>
+<td><code>장비 / CH</code></td>
+<td><code>CH9</code>, <code>CH11</code>, <code>PC04-RIG2</code></td>
+<td>고정 형식이 아닌 자유 장비명</td>
+</tr>
+<tr>
+<td><code>표시 상태</code></td>
+<td><code>RUNNING</code>, <code>PASS</code>, <code>FAIL</code></td>
+<td>이 규칙이 의미하는 상태</td>
+</tr>
+</tbody>
+</table>
+<p><code>CH1</code>, <code>CH11</code>처럼 이름이 겹쳐도 목록은 자유 입력값을 그대로 사용합니다.</p>
+<h2 id="sk-commander-4">SK Commander 4개 창 예시</h2>
+<p>각 창마다 다음 규칙 묶음을 만듭니다.</p>
+<ol>
+<li><code>텍스트 상태</code>: CH 식별 component가 <code>CH9</code>와 정확히 일치</li>
+<li><code>색상 상태</code>: 상태 component가 파란색에 가까움, 상태 <code>RUNNING</code></li>
+<li><code>색상 상태</code>: 같은 component가 초록색에 가까움, 상태 <code>PASS</code></li>
+<li><code>색상 상태</code>: 같은 component가 빨간색에 가까움, 상태 <code>FAIL</code></li>
+<li>필요한 CH 식별 조건과 상태 조건을 AND로 묶음</li>
+</ol>
+<p>CH 목록은 <code>CH9, CH10, CH11, CH12</code>처럼 입력한 뒤 여러 규칙을 선택하고 <code>선택 규칙에 적용</code>을 누르면 순서대로 배정됩니다.</p>
+<h2 id="_5">한 번 확인과 자동 확인</h2>
+<table>
+<thead>
+<tr>
+<th>명령</th>
+<th>동작</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>한 번 확인</code></td>
+<td>모든 모니터 규칙을 1회 평가</td>
+</tr>
+<tr>
+<td><code>자동 시작</code></td>
+<td>입력한 주기마다 반복 평가</td>
+</tr>
+<tr>
+<td><code>중지</code></td>
+<td>다음 규칙 사이에서 안전하게 중단</td>
+</tr>
+</tbody>
+</table>
+<p>표에는 <code>통과/실패</code>, 최근 읽은 값이 표시되고 위쪽에 <code>최근 확인 HH:MM:SS</code>가 갱신됩니다. AND/OR 묶음은 자식 조건을 한 번씩만 읽고 상세 결과를 각 자식 행에도 반영합니다.</p>
+<h2 id="_6">보드 화면 커스터마이즈</h2>
+<p><code>보드 화면 구성</code>에서 다음을 바꿀 수 있습니다.</p>
+<ul>
+<li>화면 이름</li>
+<li>행 기준: 장비/CH, 상태, 보드, 블록</li>
+<li>열 기준: 상태, 장비/CH, 보드</li>
+<li>보드 표시 순서</li>
+<li>상태 표시 순서</li>
+</ul>
+<p>규칙의 <code>탭</code> 값마다 미리보기 안에 실제 탭이 자동 생성됩니다. 예를 들어 <code>SK Commander</code>, <code>결과 텍스트</code>를 입력하면 두 화면을 따로 전환해 볼 수 있습니다.</p>
+<p><code>자동 구성</code>은 현재 규칙의 보드, CH, 상태 값을 읽어 기본 배치를 만듭니다.</p>
 
 
 
@@ -1219,7 +1525,7 @@
       <nav class="md-footer__inner md-grid" aria-label="하단/푸터" >
         
           
-          <a href="../block-designer/" class="md-footer__link md-footer__link--prev" aria-label="이전: 블록 디자인">
+          <a href="../block-designer/" class="md-footer__link md-footer__link--prev" aria-label="이전: Scratch식 블록 작업실">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -1229,7 +1535,7 @@
                 이전
               </span>
               <div class="md-ellipsis">
-                블록 디자인
+                Scratch식 블록 작업실
               </div>
             </div>
           </a>

@@ -10,11 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://stpcoder.github.io/win-automation-picker/troubleshooting/">
+        <link rel="canonical" href="https://stpcoder.github.io/win-automation-picker/ux-readiness/">
       
       
-        <link rel="prev" href="../reference/config-files/">
+        <link rel="prev" href="../interface/">
       
+      
+        <link rel="next" href="../macro-builder/basic-flow/">
       
       
         
@@ -25,7 +27,7 @@
     
     
       
-        <title>문제 해결 - AE Workbench Manual</title>
+        <title>UX 완성도와 지원 범위 - AE Workbench Manual</title>
       
     
     
@@ -78,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#_1" class="md-skip">
+        <a href="#ux" class="md-skip">
           콘텐츠로 이동
         </a>
       
@@ -114,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              문제 해결
+              UX 완성도와 지원 범위
             
           </span>
         </div>
@@ -245,8 +247,10 @@
       
   
   
+    
   
   
+  
     
     
     
@@ -257,13 +261,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_1" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" checked>
         
           
           <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="">
@@ -284,7 +286,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_1">
             <span class="md-nav__icon md-icon"></span>
             
@@ -439,10 +441,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../ux-readiness/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UX 완성도와 지원 범위
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -458,6 +487,175 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="목차">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      목차
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        현재 완성도
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        핵심 판단
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mac" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mac 실제 조작 감사
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        권장 사용자 흐름
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sk-commander-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SK Commander 4개 창 적용
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        이번 점검에서 막은 위험
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ftp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FTP 부하 제어
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        아직 남은 범위
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="아직 남은 범위">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        구현 우선순위
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scratch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scratch 언어
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        원격 운영
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        호환성과 검증
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        배포 전 확인표
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -904,8 +1102,6 @@
       
   
   
-    
-  
   
   
     
@@ -918,11 +1114,13 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
         
           
           <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
@@ -943,7 +1141,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1014,37 +1212,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    문제 해결
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
         
   
   
@@ -1060,147 +1231,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="목차">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      목차
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#_2" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        클릭이 녹화되지 않음
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#_3" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        연속 녹화에서 입력이 빠짐
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#_4" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        입력 녹화 블록이 입력하지 않음
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#ch1-ch11" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        CH1과 CH11이 헷갈림
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#_5" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        팝업 버튼을 못 찾음
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#_6" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        블록을 반복/조건 안으로 넣을 수 없음
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#_7" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        자동 모니터링 값이 갱신되지 않음
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#ftp-status" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        FTP status가 안 보임
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#pc" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        PC별 실행표에 변수 열이 안 보임
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#screenshot" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        screenshot이 안 뜸
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#ftp" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        FTP 서버 부하가 걱정됨
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1240,10 +1270,32 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        현재 완성도
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#_2" class="md-nav__link">
     <span class="md-ellipsis">
       
-        클릭이 녹화되지 않음
+        핵심 판단
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mac" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mac 실제 조작 감사
       
     </span>
   </a>
@@ -1254,7 +1306,18 @@
   <a href="#_3" class="md-nav__link">
     <span class="md-ellipsis">
       
-        연속 녹화에서 입력이 빠짐
+        권장 사용자 흐름
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sk-commander-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SK Commander 4개 창 적용
       
     </span>
   </a>
@@ -1265,84 +1328,7 @@
   <a href="#_4" class="md-nav__link">
     <span class="md-ellipsis">
       
-        입력 녹화 블록이 입력하지 않음
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#ch1-ch11" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        CH1과 CH11이 헷갈림
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#_5" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        팝업 버튼을 못 찾음
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#_6" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        블록을 반복/조건 안으로 넣을 수 없음
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#_7" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        자동 모니터링 값이 갱신되지 않음
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#ftp-status" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        FTP status가 안 보임
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#pc" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        PC별 실행표에 변수 열이 안 보임
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#screenshot" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        screenshot이 안 뜸
+        이번 점검에서 막은 위험
       
     </span>
   </a>
@@ -1353,7 +1339,79 @@
   <a href="#ftp" class="md-nav__link">
     <span class="md-ellipsis">
       
-        FTP 서버 부하가 걱정됨
+        FTP 부하 제어
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        아직 남은 범위
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="아직 남은 범위">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        구현 우선순위
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scratch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scratch 언어
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        원격 운영
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        호환성과 검증
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        배포 전 확인표
       
     </span>
   </a>
@@ -1380,109 +1438,374 @@
   
 
 
-<h1 id="_1">문제 해결</h1>
-<h2 id="_2">클릭이 녹화되지 않음</h2>
-<p>확인할 것:</p>
-<ol>
-<li><code>클릭 녹화</code> 또는 <code>입력 녹화</code>를 먼저 눌렀는지 확인합니다.</li>
-<li>Win Automation Picker 내부가 아니라 대상 프로그램을 클릭했는지 확인합니다.</li>
-<li><code>실행 기록</code>에 error가 있는지 확인합니다.</li>
-<li>대상 프로그램이 관리자 권한이면 Win Automation Picker도 관리자 권한으로 실행합니다.</li>
-</ol>
-<p>연속 녹화라면 상단 상태가 <code>녹화 중</code>인지도 확인합니다. Picker 자체의 클릭은 의도적으로 제외됩니다.</p>
-<h2 id="_3">연속 녹화에서 입력이 빠짐</h2>
-<ol>
-<li>타이핑하기 전에 대상 입력칸을 한 번 클릭합니다. recorder는 클릭한 UIA input component에 키 입력을 연결합니다.</li>
-<li>타임라인에 클릭 대상이 <code>Edit</code>, <code>Document</code>, <code>ComboBox</code>, <code>Spinner</code> 계열로 표시되는지 확인합니다.</li>
-<li>자체 렌더링 control이라 최종 값 읽기가 불가능하면 수동 <code>입력 녹화</code>로 대상을 잡고 오른쪽에서 값을 지정합니다.</li>
-<li>한글 IME는 키 문자 대신 입력칸의 최종 UIA 값을 사용합니다. 녹화 정지 직후 값이 다르면 다음 component를 한 번 클릭한 뒤 정지해 보십시오.</li>
-<li>비밀번호 필드는 값이 빠진 것이 정상입니다. 빈 필수 변수로 생성됩니다.</li>
-</ol>
-<h2 id="_4">입력 녹화 블록이 입력하지 않음</h2>
-<p><code>입력 녹화</code>는 녹화 중 바로 입력하지 않습니다. 실행 시 입력합니다.</p>
-<p>확인할 것:</p>
-<ol>
-<li>상단 <code>수동 입력값</code> 또는 오른쪽 <code>입력할 텍스트</code>에 값이 있는지 확인합니다.</li>
-<li><code>기존값 지우기</code> 여부가 맞는지 확인합니다.</li>
-<li>붙여넣기가 막힌 프로그램이면 방식을 <code>keys</code>로 바꿉니다.</li>
-<li>작업실 위 캡처 품질에서 대상이 input control인지 확인합니다.</li>
-</ol>
-<h2 id="ch1-ch11">CH1과 CH11이 헷갈림</h2>
-<p><code>Window match</code> mode를 바꿉니다.</p>
+<h1 id="ux">UX 완성도와 지원 범위</h1>
+<p>이 문서는 실제 업무 흐름을 기준으로 현재 구현이 어디까지 동작하는지 구분합니다. 수치는 기능 항목 대비 구현 비율을 나타내는 점검값이며, 모든 사내 프로그램에서의 호환성을 보증하는 수치는 아닙니다.</p>
+<h2 id="_1">현재 완성도</h2>
 <table>
 <thead>
 <tr>
-<th>mode</th>
-<th>사용 상황</th>
+<th>영역</th>
+<th style="text-align: right;">점검값</th>
+<th>현재 상태</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>contains</code></td>
-<td>빠르게 포함 여부만 볼 때</td>
+<td>AE 통합 작업대</td>
+<td style="text-align: right;">94%</td>
+<td>오늘 작업·자동화 준비·Rig 설정 분리, SEQ/Scratch 검사, hash gate와 서버 등록 지원</td>
 </tr>
 <tr>
-<td><code>equals</code></td>
-<td>정확히 같은 텍스트만 허용할 때</td>
+<td>연속 이벤트 녹화</td>
+<td style="text-align: right;">85%</td>
+<td>클릭, 입력 최종값, 주요 키, 동작 간 대기, 정지 클릭 제외 지원</td>
 </tr>
 <tr>
-<td><code>regex</code></td>
-<td><code>CH 11</code>, <code>Ch11</code> 같은 변형까지 처리할 때</td>
+<td>Scratch식 블록 작업실</td>
+<td style="text-align: right;">90%</td>
+<td>46px 조밀 보기, 2px 결합 간격, drag/drop, 중첩, 버튼식 안팎 이동, 이름/색상, undo/redo 지원</td>
+</tr>
+<tr>
+<td>조건과 모니터 보드</td>
+<td style="text-align: right;">80%</td>
+<td>텍스트/색상, AND/OR, 자유 CH명, 보드 축/순서 구성 지원</td>
+</tr>
+<tr>
+<td>Python export</td>
+<td style="text-align: right;">90%</td>
+<td>중첩 흐름, 데이터 행, 런타임 변수 포함 실행 파일 생성</td>
+</tr>
+<tr>
+<td>FTP 원격 실행</td>
+<td style="text-align: right;">85%</td>
+<td>PC별 매크로/값 전송, 내장 workflow 실행, 긴급 중단 지원</td>
+</tr>
+<tr>
+<td>SEQ Generator 연동</td>
+<td style="text-align: right;">88%</td>
+<td>profile 검증 bundle, SHA-256 재검사, CH별 SEQ/SK Commander 런처, binary metadata 교환 지원</td>
+</tr>
+<tr>
+<td>원격 세션 모니터링</td>
+<td style="text-align: right;">90%</td>
+<td>PC/CH 분리 보기, SoC/binary/자재/Test/SEQ/Grid, 결과 보드, 화면 요청, 2-sheet Excel 지원</td>
+</tr>
+<tr>
+<td>초기 설정 UX</td>
+<td style="text-align: right;">90%</td>
+<td>일일 화면과 분리된 Master 연결, PC/변수/자유 CH 표 편집, PC별 <code>.info</code> 생성 지원</td>
 </tr>
 </tbody>
 </table>
-<p>정규식 예:</p>
-<div class="highlight"><pre><span></span><code>\bch\s*11\b
-</code></pre></div>
-<h2 id="_5">팝업 버튼을 못 찾음</h2>
-<ol>
-<li>팝업이 열린 상태에서 <code>선택 대상 다시 잡기</code>로 다시 캡처합니다.</li>
-<li>버튼 중앙을 클릭합니다.</li>
-<li><code>데이터 / 고급 &gt; 창 후보</code>에서 후보 창을 확인합니다.</li>
-<li><code>대상 고급 설정</code>의 창 구분 값에 팝업 내부 고유 텍스트를 넣습니다.</li>
-</ol>
-<h2 id="_6">블록을 반복/조건 안으로 넣을 수 없음</h2>
-<ol>
-<li>블록을 끌 때 표시되는 14px 하늘색 결합 영역을 확인합니다.</li>
-<li>컨테이너의 빈 안쪽 <code>여기에 블록 놓기</code> 가까이에서 놓습니다.</li>
-<li>AND/OR 묶음에는 일반 클릭/입력 블록을 넣을 수 없습니다.</li>
-<li>컨테이너를 자기 자신 안으로 넣는 동작은 차단됩니다.</li>
-</ol>
-<h2 id="_7">자동 모니터링 값이 갱신되지 않음</h2>
-<ol>
-<li><code>모니터링</code> 탭에 텍스트/색상 규칙이 하나 이상 있는지 확인합니다.</li>
-<li>규칙 행의 <code>최근 읽은 값</code>이 <code>ERROR</code>인지 확인합니다.</li>
-<li><code>현재 값 읽기</code>로 selector가 여전히 유효한지 확인합니다.</li>
-<li>프로그램이 관리자 권한이면 Picker도 같은 권한으로 실행합니다.</li>
-<li>화면 테마가 바뀌었다면 색상 규칙을 다시 샘플링합니다.</li>
-</ol>
-<h2 id="ftp-status">FTP status가 안 보임</h2>
-<ol>
-<li>slave PC에서 <code>이 PC Agent &gt; Agent 시작</code>이 실행 중인지 확인합니다.</li>
-<li>master와 slave의 <code>root_dir</code>이 같은지 확인합니다.</li>
-<li>FTP 계정이 <code>status/</code>, <code>results/</code>, <code>logs/</code>에 쓰기 권한이 있는지 확인합니다.</li>
-<li><code>1 오늘 작업 &gt; PC · CH 상태 &gt; 새로고침</code>을 누릅니다.</li>
-</ol>
-<h2 id="pc">PC별 실행표에 변수 열이 안 보임</h2>
-<ol>
-<li>Win Automation Picker에서 입력 블록이 <code>${variable}</code> 형식인지 확인합니다.</li>
-<li>현재 workflow를 다시 업로드해 package metadata를 갱신합니다.</li>
-<li><code>1 오늘 작업 &gt; 실행 &gt; 자동화 새로고침</code> 후 해당 macro를 다시 선택합니다.</li>
-<li>예전 package나 임의 Python 파일은 변수 metadata가 없을 수 있습니다. 이때는 <code>운영 도구 열기</code>의 <code>입력값</code>을 사용하거나 Picker에서 다시 등록합니다.</li>
-</ol>
-<h2 id="screenshot">screenshot이 안 뜸</h2>
-<ol>
-<li>slave agent가 interactive desktop에서 실행 중인지 확인합니다.</li>
-<li><code>min_screenshot_interval_seconds</code> 때문에 skip된 것은 아닌지 master log를 확인합니다.</li>
-<li>FTP의 <code>screenshots/{node}/</code> 폴더 권한을 확인합니다.</li>
-</ol>
-<h2 id="ftp">FTP 서버 부하가 걱정됨</h2>
-<p>이 도구는 FTP를 socket처럼 고속 polling하지 않는 구조입니다.</p>
+<h2 id="_2">핵심 판단</h2>
 <ul>
-<li>기본 polling interval을 5초 이상으로 둡니다.</li>
-<li>monitor loop는 최소 10초 간격으로 제한됩니다.</li>
-<li>screenshot은 수동 요청 위주로 사용합니다.</li>
-<li>오래된 결과와 screenshot은 retention 설정으로 정리합니다.</li>
+<li><strong>업무 빈도에 맞춰 세 화면으로 나뉩니다.</strong> 프로그램별 SEQ와 Scratch는 <code>자동화 준비</code>,
+  FTP와 PC/CH inventory는 <code>Rig 설정</code>, 반복 실행과 판정은 첫 화면인 <code>오늘 작업</code>에서 처리합니다.</li>
+<li><strong>Scratch는 장식용 블록 목록이 아닙니다.</strong> 실제 recipe tree를 drag/drop으로 바꾸며
+  repeat/if/AND/OR 중첩과 Python export 결과도 같은 트리를 사용합니다.</li>
+<li><strong>현장 호환성이 가장 큰 잔여 위험입니다.</strong> Mac에서는 UI와 데이터 흐름을 검증했지만
+  사내 SK Commander selector, prompt timing, 실제 성공 SEQ는 Windows 장비 증거가 필요합니다.</li>
+<li><strong>운영자는 JSON을 몰라도 됩니다.</strong> 시험 변수, 공통 변수, PC/CH inventory와 실행표를
+  GUI에서 편집합니다. JSON/고급 Python은 기본 흐름 밖에 둡니다.</li>
+</ul>
+<h2 id="mac">Mac 실제 조작 감사</h2>
+<p>문서용 데모가 아니라 실제 앱 메서드와 위젯 이벤트를 사용했습니다.</p>
+<table>
+<thead>
+<tr>
+<th>시나리오</th>
+<th>결과</th>
+<th>확인 내용</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Scratch 팔레트 drag/drop</td>
+<td>PASS</td>
+<td>놓는 순간 포인터 기준 재계산, 반복 블록의 부모 여백과 내부 슬롯 구분</td>
+</tr>
+<tr>
+<td>블록 편집</td>
+<td>PASS</td>
+<td>이름, 위/아래, 안/밖, 복제, 삭제, undo/redo</td>
+</tr>
+<tr>
+<td>실행 제어</td>
+<td>PASS</td>
+<td>wait 매크로 시작, 중지 버튼 활성화, 오류 팝업 없는 <code>Stopped</code> 종료</td>
+</tr>
+<tr>
+<td>Workbench gate</td>
+<td>PASS</td>
+<td>SEQ/package와 macro/export SHA-256 일치 시에만 업로드 활성화</td>
+</tr>
+<tr>
+<td>Sequence Generator</td>
+<td>PASS</td>
+<td>Conditions, Run Matrix, Preview와 Validate <code>5 blocks / 86 commands</code></td>
+</tr>
+<tr>
+<td>1080×720 / 1320×820 / 1420×860 레이아웃</td>
+<td>PASS</td>
+<td>주요 6개 화면의 버튼·입력·표 경계와 텍스트 겹침 없음</td>
+</tr>
+<tr>
+<td>Scratch 조밀 보기</td>
+<td>PASS</td>
+<td>46px 블록, 2px 스택 간격, 14px 드롭 영역과 연결 홈 표시</td>
+</tr>
+<tr>
+<td>캡처 격리</td>
+<td>PASS</td>
+<td>ScreenCaptureKit이 현재 프로세스와 제목이 일치하는 독립 창만 캡처</td>
+</tr>
+<tr>
+<td>PC/CH 보드</td>
+<td>PASS</td>
+<td>CH9→CH12 자연 정렬, running/pass/fail 색상, Grid 진행</td>
+</tr>
+</tbody>
+</table>
+<p>재현 스크립트는 <code>scripts/capture_manual_screenshots.py</code>이며, 생성된 실제 화면은 매뉴얼의
+11개 PNG입니다. FTP 주소, 계정과 비밀번호 환경 변수는 모두 데모 값입니다.</p>
+<h2 id="_3">권장 사용자 흐름</h2>
+<ol>
+<li><code>2 자동화 준비</code>에서 SEQ recipe의 목표 Temp/VDD를 정하고 <code>검사 · 패키지 준비</code>를 수행합니다.</li>
+<li>같은 화면에서 프로그램 매크로를 녹화하고 <code>Scratch 편집</code>, 로컬 <code>시험</code>, <code>검사 · Python 준비</code>를 수행합니다.</li>
+<li><code>준비 상태 확인</code> 후 <code>서버 라이브러리 등록</code>을 누릅니다. 이 동작은 원격 실행을 시작하지 않습니다.</li>
+<li>최초 1회 <code>3 Rig 설정 &gt; Master 연결</code>에서 FTP 주소와 전용 root를 저장하고 <code>연결 확인</code>을 누릅니다.</li>
+<li><code>원격 PC · CH</code>에서 PC, 공통 변수와 자유 CH를 등록하고 <code>서버 폴더 준비</code>를 누릅니다.</li>
+<li><code>Slave 설정 내보내기</code>로 PC별 <code>.info</code>를 만들고 각 PC에서 <code>이 PC Agent &gt; Agent 시작</code>을 누릅니다.</li>
+<li>매일 <code>1 오늘 작업 &gt; 실행</code>에서 자동화를 선택하고 <code>Rig 대상 불러오기</code>로 PC/CH별 값을 확인합니다.</li>
+<li><code>실행 시작</code>으로 체크된 행만 전송하고 <code>캠페인</code>과 <code>PC · CH 상태</code>에서 Grid와 결과를 확인합니다.</li>
+</ol>
+<h2 id="sk-commander-4">SK Commander 4개 창 적용</h2>
+<p>한 PC에서 같은 프로그램 창이 네 개 떠 있는 경우 다음처럼 구성합니다.</p>
+<ol>
+<li>각 블록의 대상 selector에 프로그램 창 정보와 CH 식별용 window marker를 함께 저장합니다.</li>
+<li>CH component는 <code>equals CH9</code>, <code>equals CH10</code>, <code>equals CH11</code>, <code>equals CH12</code>처럼 정확 비교합니다.</li>
+<li>상태 component에는 파랑 <code>RUNNING</code>, 초록 <code>PASS</code>, 빨강 <code>FAIL</code> 색상 규칙을 만듭니다.</li>
+<li><code>CH 식별 조건 AND 상태 조건</code>을 한 묶음으로 만듭니다.</li>
+<li><code>탭</code>, <code>장비 / CH</code>, <code>표시 상태</code>는 고정 스키마가 아닌 자유 문자열로 지정합니다.</li>
+</ol>
+<p>CH가 없는 프로그램은 CH 조건을 만들지 않고 창 제목, 내부 고유 텍스트 또는 다른 component 조건만 사용합니다. <code>CH1</code>과 <code>CH11</code>이 겹치는 경우 <code>contains</code> 대신 <code>equals</code> 또는 경계가 있는 정규식을 사용합니다.</p>
+<h2 id="_4">이번 점검에서 막은 위험</h2>
+<table>
+<thead>
+<tr>
+<th>항목</th>
+<th>처리</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>자동 새로고침이 매크로를 반복 전송</td>
+<td>상태 읽기 전용 loop로 교체</td>
+</tr>
+<tr>
+<td>원격 상태 갱신 때문에 클릭/입력까지 재실행</td>
+<td><code>monitor</code> job이 monitor 블록만 추출해 평가</td>
+</tr>
+<tr>
+<td>slave에 Python이 없으면 생성 매크로 실패</td>
+<td>export workflow를 slave EXE 내장 엔진으로 실행</td>
+</tr>
+<tr>
+<td>오래된 화면을 새 요청 결과처럼 표시</td>
+<td>요청 job 전용 label과 정확히 일치하는 PNG만 표시</td>
+</tr>
+<tr>
+<td>FTP 일시 오류로 agent 종료</td>
+<td>재연결 상태와 최대 60초 backoff 추가</td>
+</tr>
+<tr>
+<td>오래된 heartbeat가 정상처럼 표시</td>
+<td>등록 PC 병합 및 stale/offline 판정 추가</td>
+</tr>
+<tr>
+<td>결과를 로그에서만 확인</td>
+<td>PASS/FAIL 실행 이력 표와 상세 창 추가</td>
+</tr>
+<tr>
+<td>JSON 직접 편집 중 설정 오류</td>
+<td>공통 변수와 slave PC를 표 기반 편집으로 교체</td>
+</tr>
+<tr>
+<td>broadcast 파일 무한 증가</td>
+<td>모든 등록 slave 처리 후 pending 원본 정리</td>
+</tr>
+<tr>
+<td>손상되거나 검증을 건너뛴 SEQ 실행</td>
+<td>generator validation과 SEQ/Recipe SHA-256을 Slave에서 재검사</td>
+</tr>
+<tr>
+<td>수정한 recipe에 예전 package를 업로드</td>
+<td>원본 recipe source SHA-256을 manifest에 기록하고 Workbench에서 stale 판정</td>
+</tr>
+<tr>
+<td>수정한 Scratch에 예전 Python을 업로드</td>
+<td>project SHA-256과 마지막 export SHA-256이 같을 때만 통합 업로드 활성화</td>
+</tr>
+<tr>
+<td>중첩 블록이 부모 여백으로 나오지 못함</td>
+<td>깊이 점수 조정과 직접 <code>컨테이너 밖으로</code> 버튼 추가</td>
+</tr>
+<tr>
+<td>블록이 커서 한눈에 흐름을 보기 어려움</td>
+<td>기본 46px 조밀 보기와 폭 상한, 2px 스택 간격 적용</td>
+</tr>
+<tr>
+<td>블록 사이가 떨어져 연결 여부가 불명확</td>
+<td>결합 홈을 맞붙이고 드래그 중 14px 하늘색 결합 영역 표시</td>
+</tr>
+<tr>
+<td>빠른 드롭 때 마지막 이동 위치에 들어감</td>
+<td>버튼을 놓는 순간의 포인터 좌표로 삽입 위치 재계산</td>
+</tr>
+<tr>
+<td>일일 화면에 설정·고급 버튼이 과다 노출</td>
+<td>오늘 작업·자동화 준비·Rig 설정 분리와 메뉴/접힌 영역 적용</td>
+</tr>
+<tr>
+<td><code>중지</code>가 오류 팝업으로 보임</td>
+<td>사용자 중단을 정상 <code>Stopped</code> 상태와 실행 기록으로 처리</td>
+</tr>
+<tr>
+<td>macOS 다크 테마에서 설명/로그가 검은 박스로 표시</td>
+<td>모든 Tk Text에 명시적 밝은 표면과 본문색 적용</td>
+</tr>
+<tr>
+<td>CH10이 CH9보다 먼저 보임</td>
+<td>자유 이름을 유지하는 숫자 자연 정렬 적용</td>
+</tr>
+<tr>
+<td>로컬 시험값에 JSON 문법 필요</td>
+<td>감지된 변수의 표 기반 <code>값 편집</code>과 작업별 저장으로 교체</td>
+</tr>
+<tr>
+<td>빠른 매크로 버튼을 다시 만들지 않으면 수정 불가</td>
+<td>이름/메모 수정과 좌우 순서 변경 추가</td>
+</tr>
+<tr>
+<td>요청/가설/판정과 실행 결과가 분리</td>
+<td>AE campaign snapshot, preflight, PC/CH/attempt 보드로 연결</td>
+</tr>
+<tr>
+<td>실패 원인 메모가 원본 로그를 덮어씀</td>
+<td>별도 triage sidecar에 분류, 조치, 담당자, 근거 저장</td>
+</tr>
+<tr>
+<td>Slave 작업 폴더에 SEQ 무한 누적</td>
+<td>같은 SHA 폴더 재사용, Rig 소유 형태의 최근 50개만 정리</td>
+</tr>
+</tbody>
+</table>
+<h2 id="ftp">FTP 부하 제어</h2>
+<ul>
+<li>FTP 연결은 작업마다 짧게 열고 닫으며 장시간 점유하지 않습니다.</li>
+<li>slave polling은 기본 간격과 jitter를 사용합니다.</li>
+<li>실행 중 stop 신호 확인은 최대 2초 간격으로 제한합니다.</li>
+<li>화면 요청은 master와 slave 양쪽에서 최소 간격을 적용합니다.</li>
+<li>결과, 로그, archive, 화면 파일은 보관 개수를 넘으면 오래된 순서로 삭제합니다.</li>
+<li>상태 자동 조회의 최소 간격은 10초입니다.</li>
+</ul>
+<p>따라서 FTP를 socket이나 실시간 영상 채널처럼 사용하지 않습니다. 전체 화면은 사용자가 요청할 때만 원본 PNG 한 장을 전송합니다.</p>
+<h2 id="_5">아직 남은 범위</h2>
+<h3 id="_6">구현 우선순위</h3>
+<table>
+<thead>
+<tr>
+<th>우선순위</th>
+<th>기능</th>
+<th>이유</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>P0 현장 검증</td>
+<td>실제 SK Commander 네 창의 selector 녹화/재실행 증거</td>
+<td>전체 자동화 성공 여부를 결정하는 마지막 경계</td>
+</tr>
+<tr>
+<td>P0 현장 검증</td>
+<td>실제 성공 SEQ, Grid log, prompt/context와 package 비교</td>
+<td>현재 compatibility는 정적 규칙이며 timing을 보증하지 않음</td>
+</tr>
+<tr>
+<td>P0 운영</td>
+<td>사내 전용 FTP 계정과 별도 root에서 10~50대 soak test</td>
+<td>polling, screenshot, retention 부하를 실환경에서 계측해야 함</td>
+</tr>
+<tr>
+<td>P1</td>
+<td>selector 변경 감지와 재연결 일괄 점검</td>
+<td>SK Commander 업데이트 때 조용히 잘못 누르는 위험 감소</td>
+</tr>
+<tr>
+<td>P1</td>
+<td>Windows 시작 시 Agent 자동 실행/상태 tray</td>
+<td>재부팅 후 사람이 Agent 시작을 빼먹는 위험 감소</td>
+</tr>
+<tr>
+<td>P1</td>
+<td><code>else</code>, <code>repeat until</code>, <code>wait until</code>, reporter 변수</td>
+<td>더 복잡한 복구·대기 흐름을 블록만으로 표현</td>
+</tr>
+<tr>
+<td>P1</td>
+<td>Qualcomm/MTK downloader adapter 현장 검증</td>
+<td>물리 switch/preloader 조건을 자동화 전에 안전하게 gate</td>
+</tr>
+<tr>
+<td>P2</td>
+<td>매크로/SEQ 템플릿 카탈로그와 승인 이력</td>
+<td>반복 업무 재사용과 변경 추적 향상</td>
+</tr>
+<tr>
+<td>제외</td>
+<td>FTP 기반 실시간 영상/마우스 원격조작</td>
+<td>FTP 부하와 사내 보안 경계를 벗어남</td>
+</tr>
+</tbody>
+</table>
+<h3 id="scratch">Scratch 언어</h3>
+<ul>
+<li><code>else</code> 분기</li>
+<li><code>repeat until</code>, <code>wait until</code></li>
+<li>변수/비교/산술 reporter 블록</li>
+<li>블록 검색, 컨테이너 접기, 추가 축소 단계</li>
+<li>여러 블록 동시 선택</li>
+<li>GUI에서 임의 Python 비교 함수를 plugin처럼 등록하는 기능</li>
+</ul>
+<p>현재 작업실은 위 기능이 없는 제한된 Scratch식 자동화 편집기입니다. drag/drop과 중첩 자체는 실제 recipe tree를 수정합니다.</p>
+<h3 id="_7">원격 운영</h3>
+<ul>
+<li>실시간 화면 스트리밍과 마우스 원격 조작은 지원하지 않습니다.</li>
+<li>Windows 로그인 전 service session에서 UI 자동화하는 기능은 지원하지 않습니다.</li>
+<li>Agent Windows 시작 프로그램 등록은 아직 수동입니다.</li>
+<li>일반 Python 패키지는 고급 기능이며 slave에 외부 Python과 필요한 모듈이 있어야 합니다.</li>
+<li>같은 PC의 여러 실행표 행은 UI 충돌을 막기 위해 순차적으로 런처를 실행합니다. 런처는 각 SK Commander 테스트를 시작한 뒤 종료하고, 장시간 상태 추적은 별도 monitor workflow로 구성해야 합니다.</li>
+<li>Campaign 보드는 계획/실행/판정/triage를 연결하지만 자재 또는 제품 root cause를 자동 확정하지 않습니다. AE가 evidence를 검토해 분류해야 합니다.</li>
+</ul>
+<h3 id="_8">호환성과 검증</h3>
+<ul>
+<li>native Windows UI Automation 정보를 거의 노출하지 않는 custom canvas는 selector를 안정적으로 만들 수 없습니다.</li>
+<li>관리자 권한 프로그램은 Picker와 slave도 같은 권한 수준으로 실행해야 합니다.</li>
+<li>자동 테스트는 recipe, export, FTP spool 계약을 검증하고 Windows CI에서 GUI 생성과 EXE 빌드를 확인합니다. 실제 사내 SK Commander 화면에 대한 최종 selector 시험은 대상 PC에서 수행해야 합니다.</li>
+<li>기본 <code>.rigseq.zip</code>은 <code>SK Commander Mobile SoC</code> profile 검사를 통과합니다. 그러나 실제 성공 SEQ, SK Commander log, raw serial log가 없으므로 command timing, live prompt/context, 장비 결과까지 field verified된 상태는 아닙니다.</li>
+</ul>
+<h2 id="_9">배포 전 확인표</h2>
+<ul>
+<li>[ ] FTP 전용 계정이 지정 root에만 접근한다.</li>
+<li>[ ] 모든 Node ID가 중복되지 않는다.</li>
+<li>[ ] 등록 PC가 상태표에서 <code>online</code> 또는 <code>offline</code>으로 모두 보인다.</li>
+<li>[ ] 테스트용 PC 한 대에서 클릭, 입력, 중단을 먼저 검증했다.</li>
+<li>[ ] 입력값 중 PC별 값은 변수로 바꿨다.</li>
+<li>[ ] CH 식별 조건과 상태 조건을 한 창에서 시험했다.</li>
+<li>[ ] 화면 요청 최소 간격과 파일 보관 개수를 확인했다.</li>
+<li>[ ] 전체 전송 전 실행표의 대상 PC와 매크로를 다시 확인했다.</li>
+<li>[ ] SEQ 행마다 SK Commander 런처, 슬롯, 필요한 CH를 지정했다.</li>
+<li>[ ] 패키지 상세의 Compatibility와 Field Verified 상태를 확인했다.</li>
 </ul>
 
 
@@ -1519,7 +1842,7 @@
       <nav class="md-footer__inner md-grid" aria-label="하단/푸터" >
         
           
-          <a href="../reference/config-files/" class="md-footer__link md-footer__link--prev" aria-label="이전: 설정 파일 예시">
+          <a href="../interface/" class="md-footer__link md-footer__link--prev" aria-label="이전: 화면 구성">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -1529,11 +1852,27 @@
                 이전
               </span>
               <div class="md-ellipsis">
-                설정 파일 예시
+                화면 구성
               </div>
             </div>
           </a>
         
+        
+          
+          <a href="../macro-builder/basic-flow/" class="md-footer__link md-footer__link--next" aria-label="다음: 기본 매크로 만들기">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                다음
+              </span>
+              <div class="md-ellipsis">
+                기본 매크로 만들기
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
         
       </nav>
     

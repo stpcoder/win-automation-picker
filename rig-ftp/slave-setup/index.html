@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Windows UI Automation macro builder and FTP master/slave orchestration manual.">
+        <meta name="description" content="Integrated SEQ, Windows automation, and FTP rig orchestration manual.">
       
       
       
@@ -27,7 +27,7 @@
     
     
       
-        <title>Slave 세팅 - Win Automation Picker Manual</title>
+        <title>Slave 세팅 - AE Workbench Manual</title>
       
     
     
@@ -96,7 +96,7 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="상단/헤더">
-    <a href="../.." title="Win Automation Picker Manual" class="md-header__button md-logo" aria-label="Win Automation Picker Manual" data-md-component="logo">
+    <a href="../.." title="AE Workbench Manual" class="md-header__button md-logo" aria-label="AE Workbench Manual" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -110,7 +110,7 @@
       <div class="md-header__ellipsis">
         <div class="md-header__topic">
           <span class="md-ellipsis">
-            Win Automation Picker Manual
+            AE Workbench Manual
           </span>
         </div>
         <div class="md-header__topic" data-md-component="header-topic">
@@ -220,13 +220,13 @@
 
 <nav class="md-nav md-nav--primary" aria-label="네비게이션" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="../.." title="Win Automation Picker Manual" class="md-nav__button md-logo" aria-label="Win Automation Picker Manual" data-md-component="logo">
+    <a href="../.." title="AE Workbench Manual" class="md-nav__button md-logo" aria-label="AE Workbench Manual" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
 
     </a>
-    Win Automation Picker Manual
+    AE Workbench Manual
   </label>
   
     <div class="md-nav__source">
@@ -332,6 +332,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../../daily-workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mobile DRAM AE 업무 흐름
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../ae-workbench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AE Workbench 통합 흐름
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../getting-started/" class="md-nav__link">
         
   
@@ -368,6 +424,34 @@
     
   
     화면 구성
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../ux-readiness/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UX 완성도와 지원 범위
   
 
     
@@ -484,7 +568,7 @@
   <span class="md-ellipsis">
     
   
-    블록 디자인
+    Scratch식 블록 작업실
   
 
     
@@ -658,6 +742,62 @@
     
   
     FTP master/slave 개요
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ae-campaign/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AE 캠페인 운영
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../seq-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SEQ Generator와 SK Commander
   
 
     
@@ -1139,23 +1279,30 @@
 rig-ftp.info
 </code></pre></div>
 <p><code>rig-ftp.info</code>의 <code>runtime.node_id</code>는 slave마다 고유해야 합니다.</p>
+<p>Master에서 <code>CH 관리</code>로 입력한 이 PC의 SoC, binary, 자재, Test/SEQ 초기값도 같은 <code>.info</code>에 포함됩니다. Slave는 자신의 Node ID와 일치하는 CH 목록을 heartbeat에 싣습니다.</p>
 <h2 id="agent">Agent 시작</h2>
+<p><img alt="Slave PC Agent 제어와 로그" src="../../assets/screenshots/11-slave-agent.png" /></p>
 <ol>
 <li>slave PC에서 <code>RigFtpCommander.exe</code>를 실행합니다.</li>
-<li>상단에서 config가 제대로 로드됐는지 확인합니다.</li>
-<li><code>This PC Agent</code> 탭을 엽니다.</li>
-<li><code>Node</code> 값이 이 PC의 node id인지 확인합니다.</li>
-<li><code>Start agent</code>를 누릅니다.</li>
+<li>상단의 설정 파일명과 연결 상태를 확인합니다.</li>
+<li><code>3 Rig 설정 &gt; 이 PC Agent</code>를 엽니다.</li>
+<li><code>이 PC Node ID</code> 값이 이 PC의 node id인지 확인합니다.</li>
+<li><code>Agent 시작</code>을 누릅니다.</li>
 <li>창을 닫지 않고 유지합니다.</li>
 </ol>
 <h2 id="_2">한 번만 체크</h2>
-<p>대기 중인 job이 있는지 한 번만 확인하려면 <code>Check once</code>를 누릅니다.</p>
+<p>대기 중인 job이 있는지 한 번만 확인하려면 <code>더보기 &gt; 한 번 확인</code>을 누릅니다.</p>
 <h2 id="_3">중지</h2>
-<p>agent loop를 멈추려면 <code>Stop agent</code>를 누릅니다.</p>
+<p>agent loop를 멈추려면 <code>Agent 중지</code>를 누릅니다.</p>
 <h2 id="stop-signal">Stop signal 해제</h2>
-<p>master에서 emergency stop을 보낸 뒤 해당 PC의 stop signal을 지우려면 <code>Clear stop</code>을 누릅니다.</p>
+<p>master에서 긴급 중단을 보낸 뒤 해당 PC의 stop signal을 지우려면
+<code>더보기 &gt; 중단 신호 해제</code>를 누릅니다.</p>
+<p>FTP가 일시적으로 끊기면 Agent는 종료되지 않고 <code>Reconnecting</code> 상태로 바뀐 뒤 최대 60초 backoff로 다시 연결합니다.</p>
 <h2 id="_4">주의</h2>
 <p>화면 캡처와 UI 자동화는 interactive desktop session에서 실행되어야 합니다. Windows service session 0에서 실행하면 실제 사용자 화면을 캡처하지 못할 수 있습니다.</p>
+<p>Win Automation Picker가 만든 workflow는 Agent의 내장 엔진으로 실행되므로 별도 Python
+설치가 필요하지 않습니다. 직접 만든 일반 Python 스크립트를 실행할 때만
+<code>Master · 원격 PC &gt; 고급 정책 &gt; 외부 Python</code>을 지정합니다.</p>
 
 
 
