@@ -147,3 +147,51 @@ def test_session_runs_sequence_and_detects_lk_prompt() -> None:
     assert result.ok
     assert result.completed_commands == 2
     assert "LK" in states
+
+
+def test_command_response_keeps_tail_when_console_ring_buffer_wraps() -> None:
+    connection = FakeConnection()
+
+    def write_large_response(data: bytes) -> int:
+        connection.writes.append(data)
+        if data.endswith(b"\r\n"):
+            connection.pending.append(b"x" * 6000 + b"\r\nPASS")
+        return len(data)
+
+    connection.write = write_large_response  # type: ignore[method-assign]
+    session = SerialConsoleSession(
+        _config(),
+        connection_factory=lambda _config: connection,
+        max_buffer_chars=4096,
+    )
+    session.connect()
+    try:
+        result = session.run_sequence(
+            "#RUN\nlog 0xff;",
+            command_timeout_seconds=1.0,
+            idle_seconds=0.02,
+        )
+    finally:
+        session.close()
+
+    assert result.ok
+    assert result.commands[0].response.startswith("[RESPONSE TRUNCATED")
+    assert result.commands[0].response.endswith("PASS")
+
+
+def test_output_tap_can_tee_and_detach_run_log() -> None:
+    connection = FakeConnection()
+    tapped: list[str] = []
+    session = SerialConsoleSession(_config(), connection_factory=lambda _config: connection)
+    session.connect()
+    try:
+        token = session.add_output_tap(lambda _channel, text: tapped.append(text))
+        session.send_ascii("exit")
+        session.remove_output_tap(token)
+        session.send_control("c")
+    finally:
+        session.close()
+
+    combined = "".join(tapped)
+    assert "[TX] exit" in combined
+    assert "CTRL+C" not in combined

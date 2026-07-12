@@ -11,9 +11,9 @@
 | Scratch식 블록 작업실 | 90% | 46px 조밀 보기, 2px 결합 간격, drag/drop, 중첩, 버튼식 안팎 이동, 이름/색상, undo/redo 지원 |
 | 조건과 모니터 보드 | 80% | 텍스트/색상, AND/OR, 자유 CH명, 보드 축/순서 구성 지원 |
 | Python export | 90% | 중첩 흐름, 데이터 행, 런타임 변수 포함 실행 파일 생성 |
-| FTP 원격 실행 | 90% | PC별 매크로/값 전송, 내장 workflow, 최대 4 CH 직접 COM batch와 긴급 중단 지원 |
+| FTP 원격 실행 | 94% | CH별 직접 COM/SK 선택, 최대 4 CH batch, Grid 증거 ZIP, 긴급 중단 지원 |
 | SEQ Generator 연동 | 92% | profile 검증 bundle, SHA-256 재검사, 직접 COM/SK 런처 선택, binary metadata 교환 지원 |
-| 원격 세션 모니터링 | 90% | PC/CH 분리 보기, SoC/binary/자재/Test/SEQ/Grid, 결과 보드, 화면 요청, 2-sheet Excel 지원 |
+| 원격 세션 모니터링 | 94% | 운용/시작 위치, 현장 SK 감시, 로컬 직접 실행, Grid/결과, 화면 요청과 Excel 지원 |
 | 초기 설정 UX | 94% | 4계층 구성도, 물리 ID/위치/HWID 검사, CSV 일괄 구성, PC별 `.info` 생성 지원 |
 
 ## 핵심 판단
@@ -45,6 +45,8 @@
 | 4계층 연결 구조 | PASS | Master/FTP/PC/물리 실장기 소유권, 위치, 안정 ID와 COM 경로 분리 |
 | COM 안전 대조 | PASS | HWID 일치·이동·불명확·불일치·누락 판정과 고유 이동만 적용 |
 | Inventory CSV | PASS | 임의 CH, 물리 위치와 HWID round-trip, Node+CH 병합과 중복 행 차단 |
+| 이중 실행 경로 | PASS | 직접 COM/SK Commander 혼합 행, Master/현장 시작 위치와 공통 상태 표시 |
+| Grid 증거 보존 | PASS | Temp/VDD 파일명, 용량 상한, SHA-256 manifest와 종료 시 단일 ZIP 업로드 |
 
 재현 스크립트는 `scripts/capture_manual_screenshots.py`이며, 생성된 실제 화면은 매뉴얼의
 16개 PNG입니다. FTP 주소, 계정과 비밀번호 환경 변수는 모두 데모 값입니다.

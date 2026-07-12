@@ -23,8 +23,16 @@ from typing import Any, Callable, Iterable, Iterator, Protocol, Sequence
 
 from . import rig_cli
 from .exporter import parse_exported_workflow
-from .recipe import ConditionResult, DataSet, monitor_only_recipe, run_recipe
+from .recipe import AutomationRecipe, AutomationStep, ConditionResult, DataSet, monitor_only_recipe, run_recipe
 from .rig import RigConfigError, RigExecutionError, SerialPortConfig, powershell_argv
+from .run_artifacts import (
+    RUN_SCHEMA,
+    BoundedTextLog,
+    build_artifact_zip_bytes,
+    build_grid_descriptors,
+    write_grid_logs,
+    write_json_atomic,
+)
 from .sequence_bundle import RigSequenceBundle, RigSequenceBundleError, parse_rig_sequence_bundle
 from .serial_console import SerialConsoleSession, parse_serial_sequence
 
@@ -37,12 +45,15 @@ SPOOL_DIRS = (
     "results",
     "triage",
     "logs",
+    "artifacts",
     "archive",
     "screenshots",
 )
 MAX_STAGED_SEQUENCE_BUNDLES = 50
 MAX_CHANNELS_PER_SLAVE = 64
 MAX_CAMPAIGN_RUNS_PER_SLAVE = 256
+_LOCAL_STATUS_LOCK = threading.Lock()
+_WORKFLOW_EXECUTION_LOCK = threading.RLock()
 
 
 class FtpSpoolError(RuntimeError):
@@ -413,8 +424,12 @@ class FtpSpoolConfig:
     python_executable: str = sys.executable
     capture_on_error: bool = True
     max_output_chars: int = 200_000
+    max_run_log_bytes: int = 8 * 1024 * 1024
+    max_artifact_upload_bytes: int = 16 * 1024 * 1024
     max_result_files: int = 200
     max_log_files: int = 200
+    max_local_run_files: int = 40
+    max_artifact_files: int = 40
     max_archive_files: int = 500
     max_screenshot_files: int = 20
     variables: dict[str, str] = field(default_factory=dict)
@@ -454,6 +469,12 @@ class FtpSpoolConfig:
         password = str(ftp_data.get("password", "") or "")
         if password_env:
             password = os.environ.get(password_env, password)
+        max_artifact_files_value = runtime_data.get(
+            "max_artifact_files",
+            data.get("max_artifact_files", 40),
+        )
+        if max_artifact_files_value in {None, ""}:
+            max_artifact_files_value = 40
         return cls(
             master=MasterInfo.from_mapping(master_data if isinstance(master_data, dict) else {}),
             host=str(ftp_data.get("host", "") or ""),
@@ -488,8 +509,23 @@ class FtpSpoolConfig:
             ),
             capture_on_error=bool(runtime_data.get("capture_on_error", data.get("capture_on_error", True))),
             max_output_chars=int(runtime_data.get("max_output_chars", data.get("max_output_chars", 200_000)) or 200_000),
+            max_run_log_bytes=int(
+                runtime_data.get("max_run_log_bytes", data.get("max_run_log_bytes", 8 * 1024 * 1024))
+                or 8 * 1024 * 1024
+            ),
+            max_artifact_upload_bytes=int(
+                runtime_data.get(
+                    "max_artifact_upload_bytes",
+                    data.get("max_artifact_upload_bytes", 16 * 1024 * 1024),
+                )
+                or 16 * 1024 * 1024
+            ),
             max_result_files=int(runtime_data.get("max_result_files", data.get("max_result_files", 200)) or 200),
             max_log_files=int(runtime_data.get("max_log_files", data.get("max_log_files", 200)) or 200),
+            max_local_run_files=int(
+                runtime_data.get("max_local_run_files", data.get("max_local_run_files", 40)) or 40
+            ),
+            max_artifact_files=max(0, int(max_artifact_files_value)),
             max_archive_files=int(runtime_data.get("max_archive_files", data.get("max_archive_files", 500)) or 500),
             max_screenshot_files=int(
                 runtime_data.get("max_screenshot_files", data.get("max_screenshot_files", 20)) or 20
@@ -537,8 +573,12 @@ class FtpSpoolConfig:
                 "python_executable": self.python_executable,
                 "capture_on_error": self.capture_on_error,
                 "max_output_chars": self.max_output_chars,
+                "max_run_log_bytes": self.max_run_log_bytes,
+                "max_artifact_upload_bytes": self.max_artifact_upload_bytes,
                 "max_result_files": self.max_result_files,
                 "max_log_files": self.max_log_files,
+                "max_local_run_files": self.max_local_run_files,
+                "max_artifact_files": self.max_artifact_files,
                 "max_archive_files": self.max_archive_files,
                 "max_screenshot_files": self.max_screenshot_files,
             },
@@ -999,6 +1039,7 @@ def ensure_node_dirs(backend: SpoolBackend, node_id: str) -> None:
         f"results/{node}",
         f"triage/{node}",
         f"logs/{node}",
+        f"artifacts/{node}",
         f"archive/{node}",
         f"screenshots/{node}",
     ):
@@ -1024,6 +1065,7 @@ def deploy_package(
     resolved_runner = runner.strip().casefold() or "auto"
     resolved_variables = {str(key): str(value) for key, value in (variables or {}).items()}
     bundle = None
+    workflow_inspection: dict[str, Any] | None = None
     if resolved_runner == "auto":
         if source_path.name.casefold().endswith(".rigseq.zip"):
             try:
@@ -1041,6 +1083,7 @@ def deploy_package(
                 resolved_runner = "python"
             else:
                 resolved_runner = "workflow"
+                workflow_inspection = inspect_sk_commander_workflow(exported.recipe)
                 if not resolved_variables:
                     resolved_variables = dict(exported.recipe.variables)
     elif resolved_runner == "sequence":
@@ -1069,6 +1112,19 @@ def deploy_package(
                     "campaign_title": str(package_details.get("campaign_title") or ""),
                 }
             )
+    elif resolved_runner == "workflow":
+        if workflow_inspection is None:
+            try:
+                exported = parse_exported_workflow(
+                    source_bytes.decode("utf-8"),
+                    filename=source_path.name,
+                )
+            except (UnicodeDecodeError, SyntaxError, ValueError, json.JSONDecodeError):
+                workflow_inspection = None
+            else:
+                workflow_inspection = inspect_sk_commander_workflow(exported.recipe)
+        if workflow_inspection is not None:
+            package_details = {"sk_commander": workflow_inspection}
     remote_path = f"packages/{safe_package_name}"
     backend.write_bytes(remote_path, source_bytes)
     package = PackageInfo(
@@ -1086,6 +1142,88 @@ def deploy_package(
         (json.dumps(package.to_mapping(), indent=2, ensure_ascii=True) + "\n").encode("utf-8"),
     )
     return remote_path
+
+
+def inspect_sk_commander_workflow(recipe: AutomationRecipe) -> dict[str, Any]:
+    roles: set[str] = set()
+    explicit_roles: set[str] = set()
+    has_seq_path_variable = False
+    known_roles = {
+        "sk_seq_path",
+        "sk_load",
+        "sk_start",
+        "sk_stop",
+        "sk_reset",
+        "sk_power_reset",
+        "sk_serial_monitor",
+        "sk_grid_status",
+    }
+
+    def visit(step: AutomationStep) -> None:
+        nonlocal has_seq_path_variable
+        explicit = step.element_role.strip().casefold().replace("-", "_")
+        if explicit in known_roles:
+            roles.add(explicit)
+            explicit_roles.add(explicit)
+
+        text_value = step.text.casefold()
+        if step.kind == "type" and any(
+            marker in text_value for marker in ("${seq_path}", "[seq_path]", "{seq_path}")
+        ):
+            roles.add("sk_seq_path")
+            has_seq_path_variable = True
+
+        searchable = " ".join(
+            value
+            for value in (
+                step.element_id,
+                step.block_name,
+                step.label,
+                step.description,
+                step.selector.leaf().name if step.selector else "",
+                step.selector.leaf().automation_id if step.selector else "",
+            )
+            if value
+        ).casefold()
+        normalized = re.sub(r"[^0-9a-z가-힣]+", " ", searchable)
+        if step.kind == "click":
+            if any(token in normalized for token in ("power reset", "power_reset", "전원 리셋", "전원 reset")):
+                roles.add("sk_power_reset")
+            elif any(token in normalized for token in ("reset", "리셋", "초기화")):
+                roles.add("sk_reset")
+            if any(token in normalized for token in ("load", "불러오기", "seq open", "sequence open")):
+                roles.add("sk_load")
+            if any(token in normalized for token in ("start", "시작", "실행 시작")):
+                roles.add("sk_start")
+            if any(token in normalized for token in ("stop", "정지", "중단")):
+                roles.add("sk_stop")
+        if step.kind.startswith("monitor_"):
+            if any(token in normalized for token in ("serial", "console", "시리얼", "콘솔")):
+                roles.add("sk_serial_monitor")
+            if any(token in normalized for token in ("grid", "progress", "그리드", "진행")):
+                roles.add("sk_grid_status")
+        for child in step.children:
+            visit(child)
+
+    for root in recipe.steps:
+        visit(root)
+    required = ("sk_seq_path", "sk_load", "sk_start")
+    missing = [role for role in required if role not in roles]
+    if "sk_seq_path" in roles and not has_seq_path_variable:
+        missing.append("${seq_path}")
+    return {
+        "schema": "sk-commander-control-profile/v1",
+        "ready_to_launch": not missing,
+        "roles": sorted(roles),
+        "explicit_roles": sorted(explicit_roles),
+        "missing_required_roles": missing,
+        "has_seq_path_variable": has_seq_path_variable,
+        "can_stop": "sk_stop" in roles,
+        "can_reset": "sk_reset" in roles,
+        "can_power_reset": "sk_power_reset" in roles,
+        "can_monitor_serial": "sk_serial_monitor" in roles,
+        "can_monitor_grid": "sk_grid_status" in roles,
+    }
 
 
 def package_job_kind(package: PackageInfo) -> str:
@@ -1201,9 +1339,16 @@ def run_slave_once(
     if ensure_directories:
         ensure_node_dirs(backend, node)
     active_status = status_context if status_context is not None else {}
-    active_status.setdefault(
-        "channels",
-        [channel.to_mapping() for channel in _configured_channels(config, node)],
+    active_status["channels"] = merge_channel_rows(
+        _configured_channels(config, node),
+        [
+            *(
+                item
+                for item in active_status.get("channels", [])
+                if isinstance(item, dict)
+            ),
+            *_load_local_channel_snapshots(config, node),
+        ],
     )
     results: list[JobResult] = []
     processed_broadcast = False
@@ -1274,12 +1419,31 @@ def run_slave_once(
     if active_status.get("last_job"):
         outcome = "PASS" if active_status.get("last_ok") else "FAIL"
         final_message = f"waiting | last {outcome}: {active_status['last_job']}"
+    running_channels = [
+        item
+        for item in active_status.get("channels", [])
+        if isinstance(item, dict)
+        and str(item.get("state") or "").casefold()
+        in {"running", "run", "busy", "blue", "grid_progress", "progress"}
+    ]
+    final_state = "running" if running_channels else "idle"
+    final_job = ""
+    if running_channels:
+        channel_names = [
+            str(item.get("channel_id") or item.get("name") or item.get("slot_id") or "CH")
+            for item in running_channels
+        ]
+        final_message = "active CH: " + ", ".join(channel_names[:8])
+        final_job = next(
+            (str(item.get("local_job_id") or "") for item in running_channels if item.get("local_job_id")),
+            "",
+        )
     write_status(
         backend,
         node,
-        state="idle",
+        state=final_state,
         message=final_message,
-        current_job="",
+        current_job=final_job,
         details=active_status,
     )
     return results
@@ -1565,6 +1729,286 @@ def write_status(
     backend.write_bytes(f"status/{_clean_node_id(node_id)}.json", json.dumps(status, indent=2).encode("utf-8"))
 
 
+def publish_local_sequence_progress(
+    backend: SpoolBackend,
+    config: FtpSpoolConfig,
+    node_id: str,
+    channel_row: dict[str, Any],
+    *,
+    job_id: str,
+    message: str,
+) -> None:
+    node = _clean_node_id(node_id)
+    if not node:
+        raise FtpSpoolError("Local sequence reporting requires a Node ID.")
+    row = dict(channel_row)
+    row.setdefault("execution_origin", "local_fixture_pc")
+    row.setdefault("execution_route", "direct_serial")
+    row["local_job_id"] = job_id
+    row["updated_at"] = str(row.get("updated_at") or _utc_now())
+    _write_local_channel_snapshot(config, node, row)
+    with _LOCAL_STATUS_LOCK:
+        try:
+            existing = json.loads(backend.read_bytes(f"status/{node}.json").decode("utf-8"))
+        except Exception:
+            existing = {}
+        if not isinstance(existing, dict):
+            existing = {}
+        channels = merge_channel_rows(
+            _configured_channels(config, node),
+            [
+                *(
+                    item
+                    for item in existing.get("channels", [])
+                    if isinstance(item, dict)
+                ),
+                row,
+            ],
+        )
+        details = {
+            key: value
+            for key, value in existing.items()
+            if key
+            not in {"node_id", "state", "message", "current_job", "updated_at", "channels"}
+        }
+        details["channels"] = channels
+        write_status(
+            backend,
+            node,
+            state="running" if str(row.get("state") or "").casefold() == "running" else "idle",
+            message=message,
+            current_job=job_id if str(row.get("state") or "").casefold() == "running" else "",
+            details=details,
+        )
+
+
+def publish_local_sequence_result(
+    backend: SpoolBackend,
+    config: FtpSpoolConfig,
+    job: SpoolJob,
+    result: JobResult,
+) -> JobResult:
+    details = dict(result.details)
+    result_dir_value = str(details.get("result_dir") or "")
+    if result_dir_value and not details.get("artifact_path") and config.max_artifact_files <= 0:
+        details["artifact_error"] = "FTP run artifact upload is disabled by retention policy."
+    elif result_dir_value and not details.get("artifact_path"):
+        try:
+            artifact_bytes, members = build_artifact_zip_bytes(
+                result_dir_value,
+                max_uncompressed_bytes=config.max_artifact_upload_bytes,
+            )
+            if len(artifact_bytes) > config.max_artifact_upload_bytes:
+                raise FtpSpoolError(
+                    f"Run artifact exceeds upload limit: {len(artifact_bytes)} bytes"
+                )
+            artifact_path = (
+                f"artifacts/{_clean_node_id(result.node_id)}/{_safe_name(result.job_id)}.zip"
+            )
+            backend.write_bytes(artifact_path, artifact_bytes)
+            details.update(
+                {
+                    "artifact_path": artifact_path,
+                    "artifact_members": members,
+                    "artifact_error": "",
+                }
+            )
+        except Exception as exc:
+            details["artifact_error"] = str(exc)
+    published = replace(result, details=details)
+    publish_result(backend, published)
+    with _LOCAL_STATUS_LOCK:
+        context = _read_status_context(backend, published.node_id)
+        context["channels"] = merge_channel_rows(
+            _configured_channels(config, published.node_id),
+            [
+                *(
+                    item
+                    for item in context.get("channels", [])
+                    if isinstance(item, dict)
+                ),
+                *_load_local_channel_snapshots(config, published.node_id),
+            ],
+        )
+        _update_channel_status(context, job, published)
+        target_key = _channel_key(
+            {
+                "channel_id": details.get("channel_id") or job.variables.get("channel"),
+                "slot_id": details.get("slot_id") or job.variables.get("slot_id"),
+            }
+        )
+        for row in context.get("channels", []):
+            if isinstance(row, dict) and _channel_key(row) == target_key:
+                _write_local_channel_snapshot(config, published.node_id, row)
+                break
+        overall_state, active_job, active_label = _channel_activity(
+            context.get("channels", [])
+        )
+        write_status(
+            backend,
+            published.node_id,
+            state=overall_state,
+            message=(
+                active_label
+                or f"local sequence {'PASS' if published.ok else 'FAIL'}: {published.job_id}"
+            ),
+            current_job=active_job,
+            details=context,
+        )
+    cleanup_node_files(backend, published.node_id, config)
+    return published
+
+
+def publish_local_monitor_result(
+    backend: SpoolBackend,
+    config: FtpSpoolConfig,
+    job: SpoolJob,
+    result: JobResult,
+    *,
+    publish_history: bool,
+) -> JobResult:
+    details = {
+        **result.details,
+        "execution_route": "sk_commander",
+        "execution_origin": "local_fixture_pc",
+        "execution_phase": "observing",
+    }
+    observed = replace(result, kind="monitor_local", details=details)
+    if publish_history:
+        publish_result(backend, observed)
+    with _LOCAL_STATUS_LOCK:
+        context = _read_status_context(backend, observed.node_id)
+        context["channels"] = merge_channel_rows(
+            _configured_channels(config, observed.node_id),
+            [
+                *(
+                    item
+                    for item in context.get("channels", [])
+                    if isinstance(item, dict)
+                ),
+                *_load_local_channel_snapshots(config, observed.node_id),
+            ],
+        )
+        _update_channel_status(context, job, observed)
+        for row in context.get("channels", []):
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("execution_origin") or "") == "local_fixture_pc":
+                _write_local_channel_snapshot(config, observed.node_id, row)
+        overall_state, active_job, active_label = _channel_activity(
+            context.get("channels", [])
+        )
+        write_status(
+            backend,
+            observed.node_id,
+            state=overall_state,
+            message=active_label or "현장 SK Commander 상태 감시 중",
+            current_job=active_job,
+            details=context,
+        )
+    if publish_history:
+        cleanup_node_files(backend, observed.node_id, config)
+    return observed
+
+
+def _read_status_context(backend: SpoolBackend, node_id: str) -> dict[str, Any]:
+    node = _clean_node_id(node_id)
+    try:
+        value = json.loads(backend.read_bytes(f"status/{node}.json").decode("utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(value, dict):
+        return {}
+    return {
+        key: item
+        for key, item in value.items()
+        if key not in {"node_id", "state", "message", "current_job", "updated_at"}
+    }
+
+
+def _local_channel_snapshot_root(config: FtpSpoolConfig, node_id: str) -> Path:
+    return Path(config.work_dir) / "local-runs" / _clean_node_id(node_id) / "channels"
+
+
+def _write_local_channel_snapshot(
+    config: FtpSpoolConfig,
+    node_id: str,
+    channel_row: dict[str, Any],
+) -> None:
+    key = _safe_name(
+        str(
+            channel_row.get("channel_id")
+            or channel_row.get("channel")
+            or channel_row.get("slot_id")
+            or "channel"
+        )
+    )
+    path = _local_channel_snapshot_root(config, node_id) / f"{key}.json"
+    write_json_atomic(
+        path,
+        {
+            "schema": "rig-local-channel-status/v1",
+            "node_id": _clean_node_id(node_id),
+            "channel": dict(channel_row),
+        },
+    )
+
+
+def _load_local_channel_snapshots(
+    config: FtpSpoolConfig,
+    node_id: str,
+) -> list[dict[str, Any]]:
+    root = _local_channel_snapshot_root(config, node_id)
+    if not root.is_dir() or root.is_symlink():
+        return []
+    rows: list[dict[str, Any]] = []
+    for path in sorted(root.glob("*.json"))[:MAX_CHANNELS_PER_SLAVE]:
+        if path.is_symlink():
+            continue
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if (
+            not isinstance(value, dict)
+            or value.get("schema") != "rig-local-channel-status/v1"
+            or _clean_node_id(str(value.get("node_id") or "")) != _clean_node_id(node_id)
+            or not isinstance(value.get("channel"), dict)
+        ):
+            continue
+        row = dict(value["channel"])
+        state = str(row.get("state") or "").casefold()
+        phase = str(row.get("execution_phase") or "").casefold()
+        acceptance = str(row.get("acceptance_result") or "pending").casefold()
+        live_state = state in {"running", "run", "busy"} or (
+            phase == "observing" and acceptance not in {"pass", "fail", "stopped"}
+        )
+        if live_state:
+            try:
+                updated = datetime.fromisoformat(
+                    str(row.get("updated_at") or "").replace("Z", "+00:00")
+                )
+                if updated.tzinfo is None:
+                    updated = updated.replace(tzinfo=timezone.utc)
+                age_seconds = (datetime.now(timezone.utc) - updated).total_seconds()
+            except (TypeError, ValueError):
+                age_seconds = float("inf")
+            stale_after = max(
+                180.0,
+                config.poll_interval_seconds * 3.0 + config.poll_jitter_seconds * 2.0 + 30.0,
+            )
+            if age_seconds > stale_after:
+                row.update(
+                    {
+                        "state": "stale",
+                        "execution_phase": "interrupted",
+                        "failure_class": "infrastructure",
+                    }
+                )
+        rows.append(row)
+    return rows
+
+
 def _configured_channels(config: FtpSpoolConfig, node_id: str) -> tuple[ChannelInfo, ...]:
     node = _clean_node_id(node_id)
     for slave in config.slaves:
@@ -1582,6 +2026,27 @@ def _channel_key(data: dict[str, Any]) -> str:
         or data.get("name")
         or ""
     ).strip().casefold()
+
+
+def _channel_activity(channels: Any) -> tuple[str, str, str]:
+    active = [
+        item
+        for item in channels
+        if isinstance(item, dict)
+        and str(item.get("state") or "").casefold()
+        in {"running", "run", "busy", "blue", "grid_progress", "progress"}
+    ] if isinstance(channels, list) else []
+    if not active:
+        return "idle", "", ""
+    names = [
+        str(item.get("channel_id") or item.get("name") or item.get("slot_id") or "CH")
+        for item in active
+    ]
+    job_id = next(
+        (str(item.get("local_job_id") or "") for item in active if item.get("local_job_id")),
+        "",
+    )
+    return "running", job_id, "active CH: " + ", ".join(names[:8])
 
 
 def merge_channel_rows(
@@ -1687,6 +2152,10 @@ def _update_channel_status(
                         "campaign_attempt": item.get("campaign_attempt", "1"),
                         "failure_class": item.get("failure_class", ""),
                         "acceptance_result": item.get("acceptance_result", ""),
+                        "execution_route": item.get("execution_route", ""),
+                        "execution_origin": item.get("execution_origin", ""),
+                        "execution_phase": item.get("execution_phase", ""),
+                        "artifact_path": item.get("artifact_path", ""),
                     },
                 )
                 channel["state"] = str(item.get("state") or "error")
@@ -1694,7 +2163,7 @@ def _update_channel_status(
                 channel["completed_grids"] = int(item.get("completed_grids") or 0)
                 channel["total_grids"] = int(item.get("total_grids") or 0)
                 channel["updated_at"] = str(item.get("updated_at") or result.finished_at)
-    elif job.kind == "sequence":
+    elif job.kind in {"sequence", "sequence_local"}:
         channel = upsert(job_channel, job_slot)
         if channel is not None:
             _apply_nonempty_channel_values(
@@ -1730,19 +2199,32 @@ def _update_channel_status(
                     or _classify_failure(result),
                     "acceptance_result": details.get("acceptance_result", "")
                     or ("pending" if result.ok else "fail"),
+                    "execution_route": details.get("execution_route", ""),
+                    "execution_origin": details.get("execution_origin", ""),
+                    "execution_phase": details.get("execution_phase", ""),
+                    "artifact_path": details.get("artifact_path", ""),
                 },
             )
+            acceptance = str(details.get("acceptance_result") or "").casefold()
+            phase = str(details.get("execution_phase") or "").casefold()
             channel["state"] = (
                 "pass"
-                if result.ok and details.get("sequence_backend") == "serial"
+                if result.ok and acceptance == "pass"
+                else "fail"
+                if acceptance == "fail"
+                else "stopped"
+                if result.returncode == 130 or phase == "stopped"
                 else "running"
-                if result.ok
+                if result.ok and phase in {"running", "running_external", "launched"}
+                else "pass"
+                if result.ok and details.get("sequence_backend") == "serial"
                 else "error"
             )
-            channel["current_grid"] = ""
+            channel["current_grid"] = str(details.get("current_grid") or "")
             channel["completed_grids"] = int(details.get("completed_grids") or 0)
             channel["total_grids"] = int(details.get("total_grids") or 0)
             channel["updated_at"] = result.finished_at
+            channel.pop("local_job_id", None)
 
     for monitor in result.monitor_results:
         if not isinstance(monitor, dict):
@@ -1752,6 +2234,23 @@ def _update_channel_status(
         channel = upsert(monitor_channel, monitor_slot)
         if channel is None:
             continue
+        incoming_origin = str(details.get("execution_origin") or "")
+        preserve_master_origin = (
+            incoming_origin == "local_fixture_pc"
+            and str(channel.get("execution_origin") or "") == "master_remote"
+            and str(channel.get("acceptance_result") or "pending").casefold()
+            not in {"pass", "fail", "stopped"}
+        )
+        _apply_nonempty_channel_values(
+            channel,
+            {
+                "execution_route": details.get("execution_route", ""),
+                "execution_origin": "" if preserve_master_origin else incoming_origin,
+                "execution_phase": ""
+                if preserve_master_origin
+                else details.get("execution_phase", ""),
+            },
+        )
         expected_state = str(monitor.get("monitor_state") or "").strip()
         channel["state"] = expected_state if monitor.get("ok") and expected_state else "fail"
         normalized_state = expected_state.casefold()
@@ -1763,10 +2262,7 @@ def _update_channel_status(
             channel["failure_class"] = ""
         else:
             channel.setdefault("acceptance_result", "pending")
-        current_grid = str(monitor.get("grid_name") or "").strip()
-        block_name = str(monitor.get("block_name") or "").strip()
-        if not current_grid and block_name.startswith("#"):
-            current_grid = block_name
+        current_grid = _monitor_current_grid(monitor)
         if current_grid:
             channel["current_grid"] = current_grid
         progress = _monitor_grid_progress(monitor)
@@ -1795,7 +2291,7 @@ def _update_campaign_run_history(
     except (TypeError, ValueError):
         attempt = 1
 
-    if job.kind == "sequence" and campaign_id:
+    if job.kind in {"sequence", "sequence_local"} and campaign_id:
         run = _find_campaign_run(runs, campaign_id, channel_id, slot_id, attempt)
         if run is None:
             run = {}
@@ -1809,7 +2305,15 @@ def _update_campaign_run_history(
                 "campaign_attempt": attempt,
                 "channel_id": channel_id,
                 "slot_id": slot_id,
-                "state": "running" if result.ok else "error",
+                "state": (
+                    "pass"
+                    if str(details.get("acceptance_result") or "").casefold() == "pass"
+                    else "fail"
+                    if str(details.get("acceptance_result") or "").casefold() == "fail"
+                    else "running"
+                    if result.ok
+                    else "error"
+                ),
                 "acceptance_result": details.get("acceptance_result")
                 or ("pending" if result.ok else "fail"),
                 "failure_class": details.get("failure_class") or _classify_failure(result),
@@ -1817,6 +2321,9 @@ def _update_campaign_run_history(
                 "current_grid": details.get("current_grid", ""),
                 "completed_grids": int(details.get("completed_grids") or 0),
                 "total_grids": int(details.get("total_grids") or 0),
+                "execution_route": details.get("execution_route", ""),
+                "execution_origin": details.get("execution_origin", ""),
+                "execution_phase": details.get("execution_phase", ""),
                 "updated_at": result.finished_at,
             }
         )
@@ -1860,6 +2367,9 @@ def _update_campaign_run_history(
                         "current_grid": str(item.get("current_grid") or ""),
                         "completed_grids": int(item.get("completed_grids") or 0),
                         "total_grids": int(item.get("total_grids") or 0),
+                        "execution_route": item.get("execution_route", ""),
+                        "execution_origin": item.get("execution_origin", ""),
+                        "execution_phase": item.get("execution_phase", ""),
                         "updated_at": str(item.get("updated_at") or result.finished_at),
                     }
                 )
@@ -1884,6 +2394,9 @@ def _update_campaign_run_history(
             "current_grid",
             "completed_grids",
             "total_grids",
+            "execution_route",
+            "execution_origin",
+            "execution_phase",
             "updated_at",
         ):
             if key in channel:
@@ -1968,7 +2481,19 @@ def _monitor_acceptance(result: JobResult) -> str:
 
 
 def _monitor_grid_progress(monitor: dict[str, Any]) -> tuple[int, int] | None:
-    details = monitor.get("details") if isinstance(monitor.get("details"), dict) else {}
+    raw_details = monitor.get("details")
+    if isinstance(raw_details, list) and raw_details:
+        nested = [
+            progress
+            for item in raw_details
+            if isinstance(item, dict)
+            for progress in [_monitor_grid_progress(item)]
+            if progress is not None
+        ]
+        if nested:
+            return nested[-1]
+        return None
+    details = raw_details if isinstance(raw_details, dict) else {}
     completed = monitor.get("completed_grids", details.get("completed_grids"))
     total = monitor.get("total_grids", details.get("total_grids"))
     if completed is not None and total is not None:
@@ -1977,7 +2502,8 @@ def _monitor_grid_progress(monitor: dict[str, Any]) -> tuple[int, int] | None:
         except (TypeError, ValueError):
             pass
     marker = " ".join(
-        str(monitor.get(key) or "") for key in ("monitor_state", "block_name", "grid_name")
+        str(monitor.get(key) or "")
+        for key in ("monitor_state", "block_name", "grid_name", "label")
     ).casefold()
     if not any(token in marker for token in ("grid", "progress", "그리드", "진행")):
         return None
@@ -1986,6 +2512,28 @@ def _monitor_grid_progress(monitor: dict[str, Any]) -> tuple[int, int] | None:
         if match:
             return int(match.group(1)), int(match.group(2))
     return None
+
+
+def _monitor_current_grid(monitor: dict[str, Any]) -> str:
+    value = str(monitor.get("grid_name") or "").strip()
+    if value:
+        return value
+    block_name = str(monitor.get("block_name") or "").strip()
+    if block_name.startswith("#"):
+        return block_name
+    for raw in (monitor.get("actual"), monitor.get("expected")):
+        text = str(raw or "")
+        match = re.search(r"#[0-9A-Za-z_.-]+|\bGRID[_ -]?\d+\b", text, re.IGNORECASE)
+        if match:
+            return match.group(0)
+    details = monitor.get("details")
+    if isinstance(details, list):
+        for item in reversed(details):
+            if isinstance(item, dict):
+                nested = _monitor_current_grid(item)
+                if nested:
+                    return nested
+    return ""
 
 
 def list_status(backend: SpoolBackend) -> list[dict[str, Any]]:
@@ -2398,6 +2946,16 @@ def _execute_sequence(
         raise FtpSpoolError(f"SK Commander launcher metadata was not found: {launcher_name}") from exc
     if not isinstance(launcher_metadata, dict) or launcher_metadata.get("runner") != "workflow":
         raise FtpSpoolError("SK Commander launcher must be a Picker-exported workflow package.")
+    launcher_details = launcher_metadata.get("details") or {}
+    sk_profile = launcher_details.get("sk_commander") if isinstance(launcher_details, dict) else {}
+    if not isinstance(sk_profile, dict):
+        sk_profile = {}
+    explicit_roles = [str(value) for value in sk_profile.get("explicit_roles", [])]
+    missing_roles = [str(value) for value in sk_profile.get("missing_required_roles", [])]
+    if explicit_roles and missing_roles:
+        raise FtpSpoolError(
+            "SK Commander control profile is incomplete: " + ", ".join(missing_roles)
+        )
 
     package_details = bundle.package_details()
     campaign_id = str(package_details.get("campaign_id") or "")
@@ -2470,15 +3028,54 @@ def _execute_sequence(
     failure_class = _classify_failure(result)
     if acceptance_result == "fail" and not failure_class:
         failure_class = "test"
+    completed_grids = 0
+    total_grids = int(package_details.get("block_count") or 0)
+    current_grid = ""
+    for monitor in result.monitor_results:
+        if not isinstance(monitor, dict):
+            continue
+        progress = _monitor_grid_progress(monitor)
+        if progress is not None:
+            completed_grids, observed_total = progress
+            total_grids = observed_total or total_grids
+        observed_grid = _monitor_current_grid(monitor)
+        if observed_grid:
+            current_grid = observed_grid
+    execution_origin = str(
+        job.payload.get("execution_origin")
+        or variables.get("execution_origin")
+        or "master_remote"
+    )
+    execution_phase = (
+        "completed"
+        if acceptance_result in {"pass", "fail"}
+        else "running_external"
+        if result.ok
+        else "stopped"
+        if result.returncode == 130
+        else "failed"
+    )
     details = {
         **result.details,
+        "sequence_backend": "sk_commander",
+        "execution_route": "sk_commander",
+        "execution_origin": execution_origin,
+        "execution_phase": execution_phase,
+        "launcher_package": launcher_name,
+        "launcher_profile": sk_profile,
+        "launcher_profile_warning": (
+            "Legacy launcher: assign sk_seq_path/sk_load/sk_start roles for readiness validation."
+            if not sk_profile.get("ready_to_launch") and not explicit_roles
+            else ""
+        ),
         "channel_id": variables.get("channel", ""),
         "slot_id": variables.get("slot_id", ""),
         "sequence_name": bundle.recipe_name,
         "sequence_bundle_id": bundle.bundle_id,
         "current_test": variables.get("test_name", "") or package_details.get("purpose", ""),
-        "total_grids": int(package_details.get("block_count") or 0),
-        "completed_grids": 0,
+        "current_grid": current_grid,
+        "total_grids": total_grids,
+        "completed_grids": completed_grids,
         "campaign_id": campaign_id,
         "campaign_title": str(package_details.get("campaign_title") or ""),
         "campaign_attempt": campaign_attempt,
@@ -2573,6 +3170,13 @@ def _execute_sequence_batch(
                     "console_identity": run_variables.get("console_identity", ""),
                     "usb_location": run_variables.get("usb_location", ""),
                     "state": "running",
+                    "execution_route": "direct_serial",
+                    "execution_origin": str(
+                        raw_run.get("execution_origin")
+                        or run_variables.get("execution_origin")
+                        or "master_remote"
+                    ),
+                    "execution_phase": "running",
                     "sequence_name": bundle.recipe_name,
                     "current_test": run_variables.get("test_name", "")
                     or package_details.get("purpose", ""),
@@ -2598,8 +3202,14 @@ def _execute_sequence_batch(
             row["current_step"] = message
             if message.startswith("GRID "):
                 row["current_grid"] = message.removeprefix("GRID ").strip()
+            elif message.startswith("GRID_DONE "):
+                match = re.match(r"GRID_DONE\s+(\d+)/(\d+)\s+(.+)", message)
+                if match:
+                    row["completed_grids"] = int(match.group(1))
+                    row["total_grids"] = int(match.group(2))
+                    row["current_grid"] = match.group(3).strip()
             now = time.monotonic()
-            if message.startswith("GRID ") or now - last_status_at >= 1.5:
+            if message.startswith(("GRID ", "GRID_DONE ")) or now - last_status_at >= 1.5:
                 last_status_at = now
                 snapshot = [dict(progress_rows[item["channel"]]) for item in prepared]
         if snapshot is not None:
@@ -2675,8 +3285,14 @@ def _execute_sequence_batch(
             "state": "pass" if result.ok else "stopped" if result.returncode == 130 else "error",
             "ok": result.ok,
             "returncode": result.returncode,
+            "execution_route": details.get("execution_route") or "direct_serial",
+            "execution_origin": details.get("execution_origin")
+            or item["initial"].get("execution_origin", "master_remote"),
+            "execution_phase": details.get("execution_phase")
+            or ("completed" if result.ok else "stopped" if result.returncode == 130 else "failed"),
             "completed_grids": int(details.get("completed_grids") or 0),
             "total_grids": int(details.get("total_grids") or item["initial"]["total_grids"]),
+            "current_grid": details.get("current_grid") or "",
             "acceptance_result": details.get("acceptance_result")
             or ("pass" if result.ok else "fail"),
             "failure_class": details.get("failure_class") or _classify_failure(result),
@@ -2697,6 +3313,7 @@ def _execute_sequence_batch(
             "error": result.stderr[-1000:],
             "result_dir": details.get("result_dir", ""),
             "console_log": details.get("console_log", ""),
+            "artifact_path": details.get("artifact_path", ""),
         }
         channel_results.append(channel_row)
         result_dir_value = str(details.get("result_dir") or "")
@@ -2705,7 +3322,7 @@ def _execute_sequence_batch(
             result_roots.setdefault(result_dir.parent, set()).add(result_dir.name)
 
     for root, preserve in result_roots.items():
-        _prune_direct_serial_results(root, preserve=preserve, limit=config.max_log_files)
+        _prune_direct_serial_results(root, preserve=preserve, limit=config.max_local_run_files)
 
     passed = sum(1 for result in child_results if result.ok)
     stopped = any(result.returncode == 130 for result in child_results)
@@ -2740,9 +3357,17 @@ def _execute_sequence_batch(
         stderr=stderr,
         details={
             "sequence_backend": "serial",
+            "execution_route": "direct_serial",
+            "execution_origin": "master_remote",
+            "execution_phase": "completed" if passed == len(child_results) else "stopped" if stopped else "failed",
             "batch_size": len(child_results),
             "passed_channels": passed,
             "channels": channel_results,
+            "artifact_paths": [
+                str(row.get("artifact_path") or "")
+                for row in channel_results
+                if str(row.get("artifact_path") or "")
+            ],
             "completed_grids": sum(int(row["completed_grids"]) for row in channel_results),
             "total_grids": sum(int(row["total_grids"]) for row in channel_results),
         },
@@ -2801,12 +3426,21 @@ def _execute_serial_sequence_bundle(
     result_dir.mkdir(parents=True, exist_ok=True)
     log_path = result_dir / "console.log"
     summary_path = result_dir / "manifest.json"
-    log_lock = threading.Lock()
+    console_log = BoundedTextLog(log_path, max_bytes=config.max_run_log_bytes, reset=True)
+    execution_origin = str(
+        job.payload.get("execution_origin")
+        or variables.get("execution_origin")
+        or "master_remote"
+    )
+    grid_descriptors = build_grid_descriptors(
+        blocks,
+        recipe=bundle.recipe,
+        default_temperature_c=str(variables.get("temperature_c") or variables.get("temperature") or ""),
+        default_vdd_v=str(variables.get("vdd_v") or variables.get("vdd") or ""),
+    )
 
     def append_console(_channel: str, text: str) -> None:
-        with log_lock:
-            with log_path.open("a", encoding="utf-8", errors="replace") as handle:
-                handle.write(text)
+        console_log.append(text)
 
     def report_progress(message: str) -> None:
         append_console(channel, f"\n[{message}]\n")
@@ -2891,17 +3525,28 @@ def _execute_serial_sequence_bundle(
             failed = next((row for row in reversed(command_rows) if not row["ok"]), command_rows[-1])
             error = f"Serial command failed: {failed['block']} / {failed['command']}"
 
-    completed_grids = 0
-    for block in blocks:
-        block_rows = [row for row in command_rows if row["block"] == block.name]
-        if len(block_rows) == len(block.commands) and all(bool(row["ok"]) for row in block_rows):
-            completed_grids += 1
     acceptance_result = "pass" if ok else "stopped" if stopped else "fail"
     failure_class = "" if ok else "stopped" if stopped else "test"
+    grid_rows = write_grid_logs(
+        result_dir,
+        blocks,
+        sequence_result.commands if sequence_result is not None else (),
+        grid_descriptors,
+    )
+    completed_grids = sum(1 for row in grid_rows if row.get("status") == "pass")
+    current_grid = ""
+    if grid_rows:
+        current_index = min(completed_grids, len(grid_rows) - 1)
+        current_grid = str(grid_rows[current_index].get("name") or "")
+        if ok:
+            current_grid = str(grid_rows[-1].get("name") or "")
     manifest = {
-        "schema": "rig-direct-serial-result/v1",
+        "schema": RUN_SCHEMA,
         "job_id": job.job_id,
         "node_id": node_id,
+        "execution_route": "direct_serial",
+        "execution_origin": execution_origin,
+        "execution_phase": "completed" if ok else "stopped" if stopped else "failed",
         "channel_id": channel,
         "slot_id": variables.get("slot_id", ""),
         "fixture_id": variables.get("fixture_id", ""),
@@ -2921,21 +3566,48 @@ def _execute_serial_sequence_bundle(
         "total_commands": total_commands,
         "completed_grids": completed_grids,
         "total_grids": len(blocks),
+        "current_grid": current_grid,
         "campaign_id": campaign_id,
         "campaign_attempt": campaign_attempt,
         "started_at": started_at,
         "finished_at": _utc_now(),
         "error": error,
+        "console_log": "console.log",
+        "console_log_truncated": console_log.truncated,
+        "grids": grid_rows,
         "commands": command_rows,
     }
-    summary_path.write_text(
-        json.dumps(manifest, indent=2, ensure_ascii=True) + "\n",
-        encoding="utf-8",
-    )
+    write_json_atomic(summary_path, manifest)
+    artifact_path = ""
+    artifact_error = ""
+    artifact_members: list[str] = []
+    if config.max_artifact_files <= 0:
+        artifact_error = "FTP run artifact upload is disabled by retention policy."
+    else:
+        try:
+            artifact_bytes, artifact_members = build_artifact_zip_bytes(
+                result_dir,
+                max_uncompressed_bytes=config.max_artifact_upload_bytes,
+            )
+            if len(artifact_bytes) > config.max_artifact_upload_bytes:
+                raise FtpSpoolError(
+                    f"Run artifact exceeds upload limit: {len(artifact_bytes)} bytes"
+                )
+            artifact_path = f"artifacts/{_clean_node_id(node_id)}/{_safe_name(job.job_id)}.zip"
+            backend.write_bytes(artifact_path, artifact_bytes)
+        except Exception as exc:
+            artifact_error = str(exc)
     if not bool(job.payload.get("defer_result_prune", False)):
-        _prune_direct_serial_results(result_root, preserve=result_dir.name, limit=config.max_log_files)
+        _prune_direct_serial_results(
+            result_root,
+            preserve=result_dir.name,
+            limit=config.max_local_run_files,
+        )
     details = {
         "sequence_backend": "serial",
+        "execution_route": "direct_serial",
+        "execution_origin": execution_origin,
+        "execution_phase": "completed" if ok else "stopped" if stopped else "failed",
         "channel_id": channel,
         "slot_id": variables.get("slot_id", ""),
         "fixture_id": variables.get("fixture_id", ""),
@@ -2951,6 +3623,8 @@ def _execute_serial_sequence_bundle(
         "current_test": variables.get("test_name", "") or package_details.get("purpose", ""),
         "completed_grids": completed_grids,
         "total_grids": len(blocks),
+        "current_grid": current_grid,
+        "grid_logs": grid_rows,
         "campaign_id": campaign_id,
         "campaign_title": str(package_details.get("campaign_title") or ""),
         "campaign_attempt": campaign_attempt,
@@ -2959,6 +3633,10 @@ def _execute_serial_sequence_bundle(
         "failure_class": failure_class,
         "result_dir": str(result_dir.resolve()),
         "console_log": str(log_path.resolve()),
+        "console_log_truncated": console_log.truncated,
+        "artifact_path": artifact_path,
+        "artifact_members": artifact_members,
+        "artifact_error": artifact_error,
     }
     stdout = (
         f"Direct serial SEQ {bundle.recipe_name!r} on {channel} "
@@ -2994,16 +3672,39 @@ def _prune_direct_serial_results(
         if path.name in preserve_names or not path.is_dir() or path.is_symlink():
             continue
         entries = list(path.iterdir())
-        if not entries or any(not member.is_file() or member.is_symlink() for member in entries):
-            continue
         members = {member.name for member in entries}
-        if members <= {"console.log", "manifest.json"} and "manifest.json" in members:
-            candidates.append(path)
+        if not entries or not members <= {"console.log", "manifest.json", "grids"}:
+            continue
+        manifest_path = path / "manifest.json"
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if manifest.get("schema") not in {RUN_SCHEMA, "rig-direct-serial-result/v1"}:
+            continue
+        grid_dir = path / "grids"
+        if grid_dir.exists() and (
+            not grid_dir.is_dir()
+            or grid_dir.is_symlink()
+            or any(
+                not member.is_file() or member.is_symlink() or member.suffix.casefold() != ".log"
+                for member in grid_dir.iterdir()
+            )
+        ):
+            continue
+        if any(member.is_symlink() for member in entries):
+            continue
+        candidates.append(path)
     candidates.sort(key=lambda path: path.stat().st_mtime, reverse=True)
     keep_existing = max(0, int(limit) - len(preserve_names))
     for directory in candidates[keep_existing:]:
         for member in directory.iterdir():
-            member.unlink()
+            if member.is_dir():
+                for grid_log in member.iterdir():
+                    grid_log.unlink()
+                member.rmdir()
+            else:
+                member.unlink()
         directory.rmdir()
 
 
@@ -3044,6 +3745,30 @@ def _prune_staged_sequence_dirs(
 
 
 def _execute_workflow(
+    backend: SpoolBackend,
+    job: SpoolJob,
+    variables: dict[str, str],
+    *,
+    timeout: float,
+    node_id: str,
+    started_at: str,
+    max_output_chars: int,
+    monitor_only: bool = False,
+) -> JobResult:
+    with _WORKFLOW_EXECUTION_LOCK:
+        return _execute_workflow_unlocked(
+            backend,
+            job,
+            variables,
+            timeout=timeout,
+            node_id=node_id,
+            started_at=started_at,
+            max_output_chars=max_output_chars,
+            monitor_only=monitor_only,
+        )
+
+
+def _execute_workflow_unlocked(
     backend: SpoolBackend,
     job: SpoolJob,
     variables: dict[str, str],
@@ -3311,6 +4036,7 @@ def cleanup_node_files(backend: SpoolBackend, node_id: str, config: FtpSpoolConf
     _prune_dir(backend, f"results/{node}", max_files=max(0, config.max_result_files))
     _prune_dir(backend, f"triage/{node}", max_files=max(0, config.max_result_files))
     _prune_dir(backend, f"logs/{node}", max_files=max(0, config.max_log_files))
+    _prune_dir(backend, f"artifacts/{node}", max_files=max(0, config.max_artifact_files))
     _prune_dir(backend, f"archive/{node}", max_files=max(0, config.max_archive_files))
     _prune_dir(backend, f"screenshots/{node}", max_files=max(0, config.max_screenshot_files))
 

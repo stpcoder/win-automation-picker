@@ -160,7 +160,7 @@ def _demo_macro_project() -> AutomationProject:
                 start_button,
                 block_name="선택 CH 테스트 시작",
                 element_id="start_test",
-                element_role="button",
+                element_role="sk_start",
             ),
             AutomationStep.wait(0.8, block_name="화면 전환 대기"),
         ],
@@ -193,6 +193,7 @@ def _demo_macro_project() -> AutomationProject:
                 "COMPLETE",
                 operator="contains",
                 block_name="Grid 완료 확인",
+                element_role="sk_grid_status",
                 monitor_tab="Grid 진행",
                 monitor_channel="${channel}",
                 monitor_state="COMPLETE",
@@ -208,17 +209,17 @@ def _demo_macro_project() -> AutomationProject:
         steps=[
             AutomationStep.type(
                 sequence_input,
-                "${sequence_name}",
+                "${seq_path}",
                 clear=True,
                 block_name="SEQ 이름 입력",
                 element_id="sequence_name",
-                element_role="input",
+                element_role="sk_seq_path",
             ),
             AutomationStep.click(
                 load_button,
                 block_name="SEQ 불러오기",
                 element_id="load_sequence",
-                element_role="button",
+                element_role="sk_load",
             ),
             AutomationStep.repeat(
                 [start_for_channel],
@@ -591,7 +592,7 @@ def _run_profiles(package_name: str) -> list[dict[str, object]]:
                 "variables": {
                     "channel": f"CH{number}",
                     "slot_id": f"S{number}",
-                    "sequence_backend": "serial",
+                    "sequence_backend": "serial" if number < 11 else "sk_commander",
                     "com_port": f"COM{number + 2}",
                     "baud_rate": "115200",
                     "sequence_name": "RH_4C_SM8850_V04",
@@ -611,6 +612,8 @@ def _run_profiles(package_name: str) -> list[dict[str, object]]:
 def _status_rows() -> list[dict[str, object]]:
     states = ("pass", "running", "fail", "pass")
     acceptance = ("pass", "pending", "fail", "pass")
+    routes = ("direct_serial", "sk_commander", "sk_commander", "direct_serial")
+    origins = ("master_remote", "master_remote", "local_fixture_pc", "local_fixture_pc")
     channels: list[dict[str, object]] = []
     for offset, number in enumerate(range(9, 13)):
         completed = (12, 7, 5, 12)[offset]
@@ -640,6 +643,9 @@ def _status_rows() -> list[dict[str, object]]:
                 "campaign_id": "AE-RH-20260712",
                 "campaign_title": "Mobile DRAM Row Hammer 4-Corner",
                 "campaign_attempt": 1,
+                "execution_route": routes[offset],
+                "execution_origin": origins[offset],
+                "execution_phase": "completed" if states[offset] == "pass" else "running_external",
                 "state": states[offset],
                 "completed_grids": completed,
                 "total_grids": 12,

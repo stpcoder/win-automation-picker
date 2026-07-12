@@ -128,6 +128,30 @@ Manager에서 실제 중복 프로세스를 확인하고 하나만 남깁니다.
 ## 직접 COM 실행표가 제출되지 않음
 
 - `직접 COM 실행에는 COM 포트가 필요`이면 해당 CH의 Console COM을 저장합니다.
+
+## 현장 실행이 Master 보드에 보이지 않음
+
+### 직접 COM
+
+1. 실장기 PC 4채널 콘솔의 `Master 상태 공유`가 켜졌는지 확인합니다.
+2. `이 PC Node ID`와 선택한 COM 소유 PC의 Node ID가 같은지 확인합니다.
+3. FTP 연결 확인 후 `Agent 시작`을 누릅니다.
+4. `work_dir/local-runs/{node}/channels`에 CH 상태 JSON이 생겼는지 확인합니다.
+
+### SK Commander
+
+1. 클릭/입력이 없는 monitor workflow를 서버 라이브러리에 등록합니다.
+2. `3 Rig 설정 > 이 PC Agent > 현장 SK 감시`에서 해당 workflow를 선택합니다.
+3. `감시 시작` 후 Agent 로그에서 규칙 통과 수를 확인합니다.
+4. monitor block의 `monitor_channel`이 설정 CH와 같은지 확인합니다.
+
+## 결과 증거 ZIP이 없음
+
+- 새 직접 COM 실행만 Grid/console 증거 ZIP을 생성합니다. 이전 버전 결과에는 없습니다.
+- 결과 상세의 `artifact_error`를 확인합니다.
+- FTP 업로드가 실패해도 Slave의 `work_dir/serial-results/{job_id}` 원본은 유지됩니다.
+- ZIP 상한보다 큰 경우 `고급 정책 > 증거 ZIP 상한(MB)`을 검토하되 FTP 정책보다 크게 올리지 않습니다.
+- SK Commander 경로의 raw Grid log는 SK Commander 자체 저장 경로에서 확인합니다.
 - `same COM twice`이면 같은 PC의 두 CH가 같은 COM을 가리키므로 Device Manager와 설정을 바로잡습니다.
 - 같은 PC/Campaign/attempt에 5행 이상이면 최대 네 CH씩 attempt 또는 실행 체크를 나눕니다.
 - `whitespace after ';'`이면 `cmd1;cmd2;`처럼 세미콜론 뒤 공백을 제거합니다.

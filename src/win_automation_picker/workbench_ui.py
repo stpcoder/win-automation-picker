@@ -55,6 +55,9 @@ class AEWorkbenchMixin:
             self._macro_test_stop.set()
         if self._slave_stop is not None:
             self._slave_stop.set()
+        local_observer_stop = getattr(self, "_local_sk_observer_stop", None)
+        if local_observer_stop is not None:
+            local_observer_stop.set()
         if self._monitor_stop is not None:
             self._monitor_stop.set()
         self.destroy()

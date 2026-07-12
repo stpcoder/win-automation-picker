@@ -173,6 +173,10 @@
 | `runtime.poll_interval_seconds` | slave polling 주기 |
 | `runtime.min_screenshot_interval_seconds` | screenshot 요청 최소 간격 |
 | `runtime.python_executable` | 일반 Python package 전용 실행기. export workflow에는 사용하지 않음 |
+| `runtime.max_run_log_bytes` | CH별 직접 COM console 파일 상한. 기본 8 MB |
+| `runtime.max_artifact_upload_bytes` | 실행 종료 시 FTP 증거 ZIP 상한. 기본 16 MB |
+| `runtime.max_local_run_files` | Slave의 직접 COM 실행 폴더 보관 개수. 기본 40 |
+| `runtime.max_artifact_files` | PC별 FTP 증거 ZIP 보관 개수. 기본 40, `0`이면 증거 ZIP 업로드 끔 |
 | `runtime.max_*` | 파일 보관 개수 |
 | `variables` | job 실행 시 기본 변수 |
 | `device_tools` | 실제 CLI와 결과 규칙을 확인한 외부 MTK/QC Downloader |

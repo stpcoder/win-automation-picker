@@ -17,7 +17,7 @@ FAIL과 CH9 PASS를 원래 job ID, 캠페인/시도, 완료 시각과 함께 보
 | 보기 | 확인 항목 |
 | --- | --- |
 | `PC 상태` | heartbeat, online/offline, 현재 FTP job, 마지막 결과 |
-| `CH / 자재 / Binary` | 자유 CH/이름, Slot, SoC, binary 버전·최신 시각·원본 폴더, DRAM/Lot/Sample, Test, SEQ, 상태, Grid 진행 |
+| `CH / 자재 / Binary` | 자유 CH/이름, Slot, SoC, binary, 자재, Test/SEQ, `직접 COM/SK Commander`, `Master/현장 PC`, 상태와 Grid 진행 |
 
 등록했지만 아직 접속하지 않은 PC도 `offline`으로 표시됩니다. 마지막 heartbeat가 polling 주기보다 충분히 오래되면 이전 상태가 `idle`이어도 `offline`으로 바뀝니다. `자동 상태 조회`는 상태만 읽으며 매크로를 전송하거나 실행하지 않습니다.
 
@@ -32,6 +32,10 @@ workflow와 대상 PC를 지정한 뒤 `상태 규칙 1회`를 누릅니다. 이
 1. 상태표에서 PC를 선택하거나 `결과 조회 PC`에 node id를 입력합니다.
 2. `새로고침`을 누릅니다.
 3. PASS/FAIL 실행 이력 표에서 작업을 더블클릭해 stdout, stderr와 완료 시각을 봅니다.
+4. 직접 COM raw 증거가 필요하면 결과 행을 선택하고 `더보기 > 선택 결과 증거 ZIP 저장`을 누릅니다.
+
+직접 COM batch 결과에는 CH별 ZIP 경로가 함께 들어 있습니다. 한 CH이면 원본 ZIP을 저장하고,
+여러 CH이면 선택한 위치에 CH별 ZIP을 묶은 상위 ZIP을 만듭니다.
 
 ## 원격 모니터 보드
 
@@ -65,7 +69,7 @@ workflow와 대상 PC를 지정한 뒤 `상태 규칙 1회`를 누릅니다. 이
 2. `Excel 내보내기`를 누릅니다.
 3. `.xlsx` 저장 위치를 선택합니다.
 
-파일에는 `PC State`와 `CH Inventory` 두 시트가 생성됩니다. 두 번째 시트는 SoC, binary provenance, 자재, test/SEQ, 현재/완료/전체 Grid를 행 단위로 내보냅니다.
+파일에는 `PC State`와 `CH Inventory` 두 시트가 생성됩니다. 두 번째 시트는 SoC, binary provenance, 자재, test/SEQ, 실행 경로/시작 위치/단계, 현재/완료/전체 Grid를 행 단위로 내보냅니다.
 Campaign ID/제목/attempt, acceptance와 failure class도 같은 CH 행에 포함됩니다.
 
 ## AE 실패 분류

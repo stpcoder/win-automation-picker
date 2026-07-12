@@ -50,6 +50,9 @@ The executables are not code-signed, so Windows SmartScreen may show a warning.
 - Separates controller, FTP, fixture-PC, and physical-fixture identity and audits duplicate Node, asset, Windows, COM, HWID, and ADB bindings.
 - Bulk-merges and exports Excel-friendly PC/fixture inventory CSV with free-form channel names.
 - Verifies Test Sequence Generator `.rigseq.zip` artifacts and assigns each PC/slot/CH to direct COM or an SK Commander launcher.
+- Keeps direct COM and SK Commander on one run contract while distinguishing Master-started and fixture-PC-local runs.
+- Validates semantic SK Commander SEQ/Load/Start roles and observes locally started SK tests with a read-only slave monitor.
+- Writes bounded per-Grid Temp/VDD logs for direct COM runs and uploads one completion artifact ZIP instead of streaming serial data through FTP.
 - Tracks free-form per-PC channels with SoC, binary source/version/time, DRAM material, current test/SEQ, and Grid progress in FTP heartbeats and two-sheet Excel exports.
 - Verifies checksummed AE campaign snapshots, expands PC/CH/repeat run rows, and shows acceptance/failure state in a campaign board.
 - Stores operator failure classification and disposition in separate triage sidecars without rewriting raw results.
@@ -117,7 +120,7 @@ The FTP tools use a configured root directory as a shared spool when inbound por
 
 Connections are opened only for transfers. Poll jitter, screenshot rate limits, retention limits, stale-heartbeat classification, and agent reconnect backoff reduce server load and false status. The tool stays under its configured FTP root and does not touch unrelated folders.
 
-See the [FTP overview](https://stpcoder.github.io/win-automation-picker/rig-ftp/overview/) and [SEQ Generator / fixture execution workflow](https://stpcoder.github.io/win-automation-picker/rig-ftp/seq-integration/).
+See the [FTP overview](https://stpcoder.github.io/win-automation-picker/rig-ftp/overview/), [dual execution route guide](https://stpcoder.github.io/win-automation-picker/rig-ftp/execution-routes/), and [SEQ Generator / fixture execution workflow](https://stpcoder.github.io/win-automation-picker/rig-ftp/seq-integration/).
 
 ## Install from source
 

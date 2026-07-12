@@ -54,6 +54,7 @@ nav:
   - 원격 운영:
       - FTP master/slave 개요: rig-ftp/overview.md
       - AE 캠페인 운영: rig-ftp/ae-campaign.md
+      - SK Commander와 직접 COM 운용: rig-ftp/execution-routes.md
       - SEQ Generator와 실장기 실행: rig-ftp/seq-integration.md
       - Master 세팅: rig-ftp/master-setup.md
       - Slave 세팅: rig-ftp/slave-setup.md

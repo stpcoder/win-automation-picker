@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 import platform
 import re
@@ -15,13 +16,24 @@ from .ftp_spool import (
     ChannelInfo,
     DeviceToolInfo,
     FtpSpoolError,
+    JobResult,
     SpoolJob,
+    publish_local_sequence_progress,
+    publish_local_sequence_result,
     submit_job,
 )
 from .rig import SerialPortConfig
+from .run_artifacts import (
+    RUN_SCHEMA,
+    BoundedTextLog,
+    build_grid_descriptors,
+    write_grid_logs,
+    write_json_atomic,
+)
 from .serial_console import (
     SerialConsoleManager,
     SerialConsoleSession,
+    SerialSequenceResult,
     parse_serial_sequence,
     validate_ascii_text,
 )
@@ -145,6 +157,35 @@ class DeviceWorkspaceMixin:
         )
         ttk.Button(sequence_bar, text="정지", command=self._stop_device_sequence, style="Danger.TButton").grid(
             row=0, column=6, padx=(6, 0)
+        )
+        self.device_publish_local_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            sequence_bar,
+            text="Master 상태 공유",
+            variable=self.device_publish_local_var,
+        ).grid(row=1, column=0, sticky="w", pady=(8, 0))
+        context = ttk.Frame(sequence_bar, style="Panel.TFrame")
+        context.grid(row=1, column=1, columnspan=6, sticky="ew", pady=(8, 0))
+        context.columnconfigure(1, weight=1)
+        ttk.Label(context, text="시험명", style="Panel.TLabel").grid(row=0, column=0, padx=(0, 5))
+        self.device_test_name_var = tk.StringVar(value="")
+        ttk.Entry(context, textvariable=self.device_test_name_var, width=20).grid(
+            row=0, column=1, sticky="ew", padx=(0, 10)
+        )
+        ttk.Label(context, text="온도 C", style="Panel.TLabel").grid(row=0, column=2, padx=(0, 5))
+        self.device_temperature_var = tk.StringVar(value="")
+        ttk.Entry(context, textvariable=self.device_temperature_var, width=7).grid(
+            row=0, column=3, padx=(0, 10)
+        )
+        ttk.Label(context, text="VDD V", style="Panel.TLabel").grid(row=0, column=4, padx=(0, 5))
+        self.device_vdd_var = tk.StringVar(value="")
+        ttk.Entry(context, textvariable=self.device_vdd_var, width=7).grid(
+            row=0, column=5, padx=(0, 10)
+        )
+        ttk.Label(context, text="시도", style="Panel.TLabel").grid(row=0, column=6, padx=(0, 5))
+        self.device_attempt_var = tk.StringVar(value="1")
+        ttk.Spinbox(context, from_=1, to=999, width=5, textvariable=self.device_attempt_var).grid(
+            row=0, column=7
         )
 
         self.device_console_grid = ttk.Frame(parent)
@@ -803,6 +844,8 @@ class DeviceWorkspaceMixin:
         )
         if path:
             self.device_sequence_path_var.set(path)
+            if not self.device_test_name_var.get().strip():
+                self.device_test_name_var.set(Path(path).stem)
 
     def _run_device_sequence(self) -> None:
         if self._device_sequence_active:
@@ -817,23 +860,171 @@ class DeviceWorkspaceMixin:
             sessions = self._connected_selected_sessions()
             delay = max(0, int(self.device_character_delay_var.get() or "0"))
             keepalive_interval = max(0.0, float(self.device_keepalive_var.get() or "0"))
+            attempt = max(1, int(self.device_attempt_var.get() or "1"))
+            test_name = self.device_test_name_var.get().strip() or path.stem
+            temperature_c = self.device_temperature_var.get().strip()
+            vdd_v = self.device_vdd_var.get().strip()
+            publish_to_master = bool(self.device_publish_local_var.get())
+            if publish_to_master:
+                config, backend, _local_root = self._snapshot_backend()
+            else:
+                config = self._config_from_fields()
+                backend = None
+            node_id = self.node_id_var.get().strip() or config.node_id
+            if publish_to_master and not node_id:
+                raise FtpSpoolError("Master 상태 공유에는 이 PC Node ID가 필요합니다.")
         except BaseException as exc:
             self._show_error(exc)
             return
         self._device_sequence_stop = threading.Event()
         self._device_sequence_active = len(sessions)
         for session in sessions:
-            def worker(item=session) -> None:
+            channel_info = ChannelInfo.from_mapping(
+                self._device_channel_rows.get(session.config.id, {})
+            )
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            channel_token = re.sub(r"[^0-9A-Za-z_.-]+", "_", session.config.id).strip("._")
+            job_id = f"local-{timestamp}-{channel_token or 'channel'}-{time.time_ns() % 1_000_000:06d}"
+            started_at = self._device_utc_now()
+            variables = {
+                "channel": session.config.id,
+                "slot_id": channel_info.slot_id,
+                "fixture_id": channel_info.fixture_id,
+                "fixture_model": channel_info.fixture_model,
+                "fixture_serial": channel_info.fixture_serial,
+                "fixture_location": channel_info.physical_location,
+                "com_port": session.config.port,
+                "baud_rate": str(session.config.baud),
+                "test_name": test_name,
+                "sequence_name": path.stem,
+                "campaign_attempt": str(attempt),
+                "temperature_c": temperature_c,
+                "vdd_v": vdd_v,
+                "execution_origin": "local_fixture_pc",
+            }
+            job = SpoolJob(
+                job_id=job_id,
+                kind="sequence_local",
+                payload={
+                    "sequence_backend": "serial",
+                    "execution_origin": "local_fixture_pc",
+                    "source_path": str(path),
+                },
+                variables=variables,
+                created_at=started_at,
+            )
+            initial_row = {
+                **channel_info.to_mapping(),
+                "channel_id": session.config.id,
+                "state": "running",
+                "execution_route": "direct_serial",
+                "execution_origin": "local_fixture_pc",
+                "execution_phase": "running",
+                "sequence_name": path.stem,
+                "current_test": test_name,
+                "current_grid": "",
+                "completed_grids": 0,
+                "total_grids": len(blocks),
+                "campaign_attempt": attempt,
+                "temperature_c": temperature_c,
+                "vdd_v": vdd_v,
+            }
+
+            def worker(
+                item=session,
+                run_job=job,
+                row=initial_row,
+                run_started_at=started_at,
+                run_channel_info=channel_info,
+            ) -> None:
                 item.set_keepalive_enter(0)
+                progress_row = dict(row)
+                report_error_sent = False
+                progress_lock = threading.Lock()
+                heartbeat_stop = threading.Event()
+                heartbeat_thread: threading.Thread | None = None
+                run_console_log: BoundedTextLog | None = None
+                output_tap_token: int | None = None
+
+                def publish_progress(message: str) -> None:
+                    nonlocal report_error_sent
+                    if backend is None:
+                        return
+                    with progress_lock:
+                        snapshot = dict(progress_row)
+                    try:
+                        publish_local_sequence_progress(
+                            backend,
+                            config,
+                            node_id,
+                            snapshot,
+                            job_id=run_job.job_id,
+                            message=message,
+                        )
+                    except Exception as exc:
+                        if not report_error_sent:
+                            report_error_sent = True
+                            self._queue.put(
+                                (
+                                    "device_console",
+                                    (item.config.id, f"[상태 공유 실패] {exc}\n"),
+                                )
+                            )
+
+                def report_status(message: str) -> None:
+                    self._queue.put(("device_console", (item.config.id, f"\n[{message}]\n")))
+                    should_publish = False
+                    with progress_lock:
+                        if message.startswith("GRID "):
+                            progress_row["current_grid"] = message.removeprefix("GRID ").strip()
+                            should_publish = True
+                        elif message.startswith("GRID_DONE "):
+                            match = re.match(r"GRID_DONE\s+(\d+)/(\d+)\s+(.+)", message)
+                            if match:
+                                progress_row["completed_grids"] = int(match.group(1))
+                                progress_row["total_grids"] = int(match.group(2))
+                                progress_row["current_grid"] = match.group(3).strip()
+                                should_publish = True
+                    if should_publish:
+                        publish_progress(f"현장 직접 실행: {item.config.id} | {message}")
+
                 try:
+                    result_dir = Path(config.work_dir or "rig-ftp-work") / "serial-results" / re.sub(
+                        r"[^A-Za-z0-9_.-]+", "_", run_job.job_id
+                    )
+                    run_console_log = BoundedTextLog(
+                        result_dir / "console.log",
+                        max_bytes=config.max_run_log_bytes,
+                        reset=True,
+                    )
+                    run_console_log.append(
+                        f"[RUN START] {run_started_at} | {item.config.id} | {path.name}\n"
+                    )
+                    output_tap_token = item.add_output_tap(
+                        lambda _channel, output, log=run_console_log: log.append(output)
+                    )
+                    if backend is not None:
+                        publish_progress(f"현장 직접 실행 시작: {item.config.id}")
+
+                        def heartbeat() -> None:
+                            while not heartbeat_stop.wait(60.0):
+                                publish_progress(f"현장 직접 실행 heartbeat: {item.config.id}")
+
+                        heartbeat_thread = threading.Thread(
+                            target=heartbeat,
+                            name=f"local-sequence-heartbeat-{item.config.id}",
+                            daemon=True,
+                        )
+                        heartbeat_thread.start()
                     result = item.run_sequence(
                         text,
                         stop_event=self._device_sequence_stop,
                         character_delay_ms=delay,
-                        progress_callback=lambda message, channel=item.config.id: self._queue.put(
-                            ("device_console", (channel, f"\n[{message}]\n"))
-                        ),
+                        progress_callback=report_status,
                     )
+                    if output_tap_token is not None:
+                        item.remove_output_tap(output_tap_token)
+                        output_tap_token = None
                     self._queue.put(
                         (
                             "device_console",
@@ -844,13 +1035,108 @@ class DeviceWorkspaceMixin:
                             ),
                         )
                     )
-                    log_path = self._save_device_sequence_result(item, result)
+                    log_path, details = self._save_device_sequence_result(
+                        item,
+                        result,
+                        text=text,
+                        source_path=path,
+                        job_id=run_job.job_id,
+                        node_id=node_id,
+                        started_at=run_started_at,
+                        test_name=test_name,
+                        attempt=attempt,
+                        temperature_c=temperature_c,
+                        vdd_v=vdd_v,
+                        channel_info=run_channel_info,
+                        config=config,
+                        console_log=run_console_log,
+                    )
+                    published_result = JobResult(
+                        job_id=run_job.job_id,
+                        node_id=node_id,
+                        kind="sequence_local",
+                        ok=result.ok,
+                        returncode=0 if result.ok else 130 if result.stopped else 1,
+                        started_at=run_started_at,
+                        finished_at=self._device_utc_now(),
+                        stdout=(
+                            f"Local direct COM SEQ {path.stem!r} on {item.config.id}: "
+                            f"{result.completed_commands}/{result.total_commands} commands."
+                        ),
+                        stderr="Stopped locally." if result.stopped else "" if result.ok else "Serial command failed.",
+                        details=details,
+                    )
+                    if backend is not None:
+                        try:
+                            publish_local_sequence_result(backend, config, run_job, published_result)
+                        except Exception as exc:
+                            self._queue.put(
+                                ("device_console", (item.config.id, f"[결과 공유 실패] {exc}\n"))
+                            )
                     self._queue.put(
                         ("device_console", (item.config.id, f"[LOG] {log_path}\n"))
                     )
                 except BaseException as exc:
+                    if output_tap_token is not None:
+                        item.remove_output_tap(output_tap_token)
+                        output_tap_token = None
+                    try:
+                        failed_result = SerialSequenceResult(
+                            channel=item.config.id,
+                            ok=False,
+                            stopped=bool(self._device_sequence_stop and self._device_sequence_stop.is_set()),
+                            completed_commands=0,
+                            total_commands=sum(len(block.commands) for block in blocks),
+                        )
+                        log_path, details = self._save_device_sequence_result(
+                            item,
+                            failed_result,
+                            text=text,
+                            source_path=path,
+                            job_id=run_job.job_id,
+                            node_id=node_id,
+                            started_at=run_started_at,
+                            test_name=test_name,
+                            attempt=attempt,
+                            temperature_c=temperature_c,
+                            vdd_v=vdd_v,
+                            channel_info=run_channel_info,
+                            config=config,
+                            console_log=run_console_log,
+                        )
+                        failed_job_result = JobResult(
+                            job_id=run_job.job_id,
+                            node_id=node_id,
+                            kind="sequence_local",
+                            ok=False,
+                            returncode=1,
+                            started_at=run_started_at,
+                            finished_at=self._device_utc_now(),
+                            stdout=f"Local direct COM SEQ failed. Log: {log_path}",
+                            stderr=str(exc),
+                            details=details,
+                        )
+                        if backend is not None:
+                            publish_local_sequence_result(
+                                backend,
+                                config,
+                                run_job,
+                                failed_job_result,
+                            )
+                    except BaseException as report_exc:
+                        self._queue.put(
+                            (
+                                "device_console",
+                                (item.config.id, f"[실패 기록 저장 오류] {report_exc}\n"),
+                            )
+                        )
                     self._queue.put(("error", exc))
                 finally:
+                    heartbeat_stop.set()
+                    if heartbeat_thread is not None:
+                        heartbeat_thread.join(timeout=1.0)
+                    if output_tap_token is not None:
+                        item.remove_output_tap(output_tap_token)
                     item.set_keepalive_enter(keepalive_interval)
                     self._queue.put(("device_sequence_done", item.config.id))
             threading.Thread(target=worker, daemon=True).start()
@@ -859,54 +1145,159 @@ class DeviceWorkspaceMixin:
         if self._device_sequence_stop is not None:
             self._device_sequence_stop.set()
 
-    def _save_device_sequence_result(self, session, result) -> Path:
-        root = Path(self.work_dir_var.get().strip() or "rig-ftp-work") / "serial-console"
-        root.mkdir(parents=True, exist_ok=True)
-        timestamp = f"{time.strftime('%Y%m%d-%H%M%S')}-{time.time_ns() % 1_000_000:06d}"
-        channel = re.sub(r"[^A-Za-z0-9_.-]+", "_", session.config.id) or "channel"
-        base = root / f"{timestamp}-{channel}"
-        log_path = base.with_suffix(".log")
-        json_path = base.with_suffix(".json")
-        log_path.write_text(session.history[-256_000:], encoding="utf-8", errors="replace")
-        json_path.write_text(
-            json.dumps(
-                {
-                    "channel": result.channel,
-                    "ok": result.ok,
-                    "stopped": result.stopped,
-                    "completed_commands": result.completed_commands,
-                    "total_commands": result.total_commands,
-                    "commands": [
-                        {
-                            "block": command.block,
-                            "command": command.command,
-                            "ok": command.ok,
-                            "timed_out": command.timed_out,
-                            "response": command.response[-4_000:],
-                        }
-                        for command in result.commands
-                    ],
-                },
-                indent=2,
-                ensure_ascii=True,
+    def _save_device_sequence_result(
+        self,
+        session,
+        result,
+        *,
+        text: str,
+        source_path: Path,
+        job_id: str,
+        node_id: str,
+        started_at: str,
+        test_name: str,
+        attempt: int,
+        temperature_c: str,
+        vdd_v: str,
+        channel_info: ChannelInfo,
+        config,
+        console_log: BoundedTextLog | None = None,
+    ) -> tuple[Path, dict[str, Any]]:
+        root = Path(config.work_dir or "rig-ftp-work") / "serial-results"
+        result_dir = root / re.sub(r"[^A-Za-z0-9_.-]+", "_", job_id)
+        result_dir.mkdir(parents=True, exist_ok=True)
+        log_path = result_dir / "console.log"
+        if console_log is None:
+            console_log = BoundedTextLog(
+                log_path,
+                max_bytes=config.max_run_log_bytes,
+                reset=True,
             )
-            + "\n",
-            encoding="utf-8",
+            console_log.append(session.history)
+        blocks = parse_serial_sequence(text)
+        descriptors = build_grid_descriptors(
+            blocks,
+            default_temperature_c=temperature_c,
+            default_vdd_v=vdd_v,
         )
+        grid_rows = write_grid_logs(result_dir, blocks, result.commands, descriptors)
+        completed_grids = sum(1 for row in grid_rows if row.get("status") == "pass")
+        current_grid = ""
+        if grid_rows:
+            current_grid = str(
+                grid_rows[-1 if result.ok else min(completed_grids, len(grid_rows) - 1)].get("name")
+                or ""
+            )
+        finished_at = self._device_utc_now()
+        acceptance_result = "pass" if result.ok else "stopped" if result.stopped else "fail"
+        manifest = {
+            "schema": RUN_SCHEMA,
+            "job_id": job_id,
+            "node_id": node_id,
+            "execution_route": "direct_serial",
+            "execution_origin": "local_fixture_pc",
+            "execution_phase": "completed" if result.ok else "stopped" if result.stopped else "failed",
+            "channel_id": session.config.id,
+            "slot_id": channel_info.slot_id,
+            "fixture_id": channel_info.fixture_id,
+            "fixture_model": channel_info.fixture_model,
+            "fixture_serial": channel_info.fixture_serial,
+            "physical_location": channel_info.physical_location,
+            "com_port": session.config.port,
+            "baud_rate": session.config.baud,
+            "sequence_name": source_path.stem,
+            "sequence_source": str(source_path),
+            "current_test": test_name,
+            "campaign_attempt": attempt,
+            "temperature_c": temperature_c,
+            "vdd_v": vdd_v,
+            "ok": result.ok,
+            "stopped": result.stopped,
+            "acceptance_result": acceptance_result,
+            "completed_commands": result.completed_commands,
+            "total_commands": result.total_commands,
+            "completed_grids": completed_grids,
+            "total_grids": len(blocks),
+            "current_grid": current_grid,
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "console_log": "console.log",
+            "console_log_truncated": console_log.truncated,
+            "grids": grid_rows,
+            "commands": [
+                {
+                    "block": command.block,
+                    "command": command.command,
+                    "ok": command.ok,
+                    "timed_out": command.timed_out,
+                    "response": command.response[-4_000:],
+                }
+                for command in result.commands
+            ],
+        }
+        write_json_atomic(result_dir / "manifest.json", manifest)
         self._prune_device_sequence_logs(root)
-        return log_path
+        details = {
+            "sequence_backend": "serial",
+            "execution_route": "direct_serial",
+            "execution_origin": "local_fixture_pc",
+            "execution_phase": manifest["execution_phase"],
+            "channel_id": session.config.id,
+            "slot_id": channel_info.slot_id,
+            "fixture_id": channel_info.fixture_id,
+            "fixture_model": channel_info.fixture_model,
+            "fixture_serial": channel_info.fixture_serial,
+            "physical_location": channel_info.physical_location,
+            "com_port": session.config.port,
+            "baud_rate": session.config.baud,
+            "sequence_name": source_path.stem,
+            "current_test": test_name,
+            "campaign_attempt": attempt,
+            "temperature_c": temperature_c,
+            "vdd_v": vdd_v,
+            "acceptance_result": acceptance_result,
+            "failure_class": "" if result.ok else "stopped" if result.stopped else "test",
+            "completed_grids": completed_grids,
+            "total_grids": len(blocks),
+            "current_grid": current_grid,
+            "grid_logs": grid_rows,
+            "result_dir": str(result_dir.resolve()),
+            "console_log": str(log_path.resolve()),
+            "console_log_truncated": console_log.truncated,
+        }
+        return log_path, details
 
     def _prune_device_sequence_logs(self, root: Path) -> None:
-        limit = max(2, int(self.max_logs_var.get() or "200"))
-        owned = [
-            path
-            for path in root.iterdir()
-            if path.is_file()
-            and re.fullmatch(r"\d{8}-\d{6}-\d{6}-[A-Za-z0-9_.-]+\.(?:log|json)", path.name)
-        ]
+        limit = max(1, int(self.max_local_runs_var.get() or "40"))
+        owned: list[Path] = []
+        for path in root.iterdir():
+            if not path.is_dir() or path.is_symlink():
+                continue
+            try:
+                manifest = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if manifest.get("schema") == RUN_SCHEMA:
+                owned.append(path)
         owned.sort(key=lambda path: path.stat().st_mtime, reverse=True)
         for path in owned[limit:]:
-            path.unlink()
+            grid_dir = path / "grids"
+            if grid_dir.is_dir() and not grid_dir.is_symlink():
+                for member in grid_dir.iterdir():
+                    if member.is_file() and not member.is_symlink() and member.suffix.casefold() == ".log":
+                        member.unlink()
+                if not list(grid_dir.iterdir()):
+                    grid_dir.rmdir()
+            for name in ("console.log", "manifest.json"):
+                member = path / name
+                if member.is_file() and not member.is_symlink():
+                    member.unlink()
+            if not list(path.iterdir()):
+                path.rmdir()
+
+    @staticmethod
+    def _device_utc_now() -> str:
+        return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
     def _refresh_device_binary_channels(self) -> None:
         slave = self._device_selected_slave(self.device_binary_target_var.get())
