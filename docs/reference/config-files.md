@@ -111,7 +111,7 @@
           "usb_location": "Rack04 Hub-A / Port 3",
           "firmware_port": "COM7",
           "soc_vendor": "mediatek",
-          "soc_model": "MTK25D",
+          "soc_model": "Genio 720",
           "firmware_tool_id": "mtk-downloader",
           "download_identity": "MediaTek PreLoader USB VCOM",
           "adb_executable": "adb.exe",
@@ -180,10 +180,18 @@
 | `runtime.max_*` | 파일 보관 개수 |
 | `variables` | job 실행 시 기본 변수 |
 | `device_tools` | 실제 CLI와 결과 규칙을 확인한 외부 MTK/QC Downloader |
+| `device_tools[].adapter_kind` | `qualcomm-qdl`, `mediatek-genio`, 또는 현장 CLI용 `generic` |
 | `slaves` | master에서 보는 slave roster |
 | `slaves[].asset_id`, `windows_name`, `physical_location` | 실장기 연결 PC의 물리 자산·OS 이름·랙 위치 |
 | `slaves[].channels` | 물리 실장기 ID/Serial/위치, 자유 CH, COM/baud/ADB/전원, SoC, Binary, 자재와 SEQ |
 | `channels[].console_identity`, `usb_location` | COM 번호 변경·오연결을 검출하는 HWID와 Hub/케이블 위치 |
+| `channels[].download_serial` | QDL이 여러 EDL 장치 중 정확한 한 장치를 고르는 USB serial |
+| `channels[].storage_type`, `storage_slot` | `ufs`/`emmc` 등 storage 종류와 QDL slot |
+| `channels[].package_selector` | QDL contents flavor 또는 flashmap layout. 예: `ufs,safe_rtos`, `layout1/ufs` |
+| `channels[].board_control_serial` | Genio가 정확한 FTDI board를 reset/download하는 serial |
+| `channels[].bootstrap_*` | MTK Download Agent, SRAM 주소, ISA mode, DAA signature/auth |
+| `channels[].gpio_*` | 기본값과 다를 때 쓰는 MTK power/reset/download GPIO |
+| `channels[].download_reentry_command` | Generic 단계형 Downloader에서 포맷 후 같은 실장기를 download mode로 돌리는 검증 명령 |
 | `run_profiles` | Master의 PC별 매크로 실행표 |
 
 `run_profiles[].variables.sequence_backend`은 `serial`(화면의 `직접 COM`) 또는
@@ -205,11 +213,13 @@
       "transport": "local",
       "firmware_tools": [
         {
-          "id": "mtk-downloader",
+          "id": "mtk-genio",
           "vendor": "mediatek",
-          "executable": "C:/Tools/MediaTek/VendorDownload.exe",
+          "adapter_kind": "mediatek-genio",
+          "executable": "C:/Tools/Genio/genio-flash.exe",
           "execution_enabled": false,
-          "allowed_modes": ["download-only", "format-all-download"]
+          "allowed_modes": ["download-only", "format-all-download"],
+          "storage_types": ["ufs", "emmc"]
         }
       ],
       "ports": [
@@ -225,9 +235,18 @@
           "usb_location": "Rack04 Hub-A / Port 3",
           "soc_vendor": "mediatek",
           "soc_model": "MTK25D",
-          "firmware_tool_id": "mtk-downloader",
+          "firmware_tool_id": "mtk-genio",
+          "download_identity": "VID_0E8D&PID_0003",
+          "storage_type": "ufs",
+          "board_control_serial": "FTDI-CH11",
+          "bootstrap_path": "D:/binary/Genio720/lk.bin",
+          "bootstrap_address": "0x2001000",
+          "bootstrap_mode": "aarch64",
           "adb": {"enabled": true, "serial": "MTK-CH11"},
-          "commands": {"preloader_exit": "exit"}
+          "commands": {
+            "preloader_exit": "exit",
+            "download_reentry": "DOWNLOAD REENTER"
+          }
         }
       ]
     }

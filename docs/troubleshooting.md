@@ -168,10 +168,15 @@ timeout과 최근 response를 확인합니다. 다른 CH 결과는 같은 batch 
 - `cli_evidence`/`result_rules`: CLI 근거 또는 성공/실패 문구 누락
 - `xml_sha256`: Seq Generator export 뒤 XML이 변경됨
 - `tool_vendor`: CH Vendor와 Downloader Vendor 불일치
+- `qdl_target_serial`: QDL이 사용할 정확한 EDL USB serial 누락
+- `mtk_target_binding`: FTDI Board Serial 또는 `COM HWID + preloader 명령` 누락
+- `package_plan`: descriptor 참조 파일, programmer, Download Agent 또는 payload 지문 오류
+- `execution_plan`: format 재진입, DAA 파일, partition 또는 adapter option 오류
 - `qc_physical_switch`: Qualcomm 물리 Download 스위치 미확인
 - `mtk_preloader_exit`: MTK preloader 종료 미확인
-- `format_confirmation`: `FORMAT node:CH` 확인문 불일치
+- `package_confirmation`/`format_confirmation`: `ACTION node:CH fingerprint12` 확인문 불일치
 - `ADB target`: 여러 장치 중 고정 serial 누락 또는 offline
 
-Downloader가 이미 시작된 상태에서는 프로세스를 강제 종료하지 말고 도구 로그가 끝날 때까지
-기다립니다. 다음 CH 작업은 긴급 중단으로 시작 전에 차단할 수 있습니다.
+정상 상황에서는 Downloader 완료를 기다립니다. 대상 오선택처럼 계속 실행하는 위험이 더 큰
+경우에만 긴급 중단을 사용합니다. Agent는 stop을 확인하면 Downloader 프로세스 트리를
+종료하고 return code `130`과 단계 저널을 남깁니다.

@@ -78,6 +78,21 @@ class ChannelInfo:
     soc_model: str = ""
     firmware_tool_id: str = ""
     download_identity: str = ""
+    download_serial: str = ""
+    storage_type: str = "ufs"
+    storage_slot: str = ""
+    package_selector: str = ""
+    bootstrap_path: str = ""
+    bootstrap_address: str = ""
+    bootstrap_mode: str = ""
+    bootstrap_sign_path: str = ""
+    bootstrap_auth_path: str = ""
+    daa_enabled: bool = False
+    board_control_serial: str = ""
+    gpio_power: str = ""
+    gpio_reset: str = ""
+    gpio_download: str = ""
+    firmware_partitions: tuple[str, ...] = ()
     adb_executable: str = "adb.exe"
     adb_serial: str = ""
     adb_enabled: bool = False
@@ -86,6 +101,7 @@ class ChannelInfo:
     power_off_command: str = ""
     status_command: str = ""
     preloader_exit_command: str = ""
+    download_reentry_command: str = ""
     binary_name: str = ""
     binary_version: str = ""
     binary_source_path: str = ""
@@ -109,6 +125,12 @@ class ChannelInfo:
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> "ChannelInfo":
+        firmware_partitions = data.get("firmware_partitions") or []
+        if not isinstance(firmware_partitions, list):
+            raise FtpSpoolError("Channel firmware_partitions must be a list.")
+        storage_type = str(data.get("storage_type") or "ufs").strip().casefold()
+        if storage_type not in {"emmc", "nand", "nvme", "spinor", "ufs"}:
+            raise FtpSpoolError(f"Unsupported channel storage_type: {storage_type!r}.")
         channel = cls(
             channel_id=str(data.get("channel_id") or data.get("channel") or "").strip(),
             name=str(data.get("name") or data.get("alias") or "").strip(),
@@ -126,6 +148,29 @@ class ChannelInfo:
             soc_model=str(data.get("soc_model") or data.get("soc") or "").strip(),
             firmware_tool_id=str(data.get("firmware_tool_id") or data.get("tool_id") or "").strip(),
             download_identity=str(data.get("download_identity") or "").strip(),
+            download_serial=str(data.get("download_serial") or data.get("edl_serial") or "").strip(),
+            storage_type=storage_type,
+            storage_slot=str(data.get("storage_slot") or data.get("lun_slot") or "").strip(),
+            package_selector=str(
+                data.get("package_selector") or data.get("firmware_package_selector") or ""
+            ).strip(),
+            bootstrap_path=str(data.get("bootstrap_path") or data.get("download_agent") or "").strip(),
+            bootstrap_address=str(
+                data.get("bootstrap_address") or data.get("bootstrap_addr") or ""
+            ).strip(),
+            bootstrap_mode=str(data.get("bootstrap_mode") or "").strip(),
+            bootstrap_sign_path=str(data.get("bootstrap_sign_path") or "").strip(),
+            bootstrap_auth_path=str(data.get("bootstrap_auth_path") or "").strip(),
+            daa_enabled=bool(data.get("daa_enabled", False)),
+            board_control_serial=str(
+                data.get("board_control_serial") or data.get("ftdi_serial") or ""
+            ).strip(),
+            gpio_power=str(data.get("gpio_power") or "").strip(),
+            gpio_reset=str(data.get("gpio_reset") or "").strip(),
+            gpio_download=str(data.get("gpio_download") or "").strip(),
+            firmware_partitions=tuple(
+                str(item).strip() for item in firmware_partitions if str(item).strip()
+            ),
             adb_executable=str(data.get("adb_executable") or "adb.exe").strip(),
             adb_serial=str(data.get("adb_serial") or "").strip(),
             adb_enabled=bool(data.get("adb_enabled", bool(data.get("adb_serial")))),
@@ -134,6 +179,9 @@ class ChannelInfo:
             power_off_command=str(data.get("power_off_command") or "").strip(),
             status_command=str(data.get("status_command") or "").strip(),
             preloader_exit_command=str(data.get("preloader_exit_command") or "").strip(),
+            download_reentry_command=str(
+                data.get("download_reentry_command") or ""
+            ).strip(),
             binary_name=str(data.get("binary_name") or "").strip(),
             binary_version=str(data.get("binary_version") or "").strip(),
             binary_source_path=str(data.get("binary_source_path") or "").strip(),
@@ -183,6 +231,21 @@ class ChannelInfo:
             "soc_model": self.soc_model,
             "firmware_tool_id": self.firmware_tool_id,
             "download_identity": self.download_identity,
+            "download_serial": self.download_serial,
+            "storage_type": self.storage_type,
+            "storage_slot": self.storage_slot,
+            "package_selector": self.package_selector,
+            "bootstrap_path": self.bootstrap_path,
+            "bootstrap_address": self.bootstrap_address,
+            "bootstrap_mode": self.bootstrap_mode,
+            "bootstrap_sign_path": self.bootstrap_sign_path,
+            "bootstrap_auth_path": self.bootstrap_auth_path,
+            "daa_enabled": self.daa_enabled,
+            "board_control_serial": self.board_control_serial,
+            "gpio_power": self.gpio_power,
+            "gpio_reset": self.gpio_reset,
+            "gpio_download": self.gpio_download,
+            "firmware_partitions": list(self.firmware_partitions),
             "adb_executable": self.adb_executable,
             "adb_serial": self.adb_serial,
             "adb_enabled": self.adb_enabled,
@@ -191,6 +254,7 @@ class ChannelInfo:
             "power_off_command": self.power_off_command,
             "status_command": self.status_command,
             "preloader_exit_command": self.preloader_exit_command,
+            "download_reentry_command": self.download_reentry_command,
             "binary_name": self.binary_name,
             "binary_version": self.binary_version,
             "binary_source_path": self.binary_source_path,
@@ -219,6 +283,7 @@ class DeviceToolInfo:
     id: str
     vendor: str
     executable: str
+    adapter_kind: str = "generic"
     arguments: tuple[str, ...] = ("--xml", "{xml}", "--port", "{port}", "--mode", "{mode}")
     working_dir: str = ""
     execution_enabled: bool = False
@@ -229,6 +294,12 @@ class DeviceToolInfo:
     success_exit_codes: tuple[int, ...] = (0,)
     success_markers: tuple[str, ...] = ()
     failure_markers: tuple[str, ...] = ()
+    version_arguments: tuple[str, ...] = ("--version",)
+    programmer_path: str = ""
+    storage_types: tuple[str, ...] = ("ufs",)
+    format_arguments: tuple[str, ...] = ()
+    download_arguments: tuple[str, ...] = ()
+    provision_arguments: tuple[str, ...] = ()
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> "DeviceToolInfo":
@@ -239,14 +310,50 @@ class DeviceToolInfo:
         arguments = data.get("arguments") or ["--xml", "{xml}", "--port", "{port}", "--mode", "{mode}"]
         allowed_modes = data.get("allowed_modes") or ["download-only"]
         mode_values = data.get("mode_values") or {}
+        adapter_kind = str(data.get("adapter_kind") or data.get("adapter") or "generic").strip().casefold()
+        adapter_kind = {
+            "qdl": "qualcomm-qdl",
+            "qualcomm": "qualcomm-qdl",
+            "genio": "mediatek-genio",
+            "mtk-genio": "mediatek-genio",
+            "vendor": "generic",
+            "external": "generic",
+        }.get(adapter_kind, adapter_kind)
+        version_arguments = data.get("version_arguments", ["--version"])
+        storage_types = data.get("storage_types", ["ufs"])
+        format_arguments = data.get("format_arguments", [])
+        download_arguments = data.get("download_arguments", [])
+        provision_arguments = data.get("provision_arguments", [])
         if not tool_id or vendor not in {"qualcomm", "mediatek"} or not executable:
             raise FtpSpoolError("Device tool requires id, Qualcomm/MediaTek vendor, and executable path.")
-        if not isinstance(arguments, list) or not isinstance(allowed_modes, list) or not isinstance(mode_values, dict):
+        if adapter_kind not in {"generic", "qualcomm-qdl", "mediatek-genio"}:
+            raise FtpSpoolError(f"Unsupported device tool adapter: {adapter_kind!r}.")
+        if adapter_kind == "qualcomm-qdl" and vendor != "qualcomm":
+            raise FtpSpoolError("qualcomm-qdl adapter requires vendor=qualcomm.")
+        if adapter_kind == "mediatek-genio" and vendor != "mediatek":
+            raise FtpSpoolError("mediatek-genio adapter requires vendor=mediatek.")
+        list_values = (
+            arguments,
+            allowed_modes,
+            version_arguments,
+            storage_types,
+            format_arguments,
+            download_arguments,
+            provision_arguments,
+        )
+        if not all(isinstance(value, list) for value in list_values) or not isinstance(mode_values, dict):
             raise FtpSpoolError("Device tool arguments/allowed_modes/mode_values have invalid types.")
+        normalized_storage_types = tuple(str(item).strip().casefold() for item in storage_types)
+        if not normalized_storage_types or any(
+            item not in {"emmc", "nand", "nvme", "spinor", "ufs"}
+            for item in normalized_storage_types
+        ):
+            raise FtpSpoolError("Device tool storage_types contains an unsupported value.")
         return cls(
             id=tool_id,
             vendor=vendor,
             executable=executable,
+            adapter_kind=adapter_kind,
             arguments=tuple(str(item) for item in arguments),
             working_dir=str(data.get("working_dir") or "").strip(),
             execution_enabled=bool(data.get("execution_enabled", False)),
@@ -261,6 +368,12 @@ class DeviceToolInfo:
             success_exit_codes=tuple(int(item) for item in data.get("success_exit_codes", [0])),
             success_markers=tuple(str(item) for item in data.get("success_markers", [])),
             failure_markers=tuple(str(item) for item in data.get("failure_markers", [])),
+            version_arguments=tuple(str(item) for item in version_arguments),
+            programmer_path=str(data.get("programmer_path") or "").strip(),
+            storage_types=normalized_storage_types,
+            format_arguments=tuple(str(item) for item in format_arguments),
+            download_arguments=tuple(str(item) for item in download_arguments),
+            provision_arguments=tuple(str(item) for item in provision_arguments),
         )
 
     def to_mapping(self) -> dict[str, Any]:
@@ -268,6 +381,7 @@ class DeviceToolInfo:
             "id": self.id,
             "vendor": self.vendor,
             "executable": self.executable,
+            "adapter_kind": self.adapter_kind,
             "arguments": list(self.arguments),
             "working_dir": self.working_dir,
             "execution_enabled": self.execution_enabled,
@@ -278,6 +392,12 @@ class DeviceToolInfo:
             "success_exit_codes": list(self.success_exit_codes),
             "success_markers": list(self.success_markers),
             "failure_markers": list(self.failure_markers),
+            "version_arguments": list(self.version_arguments),
+            "programmer_path": self.programmer_path,
+            "storage_types": list(self.storage_types),
+            "format_arguments": list(self.format_arguments),
+            "download_arguments": list(self.download_arguments),
+            "provision_arguments": list(self.provision_arguments),
         }
 
 
@@ -611,12 +731,27 @@ def example_spool_config() -> dict[str, Any]:
         },
         device_tools=(
             DeviceToolInfo(
-                id="qc-downloader",
+                id="qc-qdl",
                 vendor="qualcomm",
-                executable="C:\\Tools\\Qualcomm\\VendorDownload.exe",
-                cli_evidence_ref="docs/vendor-cli/qc-downloader.md",
-                success_markers=("Download OK",),
-                failure_markers=("FAIL", "ERROR"),
+                executable="C:\\Tools\\QDL\\qdl.exe",
+                adapter_kind="qualcomm-qdl",
+                cli_evidence_ref="https://github.com/linux-msm/qdl",
+                allowed_modes=(
+                    "download-only",
+                    "format-all-download",
+                    "provision-only",
+                ),
+            ),
+            DeviceToolInfo(
+                id="mtk-genio",
+                vendor="mediatek",
+                executable="C:\\Tools\\Genio\\genio-flash.exe",
+                adapter_kind="mediatek-genio",
+                cli_evidence_ref=(
+                    "https://genio.mediatek.com/doc/iot-yocto/latest/tools/genio-tools.html"
+                ),
+                allowed_modes=("download-only", "format-all-download"),
+                storage_types=("ufs", "emmc"),
             ),
             DeviceToolInfo(
                 id="mtk-downloader",
@@ -653,8 +788,10 @@ def example_spool_config() -> dict[str, Any]:
                         usb_location="USB-HUB-R2 / Port 4",
                         soc_vendor="qualcomm",
                         soc_model="SM8850",
-                        firmware_tool_id="qc-downloader",
+                        firmware_tool_id="qc-qdl",
                         download_identity="VID_05C6&PID_9008",
+                        download_serial="REPLACE_WITH_QDL_SERIAL",
+                        storage_type="ufs",
                         adb_serial="QC-CH4",
                         adb_enabled=True,
                         power_on_command="POWER ON",
@@ -704,6 +841,7 @@ def build_slave_rig_config(
                 "power_off": channel.power_off_command,
                 "status": channel.status_command,
                 "preloader_exit": channel.preloader_exit_command,
+                "download_reentry": channel.download_reentry_command,
             }.items()
             if value
         }
@@ -724,6 +862,21 @@ def build_slave_rig_config(
                 "soc_model": channel.soc_model,
                 "firmware_tool_id": channel.firmware_tool_id,
                 "download_identity": channel.download_identity,
+                "download_serial": channel.download_serial,
+                "storage_type": channel.storage_type,
+                "storage_slot": channel.storage_slot,
+                "package_selector": channel.package_selector,
+                "bootstrap_path": channel.bootstrap_path,
+                "bootstrap_address": channel.bootstrap_address,
+                "bootstrap_mode": channel.bootstrap_mode,
+                "bootstrap_sign_path": channel.bootstrap_sign_path,
+                "bootstrap_auth_path": channel.bootstrap_auth_path,
+                "daa_enabled": channel.daa_enabled,
+                "board_control_serial": channel.board_control_serial,
+                "gpio_power": channel.gpio_power,
+                "gpio_reset": channel.gpio_reset,
+                "gpio_download": channel.gpio_download,
+                "firmware_partitions": list(channel.firmware_partitions),
                 "adb": {
                     "enabled": bool(channel.adb_enabled or channel.adb_required_after_update),
                     "executable": channel.adb_executable or "adb.exe",
@@ -1648,7 +1801,14 @@ def execute_job(
             )
         if job.kind == "rig":
             return _limit_result(
-                _execute_rig(job, variables, node_id=node_id, started_at=started),
+                _execute_rig(
+                    backend,
+                    config,
+                    job,
+                    variables,
+                    node_id=node_id,
+                    started_at=started,
+                ),
                 max_output_chars=config.max_output_chars,
             )
         if job.kind == "screenshot":
@@ -2115,7 +2275,31 @@ def _update_channel_status(
     details = result.details if isinstance(result.details, dict) else {}
     job_channel = str(details.get("channel_id") or job.variables.get("channel") or "").strip()
     job_slot = str(details.get("slot_id") or job.variables.get("slot_id") or "").strip()
-    if job.kind == "sequence_batch":
+    if job.kind == "rig" and isinstance(details.get("firmware_plan"), dict):
+        target = str(details.get("rig_target") or "")
+        target_channel = target.rsplit(":", 1)[-1] if ":" in target else job_channel
+        channel = upsert(target_channel, job_slot)
+        if channel is not None:
+            plan = details["firmware_plan"]
+            _apply_nonempty_channel_values(
+                channel,
+                {
+                    "binary_name": job.variables.get("binary_name", ""),
+                    "binary_version": job.variables.get("binary_version", ""),
+                    "binary_source_path": job.variables.get("binary_source_path", ""),
+                    "binary_updated_at": job.variables.get("binary_updated_at", ""),
+                    "execution_route": "firmware_adapter",
+                    "execution_origin": "master_remote",
+                    "execution_phase": "completed" if result.ok else "failed",
+                    "current_test": plan.get("mode", "firmware"),
+                    "artifact_path": details.get("artifact_path", ""),
+                    "firmware_adapter": plan.get("adapter_kind", ""),
+                    "firmware_fingerprint": plan.get("package_fingerprint", ""),
+                },
+            )
+            channel["state"] = "pass" if result.ok else "error"
+            channel["updated_at"] = result.finished_at
+    elif job.kind == "sequence_batch":
         batch_channels = details.get("channels") or []
         if isinstance(batch_channels, list):
             for item in batch_channels:
@@ -3957,6 +4141,8 @@ def _execute_python(
 
 
 def _execute_rig(
+    backend: SpoolBackend,
+    config: FtpSpoolConfig,
     job: SpoolJob,
     variables: dict[str, str],
     *,
@@ -3969,12 +4155,102 @@ def _execute_rig(
     argv = [_render_placeholders(str(item), variables) for item in args]
     stdout_buffer = io.StringIO()
     stderr_buffer = io.StringIO()
+    last_stop_check = 0.0
+    cancelled = False
+
+    def should_cancel() -> bool:
+        nonlocal last_stop_check, cancelled
+        if cancelled:
+            return True
+        now = time.monotonic()
+        if now - last_stop_check < 3.0:
+            return False
+        last_stop_check = now
+        cancelled = stop_requested(backend, node_id, job_id=job.job_id)
+        return cancelled
+
+    def on_progress(row: dict[str, Any]) -> None:
+        context = _read_status_context(backend, node_id)
+        context["firmware_progress"] = dict(row)
+        write_status(
+            backend,
+            node_id,
+            state="running",
+            message=(
+                f"Firmware {row.get('step_index', '?')}/{row.get('step_count', '?')}: "
+                f"{row.get('step_label') or row.get('step_id') or 'running'}"
+            ),
+            current_job=job.job_id,
+            details=context,
+        )
+
     with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
         try:
-            code = rig_cli.main(argv)
+            code = rig_cli.main(
+                argv,
+                progress_callback=on_progress,
+                cancel_callback=should_cancel,
+            )
         except (RigConfigError, RigExecutionError) as exc:
             code = 2
             print(f"error: {exc}", file=stderr_buffer)
+    stdout = stdout_buffer.getvalue().strip()
+    stderr = stderr_buffer.getvalue().strip()
+    details: dict[str, Any] = {}
+    try:
+        parsed = json.loads(stdout)
+    except (TypeError, json.JSONDecodeError):
+        parsed = None
+    if isinstance(parsed, list) and len(parsed) == 1 and isinstance(parsed[0], dict):
+        row = parsed[0]
+        row_details = row.get("details")
+        if isinstance(row_details, dict):
+            details.update(row_details)
+        details.update(
+            {
+                "rig_target": str(row.get("target") or ""),
+                "rig_command": str(row.get("command") or ""),
+                "rig_dry_run": bool(row.get("dry_run", False)),
+            }
+        )
+        stdout = str(row.get("stdout") or "")
+        stderr = "\n".join(
+            item for item in (stderr, str(row.get("stderr") or "")) if item
+        )
+
+    journal_value = str(details.get("firmware_journal") or "")
+    if journal_value:
+        journal = Path(journal_value)
+        if config.max_artifact_files <= 0:
+            details["artifact_error"] = "FTP firmware artifact upload is disabled."
+        else:
+            try:
+                artifact_bytes, members = build_artifact_zip_bytes(
+                    journal,
+                    max_uncompressed_bytes=config.max_artifact_upload_bytes,
+                )
+                if len(artifact_bytes) > config.max_artifact_upload_bytes:
+                    raise FtpSpoolError(
+                        f"Firmware artifact exceeds upload limit: {len(artifact_bytes)} bytes"
+                    )
+                artifact_path = (
+                    f"artifacts/{_clean_node_id(node_id)}/{_safe_name(job.job_id)}.zip"
+                )
+                backend.write_bytes(artifact_path, artifact_bytes)
+                details.update(
+                    {
+                        "artifact_path": artifact_path,
+                        "artifact_members": members,
+                        "artifact_error": "",
+                    }
+                )
+            except Exception as exc:
+                details["artifact_error"] = str(exc)
+        _prune_firmware_journals(
+            journal.parent,
+            preserve=journal,
+            limit=config.max_local_run_files,
+        )
     return JobResult(
         job_id=job.job_id,
         node_id=node_id,
@@ -3983,9 +4259,38 @@ def _execute_rig(
         returncode=code,
         started_at=started_at,
         finished_at=_utc_now(),
-        stdout=stdout_buffer.getvalue().strip(),
-        stderr=stderr_buffer.getvalue().strip(),
+        stdout=stdout,
+        stderr=stderr,
+        details=details,
     )
+
+
+def _prune_firmware_journals(root: Path, *, preserve: Path, limit: int) -> None:
+    if not root.is_dir() or root.is_symlink():
+        return
+    owned: list[Path] = []
+    for path in root.iterdir():
+        if not path.is_dir() or path.is_symlink():
+            continue
+        try:
+            manifest = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if isinstance(manifest, dict) and manifest.get("schema") == "rig-firmware-run/v1":
+            owned.append(path)
+    owned.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    keep = max(1, int(limit))
+    preserve_resolved = preserve.resolve()
+    removable = [path for path in owned if path.resolve() != preserve_resolved]
+    retained_without_preserve = max(0, keep - 1)
+    for path in removable[retained_without_preserve:]:
+        for member in path.iterdir():
+            if member.is_file() and not member.is_symlink() and (
+                member.name == "manifest.json" or member.suffix.casefold() == ".log"
+            ):
+                member.unlink()
+        if not list(path.iterdir()):
+            path.rmdir()
 
 
 def capture_screenshot(

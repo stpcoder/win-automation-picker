@@ -210,6 +210,18 @@ def build_artifact_zip_bytes(
     manifest = root / "manifest.json"
     if manifest.is_file():
         ordered.append(manifest)
+        try:
+            manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            manifest_data = {}
+        if isinstance(manifest_data, dict) and manifest_data.get("schema") == "rig-firmware-run/v1":
+            ordered.extend(
+                sorted(
+                    path
+                    for path in root.glob("*.log")
+                    if path.is_file() and not path.is_symlink()
+                )
+            )
     grid_dir = root / "grids"
     if grid_dir.is_dir():
         ordered.extend(sorted(path for path in grid_dir.iterdir() if path.is_file() and not path.is_symlink()))

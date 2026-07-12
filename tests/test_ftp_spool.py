@@ -25,6 +25,7 @@ from win_automation_picker.ftp_spool import (
     build_slave_rig_config,
     cleanup_node_files,
     deploy_package,
+    execute_job,
     initialize_spool,
     inspect_sk_commander_workflow,
     list_packages,
@@ -1509,11 +1510,24 @@ def test_slave_rig_config_exports_com_adb_power_and_channel_tool() -> None:
                 soc_model="MTK25D",
                 firmware_tool_id="mtk-downloader",
                 download_identity="MediaTek PreLoader USB VCOM",
+                board_control_serial="FTDI-CH11",
+                gpio_power="0",
+                gpio_reset="1",
+                gpio_download="2",
+                bootstrap_path="C:\\FW\\lk.bin",
+                bootstrap_address="0x2001000",
+                bootstrap_mode="aarch64",
+                bootstrap_sign_path="C:\\FW\\lk.sign",
+                bootstrap_auth_path="C:\\FW\\auth_sv5.auth",
+                daa_enabled=True,
+                package_selector="layout1/ufs",
+                firmware_partitions=("mmc0", "mmc0boot0"),
                 adb_serial="MTK-CH11",
                 adb_required_after_update=True,
                 power_on_command="POWER ON 11",
                 power_off_command="POWER OFF 11",
                 preloader_exit_command="exit",
+                download_reentry_command="DOWNLOAD REENTER",
             ),
         ),
     )
@@ -1534,3 +1548,87 @@ def test_slave_rig_config_exports_com_adb_power_and_channel_tool() -> None:
     assert port["firmware_tool_id"] == "mtk-downloader"
     assert port["adb"]["serial"] == "MTK-CH11"
     assert port["commands"]["preloader_exit"] == "exit"
+    assert port["commands"]["download_reentry"] == "DOWNLOAD REENTER"
+    assert port["board_control_serial"] == "FTDI-CH11"
+    assert port["gpio_download"] == "2"
+    assert port["daa_enabled"] is True
+    assert port["package_selector"] == "layout1/ufs"
+    assert port["firmware_partitions"] == ["mmc0", "mmc0boot0"]
+
+
+def test_rig_job_uploads_structured_firmware_journal_and_progress(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    backend = LocalSpoolBackend(tmp_path / "spool")
+    initialize_spool(backend, nodes=["rig-pc-04"])
+    journal = tmp_path / "work" / "firmware" / "run-1"
+    journal.mkdir(parents=True)
+    (journal / "manifest.json").write_text(
+        json.dumps({"schema": "rig-firmware-run/v1", "steps": []}),
+        encoding="utf-8",
+    )
+    (journal / "01-qdl-version.log").write_text("QDL 2.3", encoding="utf-8")
+
+    def fake_main(args, *, progress_callback=None, cancel_callback=None):
+        assert "--json" in args
+        assert cancel_callback is not None
+        if progress_callback is not None:
+            progress_callback(
+                {
+                    "step_index": 1,
+                    "step_count": 3,
+                    "step_id": "qdl-version",
+                    "step_label": "Read QDL version",
+                    "state": "completed",
+                }
+            )
+        print(
+            json.dumps(
+                [
+                    {
+                        "target": "rig-pc-04:CH11",
+                        "ok": True,
+                        "returncode": 0,
+                        "stdout": "firmware complete",
+                        "stderr": "",
+                        "command": "firmware-plan:download-only",
+                        "dry_run": False,
+                        "details": {
+                            "firmware_journal": str(journal),
+                            "firmware_plan": {
+                                "adapter_kind": "qualcomm-qdl",
+                                "mode": "download-only",
+                                "package_fingerprint": "a" * 64,
+                            },
+                        },
+                    }
+                ]
+            )
+        )
+        return 0
+
+    monkeypatch.setattr("win_automation_picker.ftp_spool.rig_cli.main", fake_main)
+    config = FtpSpoolConfig(
+        node_id="rig-pc-04",
+        work_dir=str(tmp_path / "work"),
+        capture_on_error=False,
+    )
+    job = SpoolJob.create(
+        kind="rig",
+        payload={"args": ["device", "update", "--json"]},
+        variables={"channel": "CH11", "binary_version": "FW-20260712"},
+        job_id="firmware-job",
+    )
+
+    result = execute_job(backend, config, job, node_id="rig-pc-04")
+
+    assert result.ok
+    assert result.stdout == "firmware complete"
+    assert result.details["rig_target"] == "rig-pc-04:CH11"
+    assert result.details["artifact_path"] == "artifacts/rig-pc-04/firmware-job.zip"
+    assert "01-qdl-version.log" in result.details["artifact_members"]
+    status = json.loads(
+        backend.read_bytes("status/rig-pc-04.json").decode("utf-8")
+    )
+    assert status["firmware_progress"]["step_id"] == "qdl-version"

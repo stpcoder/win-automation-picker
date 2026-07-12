@@ -35,6 +35,21 @@ CHANNEL_COLUMNS = {
     "soc_model": "soc_model",
     "firmware_tool_id": "firmware_tool_id",
     "download_identity": "download_identity",
+    "download_serial": "download_serial",
+    "storage_type": "storage_type",
+    "storage_slot": "storage_slot",
+    "package_selector": "package_selector",
+    "bootstrap_path": "bootstrap_path",
+    "bootstrap_address": "bootstrap_address",
+    "bootstrap_mode": "bootstrap_mode",
+    "bootstrap_sign_path": "bootstrap_sign_path",
+    "bootstrap_auth_path": "bootstrap_auth_path",
+    "daa_enabled": "daa_enabled",
+    "board_control_serial": "board_control_serial",
+    "gpio_power": "gpio_power",
+    "gpio_reset": "gpio_reset",
+    "gpio_download": "gpio_download",
+    "firmware_partitions": "firmware_partitions",
     "adb_executable": "adb_executable",
     "adb_serial": "adb_serial",
     "adb_enabled": "adb_enabled",
@@ -43,6 +58,7 @@ CHANNEL_COLUMNS = {
     "power_off_command": "power_off_command",
     "status_command": "status_command",
     "preloader_exit_command": "preloader_exit_command",
+    "download_reentry_command": "download_reentry_command",
     "binary_name": "binary_name",
     "binary_version": "binary_version",
     "binary_source_path": "binary_source_path",
@@ -57,7 +73,8 @@ CHANNEL_COLUMNS = {
 
 INVENTORY_COLUMNS = tuple(PC_COLUMNS) + ("pc_variables",) + tuple(CHANNEL_COLUMNS)
 INTEGER_FIELDS = {"port", "baud_rate"}
-BOOLEAN_FIELDS = {"adb_enabled", "adb_required_after_update"}
+BOOLEAN_FIELDS = {"adb_enabled", "adb_required_after_update", "daa_enabled"}
+LIST_FIELDS = {"firmware_partitions"}
 
 
 def merge_inventory_csv(
@@ -167,6 +184,8 @@ def dump_inventory_csv(slaves: Iterable[Mapping[str, Any]]) -> str:
                 value = channel.get(field_name, "")
                 if isinstance(value, bool):
                     value = "true" if value else "false"
+                elif field_name in LIST_FIELDS and isinstance(value, list):
+                    value = ";".join(str(item) for item in value)
                 values[csv_name] = value
             writer.writerow(values)
     return output.getvalue()
@@ -253,6 +272,8 @@ def _coerce_value(field_name: str, value: str, line_number: int) -> Any:
         raise FtpSpoolError(
             f"Inventory CSV row {line_number} field {field_name} must be true or false."
         )
+    if field_name in LIST_FIELDS:
+        return [item.strip() for item in value.replace(",", ";").split(";") if item.strip()]
     return value
 
 

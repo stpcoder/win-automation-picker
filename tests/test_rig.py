@@ -2,9 +2,21 @@ import base64
 from dataclasses import replace
 import hashlib
 import json
+from pathlib import Path
+import sys
 
+import pytest
+import win_automation_picker.rig as rig_module
+from win_automation_picker.firmware_plan import (
+    FirmwareExecutionPlan,
+    FirmwareExecutionStep,
+    FirmwareIntegrityFile,
+)
 from win_automation_picker.rig import (
+    CommandResult,
+    FirmwareToolConfig,
     RigConfig,
+    RigConfigError,
     build_device_preflight_report,
     build_device_probe_script,
     build_firmware_flash_script,
@@ -15,6 +27,9 @@ from win_automation_picker.rig import (
     inspect_firmware_manifest,
     render_firmware_arguments,
     resolve_named_command,
+    run_firmware_execution_plan,
+    run_local_firmware_process,
+    run_device_update,
     select_hosts,
     select_serial_targets,
 )
@@ -160,6 +175,8 @@ def test_build_firmware_flash_script_invokes_configured_tool() -> None:
     assert "'C:\\fw\\firmware.xml'" in script
     assert "'download_only'" in script
     assert "'COM3'" in script
+    assert "& $exe @argList" in script
+    assert "Start-Process" not in script
 
 
 def _safe_device_target(tmp_path, *, vendor: str = "qualcomm"):
@@ -250,3 +267,384 @@ def test_device_probe_script_pins_com_usb_identity_and_adb_serial(tmp_path) -> N
     assert "Get-CimInstance Win32_PnPEntity" in download_script
     assert "DEVICE-CH1" in post_script
     assert "-s $adbSerial get-state" in post_script
+
+
+def test_builtin_qdl_preflight_requires_target_and_payload_fingerprint_confirmation(
+    tmp_path,
+) -> None:
+    tool = tmp_path / "qdl.exe"
+    tool.write_bytes(b"tool")
+    programmer = tmp_path / "prog_firehose_ddr.elf"
+    programmer.write_bytes(b"programmer")
+    image = tmp_path / "boot.img"
+    image.write_bytes(b"boot-v1")
+    xml = tmp_path / "rawprogram0.xml"
+    xml.write_text(
+        '<data><program filename="boot.img" label="boot" '
+        'physical_partition_number="0" start_sector="8" '
+        'num_partition_sectors="8" SECTOR_SIZE_IN_BYTES="4096" /></data>',
+        encoding="utf-8",
+    )
+    config = RigConfig.from_mapping(
+        {
+            "hosts": [
+                {
+                    "id": "PC04",
+                    "address": "localhost",
+                    "transport": "local",
+                    "firmware_tools": [
+                        {
+                            "id": "qdl",
+                            "vendor": "qualcomm",
+                            "adapter_kind": "qualcomm-qdl",
+                            "executable": str(tool),
+                            "execution_enabled": True,
+                            "allowed_modes": ["download-only"],
+                            "storage_types": ["ufs"],
+                        }
+                    ],
+                    "ports": [
+                        {
+                            "id": "CH9",
+                            "port": "COM9",
+                            "soc_vendor": "qualcomm",
+                            "soc_model": "SM8850",
+                            "firmware_tool_id": "qdl",
+                            "download_identity": "VID_05C6&PID_9008",
+                            "download_serial": "EDL-CH9",
+                            "storage_type": "ufs",
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+    target = select_serial_targets(config, ["PC04:CH9"])[0]
+    digest = hashlib.sha256(xml.read_bytes()).hexdigest()
+
+    blocked = build_device_preflight_report(
+        target,
+        xml_path=str(xml),
+        mode="download-only",
+        expected_xml_sha256=digest,
+        physical_switch_confirmed=True,
+    )
+    ready = build_device_preflight_report(
+        target,
+        xml_path=str(xml),
+        mode="download-only",
+        expected_xml_sha256=digest,
+        physical_switch_confirmed=True,
+        format_confirmation=blocked.expected_format_confirmation,
+    )
+
+    assert not blocked.ready
+    assert blocked.expected_format_confirmation.startswith("FLASH PC04:CH9 ")
+    assert "package_confirmation" in {check.id for check in blocked.checks if not check.ok}
+    assert ready.ready
+
+    image.write_bytes(b"boot-v2")
+    changed = build_device_preflight_report(
+        target,
+        xml_path=str(xml),
+        mode="download-only",
+        expected_xml_sha256=digest,
+        physical_switch_confirmed=True,
+        format_confirmation=blocked.expected_format_confirmation,
+    )
+    assert not changed.ready
+    assert changed.expected_format_confirmation != blocked.expected_format_confirmation
+
+
+def test_firmware_runner_blocks_missing_tool_capability_and_reports_progress(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    target, _xml = _safe_device_target(tmp_path)
+    tool = target.host.firmware_for_port(target.port)
+    assert tool is not None
+    tool = replace(tool, adapter_kind="qualcomm-qdl", success_markers=(), failure_markers=())
+    plan = FirmwareExecutionPlan(
+        target=target.label(),
+        executable=tool.executable,
+        adapter_kind="qualcomm-qdl",
+        mode="format-all-download",
+        storage_type="ufs",
+        package_fingerprint="a" * 64,
+        steps=(
+            FirmwareExecutionStep(
+                "qdl-version",
+                "preflight",
+                "Read version",
+                ("--version",),
+            ),
+            FirmwareExecutionStep(
+                "qdl-capabilities",
+                "capability",
+                "Read help",
+                ("--help",),
+            ),
+            FirmwareExecutionStep(
+                "qdl-format",
+                "format",
+                "Format",
+                ("--storage", "ufs", "--skip-reset", "programmer.elf", "wipe.xml"),
+                destructive=True,
+            ),
+        ),
+    )
+    calls: list[str] = []
+
+    def fake_run(host, script, *, target, timeout, dry_run, command, cancel_callback=None):
+        calls.append(command)
+        output = "qdl 2.3" if command.endswith("version") else "--dry-run --storage"
+        return CommandResult(target, True, 0, stdout=output, command=command)
+
+    monkeypatch.setattr(rig_module, "run_powershell_for_host", fake_run)
+    progress: list[dict] = []
+
+    result = run_firmware_execution_plan(
+        target,
+        tool,
+        plan,
+        journal_root=str(tmp_path / "journals"),
+        progress_callback=progress.append,
+    )
+
+    assert not result.ok
+    assert "--skip-reset" in result.stderr
+    assert calls == ["firmware:qdl-version", "firmware:qdl-capabilities"]
+    assert progress[-1]["state"] == "failed"
+    assert Path(result.details["firmware_journal"], "manifest.json").is_file()
+
+
+def test_firmware_runner_rejects_genio_zero_exit_error_output(tmp_path, monkeypatch) -> None:
+    target, _xml = _safe_device_target(tmp_path)
+    configured = target.host.firmware_for_port(target.port)
+    assert configured is not None
+    tool = replace(configured, adapter_kind="mediatek-genio")
+    plan = FirmwareExecutionPlan(
+        target=target.label(),
+        executable=tool.executable,
+        adapter_kind="mediatek-genio",
+        mode="download-only",
+        storage_type="ufs",
+        package_fingerprint="d" * 64,
+        steps=(
+            FirmwareExecutionStep(
+                "genio-validate-download",
+                "validate",
+                "Validate Genio image",
+                ("--dry-run",),
+            ),
+        ),
+    )
+
+    def fake_run(host, script, *, target, timeout, dry_run, command, cancel_callback=None):
+        return CommandResult(target, True, 0, stderr="ERROR: No image found", command=command)
+
+    monkeypatch.setattr(rig_module, "run_powershell_for_host", fake_run)
+
+    result = run_firmware_execution_plan(target, tool, plan)
+
+    assert not result.ok
+    assert "no image found" in result.stderr
+
+
+def test_firmware_runner_honors_emergency_stop_before_next_step(tmp_path) -> None:
+    target, _xml = _safe_device_target(tmp_path)
+    tool = target.host.firmware_for_port(target.port)
+    assert tool is not None
+    plan = FirmwareExecutionPlan(
+        target=target.label(),
+        executable=tool.executable,
+        adapter_kind="generic",
+        mode="download-only",
+        storage_type="ufs",
+        package_fingerprint="b" * 64,
+        steps=(
+            FirmwareExecutionStep(
+                "vendor-download",
+                "download",
+                "Download",
+                ("--xml", "firmware.xml"),
+                destructive=True,
+            ),
+        ),
+    )
+
+    result = run_firmware_execution_plan(
+        target,
+        tool,
+        plan,
+        journal_root=str(tmp_path / "journals"),
+        cancel_callback=lambda: True,
+    )
+
+    assert not result.ok
+    assert result.returncode == 130
+    manifest = json.loads(
+        Path(result.details["firmware_journal"], "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["cancelled"] is True
+
+
+def test_firmware_runner_rehashes_package_immediately_before_destructive_step(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    target, _xml = _safe_device_target(tmp_path)
+    tool = target.host.firmware_for_port(target.port)
+    assert tool is not None
+    payload = tmp_path / "boot.img"
+    payload.write_bytes(b"boot-v1")
+    expected_hash = hashlib.sha256(payload.read_bytes()).hexdigest()
+    plan = FirmwareExecutionPlan(
+        target=target.label(),
+        executable=tool.executable,
+        adapter_kind="generic",
+        mode="download-only",
+        storage_type="ufs",
+        package_fingerprint="c" * 64,
+        steps=(
+            FirmwareExecutionStep(
+                "vendor-validate",
+                "validate",
+                "Validate",
+                ("--validate",),
+            ),
+            FirmwareExecutionStep(
+                "vendor-download",
+                "download",
+                "Download",
+                ("--download",),
+                destructive=True,
+            ),
+        ),
+        integrity_files=(
+            FirmwareIntegrityFile(str(payload), payload.stat().st_size, expected_hash),
+        ),
+    )
+    calls: list[str] = []
+
+    def fake_run(host, script, *, target, timeout, dry_run, command, cancel_callback=None):
+        calls.append(command)
+        payload.write_bytes(b"boot-v2")
+        return CommandResult(target, True, 0, stdout="validated", command=command)
+
+    monkeypatch.setattr(rig_module, "run_powershell_for_host", fake_run)
+
+    result = run_firmware_execution_plan(target, tool, plan)
+
+    assert not result.ok
+    assert "changed after validation" in result.stderr
+    assert calls == ["firmware:vendor-validate"]
+
+
+def test_local_firmware_process_bounds_output_and_keeps_marker_detection() -> None:
+    tool = FirmwareToolConfig(
+        executable=sys.executable,
+        vendor="qualcomm",
+        failure_markers=("FAIL-IN-MIDDLE",),
+    )
+    step = FirmwareExecutionStep(
+        "vendor-download",
+        "download",
+        "Download",
+        (
+            "-c",
+            "import sys; sys.stdout.write('A'*(2*1024*1024)+'FAIL-IN-MIDDLE'+'B'*(3*1024*1024))",
+        ),
+        destructive=True,
+    )
+
+    result = run_local_firmware_process(
+        tool,
+        step,
+        target="PC04:CH1",
+        timeout=10,
+    )
+
+    assert not result.ok
+    assert "output characters omitted" in result.stdout
+    assert len(result.stdout) < 4 * 1024 * 1024 + 200
+    assert "Firmware failure marker detected" in result.stderr
+    assert "fail-in-middle" in result.details["firmware_output_markers"]
+
+
+def test_device_update_rechecks_confirmation_after_payload_changes(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    tool_path = tmp_path / "qdl.exe"
+    tool_path.write_bytes(b"tool")
+    programmer = tmp_path / "prog_firehose_ddr.elf"
+    programmer.write_bytes(b"programmer")
+    image = tmp_path / "boot.img"
+    image.write_bytes(b"boot-v1")
+    xml = tmp_path / "rawprogram0.xml"
+    xml.write_text(
+        '<data><program filename="boot.img" label="boot" '
+        'physical_partition_number="0" start_sector="8" '
+        'num_partition_sectors="8" SECTOR_SIZE_IN_BYTES="4096" /></data>',
+        encoding="utf-8",
+    )
+    config = RigConfig.from_mapping(
+        {
+            "hosts": [
+                {
+                    "id": "PC04",
+                    "address": "localhost",
+                    "transport": "local",
+                    "firmware_tools": [
+                        {
+                            "id": "qdl",
+                            "vendor": "qualcomm",
+                            "adapter_kind": "qualcomm-qdl",
+                            "executable": str(tool_path),
+                            "execution_enabled": True,
+                            "allowed_modes": ["download-only"],
+                            "storage_types": ["ufs"],
+                        }
+                    ],
+                    "ports": [
+                        {
+                            "id": "CH9",
+                            "port": "COM9",
+                            "soc_vendor": "qualcomm",
+                            "soc_model": "SM8850",
+                            "firmware_tool_id": "qdl",
+                            "download_identity": "VID_05C6&PID_9008",
+                            "download_serial": "EDL-CH9",
+                            "storage_type": "ufs",
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+    target = select_serial_targets(config, ["PC04:CH9"])[0]
+    xml_digest = hashlib.sha256(xml.read_bytes()).hexdigest()
+    initial = build_device_preflight_report(
+        target,
+        xml_path=str(xml),
+        mode="download-only",
+        expected_xml_sha256=xml_digest,
+        physical_switch_confirmed=True,
+    )
+
+    def mutate_during_probe(*_args, **_kwargs):
+        image.write_bytes(b"boot-v2")
+        return CommandResult(target.label(), True, 0, stdout="probe ok")
+
+    monkeypatch.setattr(rig_module, "run_device_probe", mutate_during_probe)
+
+    with pytest.raises(RigConfigError, match="changed after preflight"):
+        run_device_update(
+            target,
+            xml_path=str(xml),
+            mode="download-only",
+            expected_xml_sha256=xml_digest,
+            physical_switch_confirmed=True,
+            format_confirmation=initial.expected_format_confirmation,
+        )

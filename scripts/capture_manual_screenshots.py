@@ -269,17 +269,38 @@ def _demo_config() -> FtpSpoolConfig:
             console_identity=f"VID_0403&PID_6001\\AE-RIG-{number:04d}",
             usb_location=f"Rack04 Hub-A / Port {number - 8}",
             soc_vendor="Qualcomm" if number < 11 else "MediaTek",
-            soc_model="SM8850" if number < 11 else "MTK 25D",
-            firmware_tool_id="qc-downloader" if number < 11 else "mtk-downloader",
-            download_identity="VID_05C6&PID_9008" if number < 11 else "MediaTek PreLoader USB VCOM",
+            soc_model="SM8850" if number < 11 else "MTK 25D" if number == 11 else "Genio 720",
+            firmware_tool_id=(
+                "qc-qdl" if number < 11 else "mtk-downloader" if number == 11 else "mtk-genio"
+            ),
+            download_identity=(
+                "VID_05C6&PID_9008"
+                if number < 11
+                else "MediaTek PreLoader USB VCOM"
+                if number == 11
+                else "VID_0E8D&PID_0003"
+            ),
+            download_serial=f"EDL-CH{number}" if number < 11 else "",
+            storage_type="ufs",
+            package_selector="ufs" if number < 11 else "",
+            bootstrap_path="D:/Binary/Genio720/AE_2026W28/lk.bin" if number == 12 else "",
+            bootstrap_address="0x2001000" if number == 12 else "",
+            bootstrap_mode="aarch64" if number == 12 else "",
+            board_control_serial=f"FTDI-CH{number}" if number == 12 else "",
+            gpio_power="0" if number == 12 else "",
+            gpio_reset="1" if number == 12 else "",
+            gpio_download="2" if number == 12 else "",
             adb_serial=f"AE-CH{number}",
             adb_required_after_update=True,
             power_on_command=f"POWER ON {number}",
             power_off_command=f"POWER OFF {number}",
             preloader_exit_command="exit" if number >= 11 else "",
+            download_reentry_command="DOWNLOAD REENTER" if number >= 11 else "",
             binary_name="AE_2026W28",
             binary_version=f"R{number - 8}.2",
-            binary_source_path=f"D:/Binary/{'SM8850' if number < 11 else 'MTK25D'}/AE_2026W28",
+            binary_source_path=(
+                f"D:/Binary/{'SM8850' if number < 11 else 'MTK25D' if number == 11 else 'Genio720'}/AE_2026W28"
+            ),
             binary_updated_at="2026-07-12 08:30:00",
             dram_part="K3KL9L90CM",
             lot_id="L2607A",
@@ -313,20 +334,34 @@ def _demo_config() -> FtpSpoolConfig:
         variables={"line": "Mobile-AE", "operator": "AE User"},
         device_tools=(
             DeviceToolInfo(
-                id="qc-downloader",
+                id="qc-qdl",
                 vendor="qualcomm",
-                executable="C:/Tools/Qualcomm/VendorDownload.exe",
+                executable="C:/Tools/QDL/qdl.exe",
+                adapter_kind="qualcomm-qdl",
                 execution_enabled=True,
-                cli_evidence_ref="vendor-cli/qc-sm8850.md",
-                success_markers=("Download OK",),
-                failure_markers=("FAIL", "ERROR"),
+                cli_evidence_ref="https://github.com/linux-msm/qdl",
+                allowed_modes=("download-only", "format-all-download", "provision-only"),
+                storage_types=("ufs", "emmc", "nand", "nvme", "spinor"),
+            ),
+            DeviceToolInfo(
+                id="mtk-genio",
+                vendor="mediatek",
+                executable="C:/Tools/Genio/genio-flash.exe",
+                adapter_kind="mediatek-genio",
+                execution_enabled=True,
+                cli_evidence_ref=(
+                    "https://genio.mediatek.com/doc/iot-yocto/latest/tools/genio-tools.html"
+                ),
+                allowed_modes=("download-only", "format-all-download"),
+                storage_types=("ufs", "emmc"),
             ),
             DeviceToolInfo(
                 id="mtk-downloader",
                 vendor="mediatek",
                 executable="C:/Tools/MediaTek/VendorDownload.exe",
+                adapter_kind="generic",
                 execution_enabled=True,
-                cli_evidence_ref="vendor-cli/mtk-25d.md",
+                cli_evidence_ref="docs/vendor-cli/mtk-downloader.md",
                 allowed_modes=("download-only", "format-all-download"),
                 success_markers=("Download OK",),
                 failure_markers=("FAIL", "ERROR"),
@@ -600,7 +635,9 @@ def _run_profiles(package_name: str) -> list[dict[str, object]]:
                     "launcher_package": "sk-launcher.py",
                     "campaign_attempt": "1",
                     "soc_vendor": "Qualcomm" if number < 11 else "MediaTek",
-                    "soc_model": "SM8850" if number < 11 else "MTK 25D",
+                    "soc_model": (
+                        "SM8850" if number < 11 else "MTK 25D" if number == 11 else "Genio 720"
+                    ),
                     "binary_name": "AE_2026W28",
                     "binary_version": f"R{number - 8}.2",
                 },
@@ -630,7 +667,9 @@ def _status_rows() -> list[dict[str, object]]:
                 "console_identity": f"VID_0403&PID_6001\\AE-RIG-{number:04d}",
                 "usb_location": f"Rack04 Hub-A / Port {number - 8}",
                 "soc_vendor": "Qualcomm" if number < 11 else "MediaTek",
-                "soc_model": "SM8850" if number < 11 else "MTK 25D",
+                "soc_model": (
+                    "SM8850" if number < 11 else "MTK 25D" if number == 11 else "Genio 720"
+                ),
                 "binary_name": "AE_2026W28",
                 "binary_version": f"R{number - 8}.2",
                 "binary_updated_at": "2026-07-12 08:30:00",
@@ -1047,6 +1086,21 @@ def capture(output_dir: Path) -> None:
             app.update()
             _capture(app, output_dir / "14-device-tools.png")
 
+            app.device_tool_tree.selection_set("1")
+            app._edit_device_tool()
+            tool_dialogs = [
+                child
+                for child in app.winfo_children()
+                if isinstance(child, tk.Toplevel) and child.title() == "다운로드 도구 수정"
+            ]
+            if not tool_dialogs:
+                raise RuntimeError("Downloader editor dialog did not open.")
+            tool_dialog = tool_dialogs[0]
+            tool_dialog.geometry("980x500+45+55")
+            tool_dialog.update()
+            _capture(tool_dialog, output_dir / "17-firmware-adapter.png")
+            tool_dialog.destroy()
+
             app.settings_workspace.select(0)
             app.update()
             _capture(app, output_dir / "15-physical-topology.png")
@@ -1076,6 +1130,31 @@ def capture(output_dir: Path) -> None:
 
             app.after(150, capture_fixture_inventory)
             app._manage_settings_channels()
+
+            def capture_channel_firmware_settings() -> None:
+                dialogs = [
+                    child
+                    for child in app.winfo_children()
+                    if isinstance(child, tk.Toplevel) and child.title() == "CH 정보"
+                ]
+                if not dialogs:
+                    raise RuntimeError("Channel editor dialog did not open.")
+                dialog = dialogs[0]
+                notebooks = [
+                    widget
+                    for widget in _walk_widgets(dialog)
+                    if isinstance(widget, ttk.Notebook)
+                ]
+                if notebooks:
+                    notebooks[0].select(2)
+                dialog.geometry("1040x650+55+65")
+                dialog.update()
+                _capture(dialog, output_dir / "18-channel-firmware-settings.png")
+                dialog.destroy()
+
+            channel = app._settings_slaves[0]["channels"][3]
+            app.after(150, capture_channel_firmware_settings)
+            app._ask_channel_values(channel, parent=app)
 
             app._show_today_work()
             app._toggle_run_advanced_tools()
