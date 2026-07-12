@@ -416,6 +416,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../fixture-topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PC · 실장기 · COM 연결 구조
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../getting-started/" class="md-nav__link">
         
   
@@ -1520,8 +1548,8 @@
 </tr>
 <tr>
 <td>초기 설정 UX</td>
-<td style="text-align: right;">90%</td>
-<td>일일 화면과 분리된 Master 연결, PC/변수/자유 CH 표 편집, PC별 <code>.info</code> 생성 지원</td>
+<td style="text-align: right;">94%</td>
+<td>4계층 구성도, 물리 ID/위치/HWID 검사, CSV 일괄 구성, PC별 <code>.info</code> 생성 지원</td>
 </tr>
 </tbody>
 </table>
@@ -1592,17 +1620,32 @@
 <td>PASS</td>
 <td>CH9→CH12 자연 정렬, running/pass/fail 색상, Grid 진행</td>
 </tr>
+<tr>
+<td>4계층 연결 구조</td>
+<td>PASS</td>
+<td>Master/FTP/PC/물리 실장기 소유권, 위치, 안정 ID와 COM 경로 분리</td>
+</tr>
+<tr>
+<td>COM 안전 대조</td>
+<td>PASS</td>
+<td>HWID 일치·이동·불명확·불일치·누락 판정과 고유 이동만 적용</td>
+</tr>
+<tr>
+<td>Inventory CSV</td>
+<td>PASS</td>
+<td>임의 CH, 물리 위치와 HWID round-trip, Node+CH 병합과 중복 행 차단</td>
+</tr>
 </tbody>
 </table>
 <p>재현 스크립트는 <code>scripts/capture_manual_screenshots.py</code>이며, 생성된 실제 화면은 매뉴얼의
-11개 PNG입니다. FTP 주소, 계정과 비밀번호 환경 변수는 모두 데모 값입니다.</p>
+16개 PNG입니다. FTP 주소, 계정과 비밀번호 환경 변수는 모두 데모 값입니다.</p>
 <h2 id="_3">권장 사용자 흐름</h2>
 <ol>
 <li><code>2 자동화 준비</code>에서 SEQ recipe의 목표 Temp/VDD를 정하고 <code>검사 · 패키지 준비</code>를 수행합니다.</li>
 <li>같은 화면에서 프로그램 매크로를 녹화하고 <code>Scratch 편집</code>, 로컬 <code>시험</code>, <code>검사 · Python 준비</code>를 수행합니다.</li>
 <li><code>준비 상태 확인</code> 후 <code>서버 라이브러리 등록</code>을 누릅니다. 이 동작은 원격 실행을 시작하지 않습니다.</li>
-<li>최초 1회 <code>3 Rig 설정 &gt; Master 연결</code>에서 FTP 주소와 전용 root를 저장하고 <code>연결 확인</code>을 누릅니다.</li>
-<li><code>원격 PC · CH</code>에서 PC, 공통 변수와 자유 CH를 등록하고 <code>서버 폴더 준비</code>를 누릅니다.</li>
+<li>최초 1회 <code>3 Rig 설정 &gt; 연결 구조</code>에서 Master/FTP/PC/실장기를 구별해 등록합니다.</li>
+<li><code>Master · FTP</code>에서 연결을 확인하고 <code>실장기 연결 PC</code>에서 CSV 또는 GUI로 장치를 등록한 뒤 서버 폴더를 준비합니다.</li>
 <li><code>Slave 설정 내보내기</code>로 PC별 <code>.info</code>를 만들고 각 PC에서 <code>이 PC Agent &gt; Agent 시작</code>을 누릅니다.</li>
 <li>매일 <code>1 오늘 작업 &gt; 실행</code>에서 자동화를 선택하고 <code>Rig 대상 불러오기</code>로 PC/CH별 값을 확인합니다.</li>
 <li><code>실행 시작</code>으로 체크된 행만 전송하고 <code>캠페인</code>과 <code>PC · CH 상태</code>에서 Grid와 결과를 확인합니다.</li>

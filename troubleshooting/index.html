@@ -414,6 +414,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../fixture-topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PC · 실장기 · COM 연결 구조
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../getting-started/" class="md-nav__link">
         
   
@@ -1237,6 +1265,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#agent-pc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent 소유 PC 불일치
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent가 이미 실행 중
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#_8" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1444,6 +1494,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#agent-pc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent 소유 PC 불일치
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent가 이미 실행 중
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#_8" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1603,11 +1675,20 @@
 <h2 id="4-com">4채널 콘솔에서 COM 연결 실패</h2>
 <ol>
 <li><code>PC 환경</code> 또는 <code>RigCommander.exe device system-check</code>를 실행합니다.</li>
-<li><code>Rig 설정 &gt; 원격 PC · CH</code>의 COM과 baud가 Device Manager 값과 같은지 확인합니다.</li>
+<li><code>Rig 설정 &gt; 연결 구조</code>에서 대상 PC를 선택하고 <code>이 PC COM 대조</code>로 COM/HWID를 확인합니다.</li>
 <li>PuTTY, QTTY, SK Commander 등 같은 COM을 연 프로그램을 닫습니다.</li>
 <li>실시간 콘솔은 Master가 아니라 COM이 연결된 Slave PC에서 엽니다.</li>
-<li>USB가 재인식됐다면 <code>CH 새로고침</code> 후 실제 COM 번호를 다시 저장합니다.</li>
+<li>USB가 재인식됐다면 고유 HWID의 <code>이동 제안</code>만 <code>안전한 COM 변경 적용</code>으로 저장합니다.</li>
 </ol>
+<h2 id="agent-pc">Agent 소유 PC 불일치</h2>
+<p><code>Node ...는 Windows ...용이지만 현재 PC는 ...</code> 오류는 다른 PC용 <code>rig-ftp.info</code>를 복사한
+경우입니다. Master의 <code>Slave 설정 내보내기</code> 결과에서 현재 PC 폴더를 다시 배치합니다.
+Node ID나 Windows 이름을 오류를 피하려고 임의로 바꾸지 말고 PC 자산 라벨과 연결 구조를
+먼저 대조합니다.</p>
+<h2 id="agent">Agent가 이미 실행 중</h2>
+<p>같은 PC에서 같은 Node로 실행 중인 AE Workbench 또는 <code>RigFtpCli slave</code>가 있습니다. Task
+Manager에서 실제 중복 프로세스를 확인하고 하나만 남깁니다. <code>.agent-*.lock</code> 파일 자체를
+지워도 실행 중 프로세스의 OS 잠금은 풀리지 않으므로 파일 삭제로 우회하지 않습니다.</p>
 <h2 id="_8">명령이 일부만 입력됨</h2>
 <ol>
 <li><code>글자 지연 ms</code>를 5~30부터 올려 봅니다.</li>

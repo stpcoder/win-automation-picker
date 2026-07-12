@@ -416,6 +416,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../fixture-topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PC · 실장기 · COM 연결 구조
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../getting-started/" class="md-nav__link">
         
   
@@ -1516,8 +1544,8 @@
 <td>이 Slave PC의 선택 COM을 지속 연결</td>
 </tr>
 <tr>
-<td><code>COM 검색</code></td>
-<td>이 PC가 감지한 COM, description과 HWID 표시</td>
+<td><code>COM 대조</code></td>
+<td>이 PC의 COM/HWID를 물리 실장기 설정과 비교하고 고유한 이동만 변경 제안</td>
 </tr>
 <tr>
 <td><code>전송</code></td>
@@ -1669,6 +1697,18 @@
 </thead>
 <tbody>
 <tr>
+<td><code>연결 구조 &gt; 구성 검사</code></td>
+<td>Master/FTP/PC/실장기 4계층의 누락·중복·소유권 검사</td>
+</tr>
+<tr>
+<td><code>연결 구조 &gt; 선택 수정</code></td>
+<td>선택한 계층의 안정 ID와 실제 위치 수정</td>
+</tr>
+<tr>
+<td><code>연결 구조 &gt; 이 PC COM 대조</code></td>
+<td>선택 PC가 이 Windows에 물리적으로 연결된 경우 COM/HWID 대조</td>
+</tr>
+<tr>
 <td><code>장치 도구 &gt; 도구 추가</code></td>
 <td>MTK/QC 외부 Downloader CLI와 결과 규칙 등록</td>
 </tr>
@@ -1688,39 +1728,44 @@
 </thead>
 <tbody>
 <tr>
-<td><code>Master 연결</code></td>
+<td><code>Master · FTP</code></td>
 <td><code>파일</code></td>
 <td>config 선택·불러오기·예제 생성</td>
 </tr>
 <tr>
-<td><code>Master 연결</code></td>
+<td><code>Master · FTP</code></td>
 <td><code>저장</code></td>
 <td>현재 <code>rig-ftp.info</code> 저장</td>
 </tr>
 <tr>
-<td><code>Master 연결</code></td>
+<td><code>Master · FTP</code></td>
 <td><code>연결 확인</code></td>
 <td>FTP 권한 확인</td>
 </tr>
 <tr>
-<td><code>원격 PC · CH</code></td>
-<td><code>PC 추가</code></td>
-<td>별명, Node ID, IP, PC별 변수 등록</td>
+<td><code>실장기 연결 PC</code></td>
+<td><code>연결 PC 추가</code></td>
+<td>별명, Node ID, 자산 ID, Windows 이름, IP, 위치와 PC별 변수 등록</td>
 </tr>
 <tr>
-<td><code>원격 PC · CH</code></td>
-<td><code>CH 관리</code></td>
-<td>자유 CH/이름, Slot, COM, SoC, Binary, 자재 등록</td>
+<td><code>실장기 연결 PC</code></td>
+<td><code>실장기 관리</code></td>
+<td>물리 ID/Serial/위치, 자유 CH, COM/HWID, SoC, Binary, 자재 등록</td>
 </tr>
 <tr>
-<td><code>원격 PC · CH</code></td>
+<td><code>연결 PC 편집</code></td>
+<td><code>CSV 가져오기/내보내기</code></td>
+<td>여러 PC와 실장기를 Node+CH 기준으로 일괄 병합·내보내기</td>
+</tr>
+<tr>
+<td><code>실장기 연결 PC</code></td>
 <td><code>서버 폴더 준비</code></td>
 <td>PC별 FTP spool 폴더 생성</td>
 </tr>
 <tr>
-<td><code>원격 PC · CH</code></td>
+<td><code>실장기 연결 PC</code></td>
 <td><code>Slave 설정 내보내기</code></td>
-<td>각 PC용 <code>rig-ftp.info</code> 생성</td>
+<td>각 PC용 <code>rig-ftp.info</code>와 <code>rig-commander.config.json</code> 생성</td>
 </tr>
 <tr>
 <td><code>이 PC Agent</code></td>

@@ -416,6 +416,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../fixture-topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PC · 실장기 · COM 연결 구조
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../getting-started/" class="md-nav__link">
         
   
@@ -1306,8 +1334,16 @@
 시 자동으로 기록하므로 직접 수정하지 않습니다.</p>
 <h2 id="rig-ftpinfo">rig-ftp.info</h2>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;master&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;controller_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;MASTER-AE-01&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;alias&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AE Control 01&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;windows_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AE-MASTER-01&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;physical_location&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Mobile AE Lab / Control Desk 1&quot;</span>
+<span class="w">  </span><span class="p">},</span>
 <span class="w">  </span><span class="nt">&quot;ftp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nt">&quot;host&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;192.168.0.10&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;alias&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AE Automation FTP&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;physical_location&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Internal DC / Storage Zone A&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;port&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">21</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;username&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;macro_user&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;password&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;change-me&quot;</span><span class="p">,</span>
@@ -1354,6 +1390,9 @@
 <span class="w">      </span><span class="nt">&quot;alias&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;PC04&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;host&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;192.168.0.104&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;port&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;asset_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;PC-ASSET-004&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;windows_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AE-RIG-PC04&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;physical_location&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Mobile AE Lab / Rack 04&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;notes&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Line A channel 4&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;variables&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="nt">&quot;channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;CH4&quot;</span>
@@ -1363,8 +1402,14 @@
 <span class="w">          </span><span class="nt">&quot;channel_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;CH11&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;SK Commander 3&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;slot_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;S3&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;fixture_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;RIG-PC04-11&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;fixture_model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;SK-RIG-MTK&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;fixture_serial&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AE-RIG-0011&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;physical_location&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Mobile AE Lab / Rack 04 / Bay 3&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;com_port&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;COM7&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;baud_rate&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">115200</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;console_identity&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;VID_0403&amp;PID_6001\\AE-RIG-0011&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;usb_location&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Rack04 Hub-A / Port 3&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;firmware_port&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;COM7&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;soc_vendor&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mediatek&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;soc_model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;MTK25D&quot;</span><span class="p">,</span>
@@ -1426,8 +1471,16 @@
 </thead>
 <tbody>
 <tr>
+<td><code>master.*</code></td>
+<td>명령을 만든 Master PC ID·별명·Windows 이름·실제 위치</td>
+</tr>
+<tr>
 <td><code>ftp.host</code></td>
 <td>FTP 서버 주소</td>
+</tr>
+<tr>
+<td><code>ftp.alias</code>, <code>ftp.physical_location</code></td>
+<td>사람이 구별하는 FTP 별명과 실제 위치</td>
 </tr>
 <tr>
 <td><code>ftp.root_dir</code></td>
@@ -1466,8 +1519,16 @@
 <td>master에서 보는 slave roster</td>
 </tr>
 <tr>
+<td><code>slaves[].asset_id</code>, <code>windows_name</code>, <code>physical_location</code></td>
+<td>실장기 연결 PC의 물리 자산·OS 이름·랙 위치</td>
+</tr>
+<tr>
 <td><code>slaves[].channels</code></td>
-<td>자유 CH, COM/baud/ADB/전원, SoC, binary provenance, 자재와 SEQ</td>
+<td>물리 실장기 ID/Serial/위치, 자유 CH, COM/baud/ADB/전원, SoC, Binary, 자재와 SEQ</td>
+</tr>
+<tr>
+<td><code>channels[].console_identity</code>, <code>usb_location</code></td>
+<td>COM 번호 변경·오연결을 검출하는 HWID와 Hub/케이블 위치</td>
 </tr>
 <tr>
 <td><code>run_profiles</code></td>
@@ -1501,6 +1562,12 @@
 <span class="w">          </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;CH11&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;port&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;COM7&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;baud&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">115200</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;fixture_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;RIG-PC04-11&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;fixture_model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;SK-RIG-MTK&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;fixture_serial&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AE-RIG-0011&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;physical_location&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Mobile AE Lab / Rack 04 / Bay 3&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;console_identity&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;VID_0403&amp;PID_6001\\AE-RIG-0011&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;usb_location&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Rack04 Hub-A / Port 3&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;soc_vendor&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mediatek&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;soc_model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;MTK25D&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;firmware_tool_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mtk-downloader&quot;</span><span class="p">,</span>
@@ -1514,6 +1581,10 @@
 </code></pre></div>
 <p><code>execution_enabled</code>는 실제 도구 버전의 CLI, 성공/실패 문구를 확인한 뒤 GUI에서만 켭니다.</p>
 <p>CH 이름은 <code>CH1</code> 형식을 강제하지 않습니다. <code>CH9</code>, <code>CH10</code>, <code>PC04-RIG2</code>를 사용할 수 있고 CH가 없는 단일 창은 <code>channel_id</code>를 비우고 <code>name</code>을 <code>Main</code>처럼 입력합니다. 각 항목에는 <code>channel_id</code>, <code>slot_id</code>, <code>name</code> 중 하나가 반드시 있어야 합니다.</p>
+<p><code>fixture_id</code>와 <code>fixture_serial</code>은 물리 실장기를 따라가는 안정 식별자입니다. <code>com_port</code>는
+Windows USB 재열거로 달라질 수 있으므로 <code>console_identity</code>와 <code>usb_location</code>을 함께
+저장합니다. 자세한 변경 절차는 <a href="../../fixture-topology/">PC · 실장기 · COM 연결 구조</a>를
+따릅니다.</p>
 <p>Heartbeat와 잘못된 동적 CH 누적을 제한하기 위해 Slave PC 한 대에는 최대 64개 CH/slot 항목을 등록할 수 있습니다.</p>
 <h2 id="password_env">password_env 사용</h2>
 <p>비밀번호를 파일에 저장하기 싫으면 <code>password_env</code>에 환경 변수 이름을 넣습니다.</p>

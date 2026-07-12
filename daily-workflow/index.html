@@ -426,10 +426,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#master" class="md-nav__link">
+  <a href="#master-ftp" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Master 연결
+        Master · FTP 연결
       
     </span>
   </a>
@@ -598,6 +598,34 @@
     
   
     실장기 직접 제어와 Binary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fixture-topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PC · 실장기 · COM 연결 구조
   
 
     
@@ -1338,10 +1366,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#master" class="md-nav__link">
+  <a href="#master-ftp" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Master 연결
+        Master · FTP 연결
       
     </span>
   </a>
@@ -1498,7 +1526,7 @@
 <tr>
 <td>Rig PC를 추가하거나 바꿀 때</td>
 <td><code>3 Rig 설정</code></td>
-<td>Master 연결, PC/CH inventory, Slave Agent 준비 완료</td>
+<td>4계층 구성 검사, PC/실장기 inventory, Slave Agent 준비 완료</td>
 </tr>
 <tr>
 <td>매일 시험을 시작할 때</td>
@@ -1549,10 +1577,10 @@ MTK · Preloader exit 후 Download
 <p>입력 문자열은 고정값 또는 <code>${sequence_name}</code> 같은 PC별 변수로 바꿀 수 있습니다.
 원격 PC마다 다른 값은 매크로를 복제하지 않고 일일 실행표에서 입력합니다.</p>
 <h2 id="b-master-rig">B. Master와 Rig 최초 설정</h2>
-<h3 id="master">Master 연결</h3>
+<h3 id="master-ftp">Master · FTP 연결</h3>
 <p><img alt="Master FTP 연결 설정" src="../assets/screenshots/10-master-connection.png" /></p>
 <ol>
-<li><code>3 Rig 설정 &gt; Master · 원격 PC &gt; Master 연결</code>을 엽니다.</li>
+<li><code>3 Rig 설정 &gt; Master · 원격 PC &gt; 연결 구조</code>에서 4계층을 검사한 뒤 <code>Master · FTP</code>를 엽니다.</li>
 <li>설정 파일, FTP 주소·포트·아이디·서버 폴더를 입력합니다.</li>
 <li>비밀번호는 가능하면 <code>비밀번호 환경 변수</code>로 지정합니다.</li>
 <li><code>연결 확인</code>으로 전용 root의 쓰기·읽기·삭제 권한을 검사합니다.</li>
@@ -1561,9 +1589,9 @@ MTK · Preloader exit 후 Download
 <h3 id="pc-ch">원격 PC와 CH 등록</h3>
 <p><img alt="원격 PC와 자유 CH inventory" src="../assets/screenshots/06-rig-setup.png" /></p>
 <ol>
-<li><code>원격 PC · CH</code>를 엽니다.</li>
-<li><code>PC 추가</code>로 <code>PC04</code>, <code>rig-pc-04</code>, IP와 PC별 값을 등록합니다.</li>
-<li>PC를 선택하고 <code>CH 관리</code>에서 <code>CH9~CH12</code>, Slot, COM, SoC, Binary, 자재를 등록합니다.</li>
+<li><code>실장기 연결 PC</code>를 엽니다.</li>
+<li><code>연결 PC 추가</code>로 <code>PC04</code>, <code>rig-pc-04</code>, 자산 ID, Windows 이름, IP, 위치와 PC별 값을 등록합니다.</li>
+<li>PC를 선택하고 <code>실장기 관리</code>에서 물리 실장기 ID/Serial/위치, <code>CH9~CH12</code>, Slot, COM/HWID, SoC, Binary, 자재를 등록합니다.</li>
 <li>CH가 없는 프로그램은 <code>QC-DL</code>, <code>Main</code> 같은 자유 이름을 사용합니다.</li>
 <li><code>서버 폴더 준비</code>로 각 Node의 FTP spool 폴더를 만듭니다.</li>
 <li><code>장치 도구</code>에서 검증된 MTK/QC Downloader와 결과 규칙을 등록합니다.</li>
@@ -1658,7 +1686,7 @@ MTK · Preloader exit 후 Download
 <td>개별 검사, 다른 파일 선택</td>
 </tr>
 <tr>
-<td>PC 추가, CH 관리, Slave 설정 내보내기</td>
+<td>연결 PC 추가, 실장기 관리, CSV, Slave 설정 내보내기</td>
 <td>polling jitter, 보관 개수, 외부 Python</td>
 </tr>
 </tbody>
