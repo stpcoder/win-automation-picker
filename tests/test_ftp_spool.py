@@ -19,6 +19,7 @@ from win_automation_picker.ftp_spool import (
     RunProfile,
     SlaveInfo,
     SpoolJob,
+    agent_instance_lock,
     classify_status_rows,
     build_slave_rig_config,
     cleanup_node_files,
@@ -557,11 +558,13 @@ def test_slave_runs_rig_sequence_directly_over_configured_serial_port(tmp_path, 
     deploy_package(backend, sequence_package)
     initialize_spool(backend, nodes=["rig-pc-04"])
     work_dir = tmp_path / "work"
+    opened_configs = []
 
     class FakeSerialSession:
         def __init__(self, config, *, output_callback, **_kwargs) -> None:
             self.config = config
             self.output_callback = output_callback
+            opened_configs.append(config)
 
         def connect(self) -> None:
             self.output_callback(self.config.id, "[RX] LK2]\n")
@@ -605,6 +608,12 @@ def test_slave_runs_rig_sequence_directly_over_configured_serial_port(tmp_path, 
                 "slot_id": "S3",
                 "com_port": "COM7",
                 "baud_rate": "921600",
+                "fixture_id": "FX-PC04-CH11",
+                "fixture_model": "SK-RIG-25D",
+                "fixture_serial": "RIG25D-0011",
+                "fixture_location": "LAB-A / Rack 04 / Bay 3",
+                "console_identity": "VID_0403&PID_6001\\RIG25D-0011",
+                "usb_location": "Hub-A / Port 3",
             },
             job_id="direct-serial-job",
         ),
@@ -627,6 +636,9 @@ def test_slave_runs_rig_sequence_directly_over_configured_serial_port(tmp_path, 
     assert result.details["baud_rate"] == 921600
     assert result.details["completed_grids"] == 2
     assert result.details["total_grids"] == 2
+    assert opened_configs[0].fixture_id == "FX-PC04-CH11"
+    assert opened_configs[0].physical_location == "LAB-A / Rack 04 / Bay 3"
+    assert opened_configs[0].console_identity.endswith("RIG25D-0011")
     manifest_path = work_dir / "serial-results" / "direct-serial-job" / "manifest.json"
     console_path = work_dir / "serial-results" / "direct-serial-job" / "console.log"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -982,6 +994,40 @@ def test_status_and_results_are_listed(tmp_path) -> None:
     assert status["last_ok"] is True
     assert "last PASS: job-list" in status["message"]
     assert list_results(backend, "rig-pc-01")[0]["job_id"] == "job-list"
+
+
+def test_windows_slave_refuses_another_pcs_agent_config(tmp_path, monkeypatch) -> None:
+    backend = LocalSpoolBackend(tmp_path)
+    config = FtpSpoolConfig(
+        node_id="rig-pc-04",
+        slaves=(
+            SlaveInfo(
+                node_id="rig-pc-04",
+                windows_name="AE-RIG-PC04",
+            ),
+        ),
+    )
+    monkeypatch.setattr("win_automation_picker.ftp_spool.sys.platform", "win32")
+    monkeypatch.setattr("win_automation_picker.ftp_spool.platform.node", lambda: "AE-RIG-PC99")
+
+    with pytest.raises(FtpSpoolError, match="Agent 소유 PC 불일치"):
+        run_slave_once(backend, config)
+
+
+def test_agent_instance_lock_prevents_two_pollers_for_same_node(tmp_path) -> None:
+    config = FtpSpoolConfig(
+        node_id="rig-pc-04",
+        work_dir=str(tmp_path / "agent-work"),
+    )
+
+    with agent_instance_lock(config, "rig-pc-04") as lock_path:
+        assert lock_path.name == ".agent-rig-pc-04.lock"
+        with pytest.raises(FtpSpoolError, match="이미 이 PC에서 실행 중"):
+            with agent_instance_lock(config, "rig-pc-04"):
+                pass
+
+    with agent_instance_lock(config, "rig-pc-04"):
+        pass
 
 
 def test_triage_sidecar_preserves_result_and_merges_operator_disposition(tmp_path) -> None:

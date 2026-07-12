@@ -89,7 +89,7 @@ stop condition, repeat와 preflight 상태도 표시합니다. snapshot hash 또
 
 ## 3. 한 PC에 4개 실장기 배정
 
-1. `3 Rig 설정 > Master · 원격 PC > 원격 PC · CH`에서 PC를 선택하고 `CH 관리`를 누릅니다.
+1. `3 Rig 설정 > Master · 원격 PC > 실장기 연결 PC`에서 PC를 선택하고 `실장기 관리`를 누릅니다.
 2. CH9, CH10, CH11, CH12와 Slot, SoC, 자재를 등록합니다.
 3. 각 CH의 Console COM과 baud를 반드시 확인합니다.
 4. 필요하면 Seq Generator의 `.rigbinary.json`을 선택 CH에 불러옵니다.

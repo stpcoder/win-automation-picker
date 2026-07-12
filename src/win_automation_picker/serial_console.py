@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import re
 import threading
 import time
@@ -129,11 +129,58 @@ def detect_boot_state(
     return latest_state
 
 
+def verify_serial_port_binding(
+    config: SerialPortConfig,
+    observations: Sequence[object],
+) -> object:
+    configured = next(
+        (
+            port
+            for port in observations
+            if str(getattr(port, "device", "") or "").casefold() == config.port.casefold()
+        ),
+        None,
+    )
+    if configured is None:
+        raise SerialConsoleError(f"Configured COM port is not present: {config.port}")
+    if not config.console_identity:
+        return configured
+
+    expected = config.console_identity.casefold()
+
+    def identity_text(port: object) -> str:
+        return " ".join(
+            str(getattr(port, name, "") or "")
+            for name in ("device", "description", "hwid", "location")
+        ).casefold()
+
+    if expected in identity_text(configured):
+        return configured
+    matching = [port for port in observations if expected in identity_text(port)]
+    if len(matching) == 1:
+        actual = str(getattr(matching[0], "device", "") or "")
+        raise SerialConsoleError(
+            f"Console identity moved from {config.port} to {actual}. Run COM compare before control."
+        )
+    if len(matching) > 1:
+        raise SerialConsoleError(
+            f"Console identity is ambiguous on {len(matching)} COM ports. "
+            "Configure a USB serial-specific HWID."
+        )
+    actual = identity_text(configured).strip() or "unknown device"
+    raise SerialConsoleError(
+        f"Console identity mismatch on {config.port}. "
+        f"Expected {config.console_identity}; actual {actual}."
+    )
+
+
 def _default_connection_factory(config: SerialPortConfig) -> SerialConnection:
     try:
         import serial
+        import serial.tools.list_ports
     except ImportError as exc:
         raise SerialConsoleError("pyserial is required for the four-channel console.") from exc
+    verify_serial_port_binding(config, tuple(serial.tools.list_ports.comports()))
     return serial.Serial(
         port=config.port,
         baudrate=config.baud,

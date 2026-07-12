@@ -1,4 +1,5 @@
 import base64
+from dataclasses import replace
 import hashlib
 import json
 
@@ -66,6 +67,21 @@ def test_serial_script_contains_port_settings_and_command() -> None:
     assert "$serial.PortName = 'COM3'" in script
     assert "$serial.BaudRate = 115200" in script
     assert '$serial.Write("STATUS`r`n")' in script
+    assert "Configured COM port is not present" in script
+    assert "Console identity mismatch" not in script
+
+
+def test_serial_script_verifies_exact_com_hardware_identity_before_command() -> None:
+    config = RigConfig.from_mapping(example_config())
+    original = config.host_by_id("rig-pc-01").port_by_id("ch1")
+    port = replace(original, console_identity="VID_0403&PID_6001\\SERIAL-CH1")
+
+    script = build_serial_command_script(port, "POWER ON")
+
+    assert "Get-CimInstance Win32_SerialPort" in script
+    assert "$_.DeviceID -eq $expectedPort" in script
+    assert "VID_0403&PID_6001\\SERIAL-CH1" in script
+    assert "Console identity mismatch on $expectedPort" in script
 
 
 def test_remote_script_wraps_non_local_hosts() -> None:

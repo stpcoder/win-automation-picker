@@ -47,12 +47,15 @@ The executables are not code-signed, so Windows SmartScreen may show a warning.
 - Exports the complete nested workflow as runnable Python.
 - Runs exported workflows inside the slave executable without requiring a separate Python installation.
 - Distributes jobs and collects status, results, and screenshots through an FTP spool.
+- Separates controller, FTP, fixture-PC, and physical-fixture identity and audits duplicate Node, asset, Windows, COM, HWID, and ADB bindings.
+- Bulk-merges and exports Excel-friendly PC/fixture inventory CSV with free-form channel names.
 - Verifies Test Sequence Generator `.rigseq.zip` artifacts and assigns each PC/slot/CH to direct COM or an SK Commander launcher.
 - Tracks free-form per-PC channels with SoC, binary source/version/time, DRAM material, current test/SEQ, and Grid progress in FTP heartbeats and two-sheet Excel exports.
 - Verifies checksummed AE campaign snapshots, expands PC/CH/repeat run rows, and shows acceptance/failure state in a campaign board.
 - Stores operator failure classification and disposition in separate triage sidecars without rewriting raw results.
 - Imports Seq Generator `.rigbinary.json` metadata without copying proprietary binary payloads.
 - Keeps up to four COM consoles open for live output, boot-state markers, ASCII/control-key input, and parallel `.seq` runs.
+- Revalidates the configured hardware identity before opening a COM and only suggests uniquely identified COM moves.
 - Batches direct-COM run-table rows by slave/campaign/attempt and runs up to four distinct ports concurrently.
 - Pins MTK/QC updates to one CH with XML hashes, USB identity, fixed ADB serials, vendor gates, and allowlisted external downloader rules.
 - Exports `rig-ftp.info` and `rig-commander.config.json` together for each slave PC.
@@ -106,8 +109,8 @@ Equipment labels are free-form. `CH9`, `CH11`, and `PC04-RIG2` work without a fi
 The FTP tools use a configured root directory as a shared spool when inbound ports cannot be opened.
 
 1. Start `RigFtpCommander.exe` on the master PC.
-2. Enter the FTP connection and server root under `3 Rig 설정 > Master · 원격 PC > Master 연결`, then run `연결 확인`.
-3. Open `원격 PC · CH` and run `서버 폴더 준비` for the dedicated folders.
+2. Audit Master/FTP/fixture-PC/fixture identity under `3 Rig 설정 > 연결 구조`, then verify FTP under `Master · FTP`.
+3. Open `실장기 연결 PC` and run `서버 폴더 준비` for the dedicated folders.
 4. Export one `.info` file per slave and place it next to the executable on that PC.
 5. Start `이 PC Agent` on each slave.
 6. Open `1 오늘 작업 > 실행`, load the Rig targets, assign each macro or SEQ, and click `실행 시작`.

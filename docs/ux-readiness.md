@@ -14,7 +14,7 @@
 | FTP 원격 실행 | 90% | PC별 매크로/값 전송, 내장 workflow, 최대 4 CH 직접 COM batch와 긴급 중단 지원 |
 | SEQ Generator 연동 | 92% | profile 검증 bundle, SHA-256 재검사, 직접 COM/SK 런처 선택, binary metadata 교환 지원 |
 | 원격 세션 모니터링 | 90% | PC/CH 분리 보기, SoC/binary/자재/Test/SEQ/Grid, 결과 보드, 화면 요청, 2-sheet Excel 지원 |
-| 초기 설정 UX | 90% | 일일 화면과 분리된 Master 연결, PC/변수/자유 CH 표 편집, PC별 `.info` 생성 지원 |
+| 초기 설정 UX | 94% | 4계층 구성도, 물리 ID/위치/HWID 검사, CSV 일괄 구성, PC별 `.info` 생성 지원 |
 
 ## 핵심 판단
 
@@ -42,17 +42,20 @@
 | Scratch 조밀 보기 | PASS | 46px 블록, 2px 스택 간격, 14px 드롭 영역과 연결 홈 표시 |
 | 캡처 격리 | PASS | ScreenCaptureKit이 현재 프로세스와 제목이 일치하는 독립 창만 캡처 |
 | PC/CH 보드 | PASS | CH9→CH12 자연 정렬, running/pass/fail 색상, Grid 진행 |
+| 4계층 연결 구조 | PASS | Master/FTP/PC/물리 실장기 소유권, 위치, 안정 ID와 COM 경로 분리 |
+| COM 안전 대조 | PASS | HWID 일치·이동·불명확·불일치·누락 판정과 고유 이동만 적용 |
+| Inventory CSV | PASS | 임의 CH, 물리 위치와 HWID round-trip, Node+CH 병합과 중복 행 차단 |
 
 재현 스크립트는 `scripts/capture_manual_screenshots.py`이며, 생성된 실제 화면은 매뉴얼의
-11개 PNG입니다. FTP 주소, 계정과 비밀번호 환경 변수는 모두 데모 값입니다.
+16개 PNG입니다. FTP 주소, 계정과 비밀번호 환경 변수는 모두 데모 값입니다.
 
 ## 권장 사용자 흐름
 
 1. `2 자동화 준비`에서 SEQ recipe의 목표 Temp/VDD를 정하고 `검사 · 패키지 준비`를 수행합니다.
 2. 같은 화면에서 프로그램 매크로를 녹화하고 `Scratch 편집`, 로컬 `시험`, `검사 · Python 준비`를 수행합니다.
 3. `준비 상태 확인` 후 `서버 라이브러리 등록`을 누릅니다. 이 동작은 원격 실행을 시작하지 않습니다.
-4. 최초 1회 `3 Rig 설정 > Master 연결`에서 FTP 주소와 전용 root를 저장하고 `연결 확인`을 누릅니다.
-5. `원격 PC · CH`에서 PC, 공통 변수와 자유 CH를 등록하고 `서버 폴더 준비`를 누릅니다.
+4. 최초 1회 `3 Rig 설정 > 연결 구조`에서 Master/FTP/PC/실장기를 구별해 등록합니다.
+5. `Master · FTP`에서 연결을 확인하고 `실장기 연결 PC`에서 CSV 또는 GUI로 장치를 등록한 뒤 서버 폴더를 준비합니다.
 6. `Slave 설정 내보내기`로 PC별 `.info`를 만들고 각 PC에서 `이 PC Agent > Agent 시작`을 누릅니다.
 7. 매일 `1 오늘 작업 > 실행`에서 자동화를 선택하고 `Rig 대상 불러오기`로 PC/CH별 값을 확인합니다.
 8. `실행 시작`으로 체크된 행만 전송하고 `캠페인`과 `PC · CH 상태`에서 Grid와 결과를 확인합니다.

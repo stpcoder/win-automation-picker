@@ -100,10 +100,23 @@
 ## 4채널 콘솔에서 COM 연결 실패
 
 1. `PC 환경` 또는 `RigCommander.exe device system-check`를 실행합니다.
-2. `Rig 설정 > 원격 PC · CH`의 COM과 baud가 Device Manager 값과 같은지 확인합니다.
+2. `Rig 설정 > 연결 구조`에서 대상 PC를 선택하고 `이 PC COM 대조`로 COM/HWID를 확인합니다.
 3. PuTTY, QTTY, SK Commander 등 같은 COM을 연 프로그램을 닫습니다.
 4. 실시간 콘솔은 Master가 아니라 COM이 연결된 Slave PC에서 엽니다.
-5. USB가 재인식됐다면 `CH 새로고침` 후 실제 COM 번호를 다시 저장합니다.
+5. USB가 재인식됐다면 고유 HWID의 `이동 제안`만 `안전한 COM 변경 적용`으로 저장합니다.
+
+## Agent 소유 PC 불일치
+
+`Node ...는 Windows ...용이지만 현재 PC는 ...` 오류는 다른 PC용 `rig-ftp.info`를 복사한
+경우입니다. Master의 `Slave 설정 내보내기` 결과에서 현재 PC 폴더를 다시 배치합니다.
+Node ID나 Windows 이름을 오류를 피하려고 임의로 바꾸지 말고 PC 자산 라벨과 연결 구조를
+먼저 대조합니다.
+
+## Agent가 이미 실행 중
+
+같은 PC에서 같은 Node로 실행 중인 AE Workbench 또는 `RigFtpCli slave`가 있습니다. Task
+Manager에서 실제 중복 프로세스를 확인하고 하나만 남깁니다. `.agent-*.lock` 파일 자체를
+지워도 실행 중 프로세스의 OS 잠금은 풀리지 않으므로 파일 삭제로 우회하지 않습니다.
 
 ## 명령이 일부만 입력됨
 

@@ -2029,7 +2029,6 @@ class PickerApp(tk.Toplevel):
     def _apply_picked(self, mode: str, picked: PickedElement) -> None:
         original_selector = self._selector_with_window_marker(picked.selector)
         selector = original_selector
-        pending_kind = self._pending_block_drop[0] if self._pending_block_drop else ""
         if mode == "click_step" or (mode == "retarget" and self._retarget_action_kind() == "click"):
             selector = selector_for_action(selector, "click")
         elif mode == "type_step" or (mode == "retarget" and self._retarget_action_kind() == "type"):
@@ -3591,13 +3590,22 @@ class PickerApp(tk.Toplevel):
 
     def _ftp_submit_profiles(self) -> None:
         try:
-            _config, backend = self._ftp_snapshot_backend()
+            config, backend = self._ftp_snapshot_backend()
             rows = [row for row in self._ftp_profile_rows if row.get("enabled", True)]
             if not rows:
                 raise FtpSpoolError("실행할 PC 행을 추가하고 '실행'을 체크하세요.")
+            prepared_rows: list[tuple[dict[str, Any], str]] = []
             for row in rows:
                 if not str(row.get("target", "")).strip() or not str(row.get("package", "")).strip():
                     raise FtpSpoolError("모든 실행 행에 PC / Node와 매크로를 입력하세요.")
+                targets = self._ftp_targets(str(row["target"]))
+                if len(targets) != 1:
+                    raise FtpSpoolError("PC별 실행표의 각 행에는 대상 PC 하나만 입력하세요.")
+                if targets[0] == "all":
+                    raise FtpSpoolError(
+                        "PC별 실행표에는 all을 사용할 수 없습니다. 각 행에 PC / Node를 지정하세요."
+                    )
+                prepared_rows.append((row, targets[0]))
         except BaseException as exc:
             self._show_error(exc)
             return
@@ -3605,7 +3613,7 @@ class PickerApp(tk.Toplevel):
         def worker() -> None:
             try:
                 submitted: list[str] = []
-                for row in rows:
+                for row, target in prepared_rows:
                     package = next(
                         (item for item in self._ftp_packages if item.name == str(row["package"])),
                         None,
@@ -3618,8 +3626,9 @@ class PickerApp(tk.Toplevel):
                             "pass_variables": bool(package and package.runner == "python" and package.variables),
                         },
                         variables={str(key): str(value) for key, value in row.get("variables", {}).items()},
+                        origin=self._ftp_job_origin(config),
                     )
-                    submitted.extend(submit_job(backend, job, [str(row["target"])]))
+                    submitted.extend(submit_job(backend, job, [target]))
                 self._queue.put(("monitor", f"PC별 매크로 {len(rows)}건을 전송했습니다: {', '.join(submitted)}"))
             except BaseException as exc:
                 self._queue.put(("error", exc))
@@ -3774,7 +3783,7 @@ class PickerApp(tk.Toplevel):
 
     def _ftp_submit_selected_package(self) -> None:
         try:
-            _config, backend = self._ftp_snapshot_backend()
+            config, backend = self._ftp_snapshot_backend()
             package = self._selected_ftp_package()
             if package is None:
                 raise FtpSpoolError("Select an FTP macro package first.")
@@ -3787,6 +3796,7 @@ class PickerApp(tk.Toplevel):
                     "pass_variables": bool(package.runner == "python" and package.variables),
                 },
                 variables=dict(self._recording_defaults),
+                origin=self._ftp_job_origin(config),
             )
         except BaseException as exc:
             self._show_error(exc)
@@ -3844,7 +3854,26 @@ class PickerApp(tk.Toplevel):
         self._refresh_ftp_profile_columns()
 
     def _ftp_targets(self, raw: str) -> list[str]:
-        return [part for part in raw.replace(",", " ").replace(";", " ").split() if part]
+        tokens = [part for part in raw.replace(",", " ").replace(";", " ").split() if part]
+        lookup: dict[str, str] = {}
+        for slave in self._ftp_slaves:
+            for key in (slave.node_id, slave.alias, slave.host):
+                if key:
+                    lookup[key.casefold()] = slave.node_id
+        return ["all" if token.casefold() == "all" else lookup.get(token.casefold(), token) for token in tokens]
+
+    @staticmethod
+    def _ftp_job_origin(config: FtpSpoolConfig) -> dict[str, str]:
+        return {
+            key: value
+            for key, value in {
+                "controller_id": config.master.controller_id,
+                "alias": config.master.alias,
+                "windows_name": config.master.windows_name,
+                "physical_location": config.master.physical_location,
+            }.items()
+            if value
+        }
 
     def _ftp_log(self, message: str) -> None:
         timestamp = time.strftime("%H:%M:%S")
@@ -4014,7 +4043,7 @@ class PickerApp(tk.Toplevel):
             recipe = replace_block_step(self._recipe, path, updated)
             if step.kind == "type":
                 recipe = replace(recipe, variables=dict(self._recording_defaults))
-        except ValueError as exc:
+        except ValueError:
             self._show_error(WindowsAutomationError("반복 횟수, 대기 시간, 색상 오차는 숫자로 입력하세요."))
             return
         except BaseException as exc:
@@ -4126,7 +4155,7 @@ class PickerApp(tk.Toplevel):
             return
         try:
             repeat_count = max(1, int(self.block_repeat_var.get() or "1"))
-        except ValueError as exc:
+        except ValueError:
             self._show_error(WindowsAutomationError("Repeat count must be a number."))
             return
         step = get_block_step(self._recipe, path)

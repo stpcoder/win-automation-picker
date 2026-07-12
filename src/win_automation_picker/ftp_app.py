@@ -5,6 +5,7 @@ from dataclasses import replace
 import json
 import os
 from pathlib import Path
+import platform
 import queue
 import random
 import re
@@ -24,10 +25,12 @@ from .ftp_spool import (
     DeviceToolInfo,
     FtpSpoolConfig,
     FtpSpoolError,
+    MasterInfo,
     PackageInfo,
     RunProfile,
     SlaveInfo,
     SpoolJob,
+    agent_instance_lock,
     backend_from_config,
     build_slave_rig_config,
     classify_status_rows,
@@ -47,8 +50,10 @@ from .ftp_spool import (
     submit_job,
     write_example_spool_config,
 )
+from .inventory_csv import dump_inventory_csv, inventory_template_csv, merge_inventory_csv
 from .xlsx_export import write_xlsx_workbook
 from .sequence_bundle import RigSequenceBundleError, read_rig_sequence_bundle
+from .topology import audit_topology, describe_current_roles, validate_agent_ownership
 from .workbench import AEWorkbenchProject
 from .workbench_ui import AEWorkbenchMixin
 
@@ -81,6 +86,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         self._settings_variables: dict[str, str] = {}
         self._settings_slaves: list[dict[str, Any]] = []
         self._settings_device_tools: list[dict[str, Any]] = []
+        self._topology_issues: list[Any] = []
         self._slave_stop: threading.Event | None = None
         self._monitor_stop: threading.Event | None = None
         self._last_status_rows: list[dict[str, Any]] = []
@@ -273,7 +279,15 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
 
     def _refresh_config_summary(self) -> None:
         path = Path(self.config_path_var.get().strip() or DEFAULT_CONFIG)
-        self.config_summary_var.set(f"설정 · {path.name}")
+        parts = [f"설정 · {path.name}"]
+        if hasattr(self, "master_alias_var"):
+            master = self.master_alias_var.get().strip() or self.master_id_var.get().strip()
+            ftp = self.ftp_alias_var.get().strip() or self.host_var.get().strip()
+            if master:
+                parts.append(f"Master {master}")
+            if ftp:
+                parts.append(f"FTP {ftp}")
+        self.config_summary_var.set("  |  ".join(parts))
 
     def _show_today_work(self) -> None:
         self.main_notebook.select(self.today_tab)
@@ -625,7 +639,13 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         )
 
     def _build_settings_tab(self, parent: ttk.Frame) -> None:
+        self.master_id_var = tk.StringVar(value="")
+        self.master_alias_var = tk.StringVar(value="")
+        self.master_windows_name_var = tk.StringVar(value="")
+        self.master_location_var = tk.StringVar(value="")
         self.host_var = tk.StringVar(value="")
+        self.ftp_alias_var = tk.StringVar(value="")
+        self.ftp_location_var = tk.StringVar(value="")
         self.port_var = tk.StringVar(value="21")
         self.username_var = tk.StringVar(value="")
         self.password_var = tk.StringVar(value="")
@@ -651,14 +671,17 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         settings_workspace = ttk.Notebook(parent)
         self.settings_workspace = settings_workspace
         settings_workspace.grid(row=0, column=0, sticky="nsew")
+        topology_page = ttk.Frame(settings_workspace, padding=12)
         connection_page = ttk.Frame(settings_workspace, padding=12)
         inventory_page = ttk.Frame(settings_workspace, padding=12)
         device_tools_page = ttk.Frame(settings_workspace, padding=12)
         advanced_page = ttk.Frame(settings_workspace, padding=12)
-        settings_workspace.add(connection_page, text="Master 연결")
-        settings_workspace.add(inventory_page, text="원격 PC · CH")
+        settings_workspace.add(topology_page, text="연결 구조")
+        settings_workspace.add(connection_page, text="Master · FTP")
+        settings_workspace.add(inventory_page, text="실장기 연결 PC")
         settings_workspace.add(device_tools_page, text="장치 도구")
         settings_workspace.add(advanced_page, text="고급 정책")
+        self._build_topology_settings(topology_page)
         self._build_device_tools_settings(device_tools_page)
 
         connection_page.columnconfigure(0, weight=1)
@@ -747,7 +770,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         variable_menu.add_command(label="선택 변수 삭제", command=self._delete_settings_variable)
         variable_edit["menu"] = variable_menu
 
-        slaves_frame = ttk.Labelframe(inventory_page, text="Slave PC와 CH", padding=8)
+        slaves_frame = ttk.Labelframe(inventory_page, text="실장기 연결 PC와 실장기", padding=8)
         slaves_frame.grid(row=1, column=1, sticky="nsew", padx=(7, 0))
         slaves_frame.columnconfigure(0, weight=1)
         slaves_frame.rowconfigure(0, weight=1)
@@ -760,11 +783,11 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         slave_headings = {
             "alias": "별명",
             "node": "Node ID",
-            "host": "IP",
-            "channels": "CH / 슬롯",
+            "host": "PC 자산 / 위치",
+            "channels": "실장기 / CH",
             "variables": "PC별 변수",
         }
-        slave_widths = {"alias": 75, "node": 110, "host": 105, "channels": 180, "variables": 120}
+        slave_widths = {"alias": 75, "node": 110, "host": 190, "channels": 190, "variables": 120}
         for column in ("alias", "node", "host", "channels", "variables"):
             self.settings_slave_tree.heading(column, text=slave_headings[column])
             self.settings_slave_tree.column(column, width=slave_widths[column], anchor="w")
@@ -773,17 +796,21 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         slave_scroll.grid(row=0, column=3, sticky="ns")
         self.settings_slave_tree.configure(yscrollcommand=slave_scroll.set)
         self.settings_slave_tree.bind("<Double-1>", lambda _event: self._edit_settings_slave())
-        ttk.Button(slaves_frame, text="PC 추가", command=self._add_settings_slave).grid(
+        ttk.Button(slaves_frame, text="연결 PC 추가", command=self._add_settings_slave).grid(
             row=1, column=0, sticky="w", pady=(6, 0)
         )
-        ttk.Button(slaves_frame, text="CH 관리", command=self._manage_settings_channels).grid(
+        ttk.Button(slaves_frame, text="실장기 관리", command=self._manage_settings_channels).grid(
             row=1, column=1, sticky="w", padx=(5, 0), pady=(6, 0)
         )
-        slave_edit = ttk.Menubutton(slaves_frame, text="PC 편집")
+        slave_edit = ttk.Menubutton(slaves_frame, text="연결 PC 편집")
         slave_edit.grid(row=1, column=3, sticky="e", pady=(6, 0))
         slave_menu = tk.Menu(slave_edit, tearoff=False)
         slave_menu.add_command(label="선택 PC 수정", command=self._edit_settings_slave)
         slave_menu.add_command(label="선택 PC 삭제", command=self._delete_settings_slave)
+        slave_menu.add_separator()
+        slave_menu.add_command(label="PC · 실장기 CSV 가져오기", command=self._import_inventory_csv)
+        slave_menu.add_command(label="현재 목록 CSV 내보내기", command=self._export_inventory_csv)
+        slave_menu.add_command(label="CSV 템플릿 저장", command=self._save_inventory_csv_template)
         slave_edit["menu"] = slave_menu
 
         for column in (1, 3):
@@ -819,6 +846,374 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             text="오류 발생 시 전체 화면 저장",
             variable=self.capture_error_var,
         ).grid(row=5, column=1, sticky="w", pady=(8, 0))
+
+    def _build_topology_settings(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(1, weight=3)
+        parent.rowconfigure(4, weight=2)
+
+        toolbar = ttk.Frame(parent)
+        toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        toolbar.columnconfigure(0, weight=1)
+        self.topology_role_var = tk.StringVar(value="이 PC 역할: 확인 전")
+        self.topology_summary_var = tk.StringVar(value="구성 검사: -")
+        ttk.Label(toolbar, textvariable=self.topology_role_var, style="PanelTitle.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(toolbar, textvariable=self.topology_summary_var, style="Muted.TLabel").grid(
+            row=1, column=0, sticky="w", pady=(3, 0)
+        )
+        ttk.Button(toolbar, text="구성 검사", command=self._refresh_topology_view).grid(
+            row=0, column=1, rowspan=2, padx=(8, 5)
+        )
+        ttk.Button(toolbar, text="선택 수정", command=self._edit_selected_topology).grid(
+            row=0, column=2, rowspan=2, padx=(0, 5)
+        )
+        ttk.Button(toolbar, text="이 PC COM 대조", command=self._compare_selected_topology_ports).grid(
+            row=0, column=3, rowspan=2, padx=(0, 5)
+        )
+        ttk.Button(toolbar, text="설정 저장", command=self._save_config, style="Primary.TButton").grid(
+            row=0, column=4, rowspan=2
+        )
+
+        columns = ("identity", "location", "connection", "status")
+        self.topology_tree = ttk.Treeview(parent, columns=columns, show="tree headings", height=10)
+        self.topology_tree.heading("#0", text="구조 / 소유권")
+        self.topology_tree.column("#0", width=170, minwidth=130, anchor="w")
+        headings = {
+            "identity": "안정 식별자",
+            "location": "실제 위치",
+            "connection": "연결 경로",
+            "status": "설정 상태",
+        }
+        widths = {"identity": 260, "location": 230, "connection": 350, "status": 110}
+        for column in columns:
+            self.topology_tree.heading(column, text=headings[column])
+            self.topology_tree.column(column, width=widths[column], anchor="w")
+        for tag, background, foreground in (
+            ("block", "#fef2f2", "#b91c1c"),
+            ("warning", "#fffbeb", "#92400e"),
+            ("ok", "#f0fdf4", "#166534"),
+        ):
+            self.topology_tree.tag_configure(tag, background=background, foreground=foreground)
+        self.topology_tree.grid(row=1, column=0, sticky="nsew")
+        topology_scroll = ttk.Scrollbar(parent, orient="vertical", command=self.topology_tree.yview)
+        topology_scroll.grid(row=1, column=1, sticky="ns")
+        self.topology_tree.configure(yscrollcommand=topology_scroll.set)
+        self.topology_tree.bind("<Double-1>", lambda _event: self._edit_selected_topology())
+        self.topology_tree.bind("<<TreeviewSelect>>", self._update_topology_selection_detail)
+
+        self.topology_detail_var = tk.StringVar(
+            value="행을 선택하면 Windows 이름, 장치 Serial, COM HWID와 USB 위치를 확인할 수 있습니다."
+        )
+        self.topology_detail_entry = ttk.Entry(
+            parent,
+            textvariable=self.topology_detail_var,
+            state="readonly",
+        )
+        self.topology_detail_entry.grid(row=2, column=0, sticky="ew", pady=(6, 0))
+        ttk.Label(parent, text="검사 결과", style="PanelTitle.TLabel").grid(
+            row=3, column=0, sticky="w", pady=(10, 5)
+        )
+        issue_columns = ("severity", "layer", "target", "message", "action")
+        self.topology_issue_tree = ttk.Treeview(
+            parent,
+            columns=issue_columns,
+            show="headings",
+            height=6,
+        )
+        issue_headings = {
+            "severity": "등급",
+            "layer": "계층",
+            "target": "대상",
+            "message": "확인 내용",
+            "action": "조치",
+        }
+        issue_widths = {"severity": 70, "layer": 90, "target": 150, "message": 520, "action": 260}
+        for column in issue_columns:
+            self.topology_issue_tree.heading(column, text=issue_headings[column])
+            self.topology_issue_tree.column(column, width=issue_widths[column], anchor="w")
+        self.topology_issue_tree.tag_configure("block", background="#fef2f2", foreground="#b91c1c")
+        self.topology_issue_tree.tag_configure("warning", background="#fffbeb", foreground="#92400e")
+        self.topology_issue_tree.tag_configure("ok", background="#f0fdf4", foreground="#166534")
+        self.topology_issue_tree.grid(row=4, column=0, sticky="nsew")
+        issue_scroll = ttk.Scrollbar(parent, orient="vertical", command=self.topology_issue_tree.yview)
+        issue_scroll.grid(row=4, column=1, sticky="ns")
+        self.topology_issue_tree.configure(yscrollcommand=issue_scroll.set)
+        self.topology_issue_tree.bind("<Double-1>", self._focus_topology_issue)
+
+    def _refresh_topology_view(self) -> None:
+        if not hasattr(self, "topology_tree"):
+            return
+        try:
+            config = self._config_from_fields()
+        except BaseException as exc:
+            self.topology_tree.delete(*self.topology_tree.get_children())
+            self.topology_issue_tree.delete(*self.topology_issue_tree.get_children())
+            self.topology_issue_tree.insert(
+                "",
+                "end",
+                values=("BLOCK", "CONFIG", "rig-ftp.info", str(exc), "입력값 수정"),
+                tags=("block",),
+            )
+            self.topology_summary_var.set("구성 검사: 설정값 오류")
+            return
+        issues = list(audit_topology(config, current_windows_name=platform.node()))
+        self._topology_issues = issues
+        block_count = sum(issue.severity == "block" for issue in issues)
+        warning_count = sum(issue.severity == "warning" for issue in issues)
+        self.topology_summary_var.set(
+            f"구성 검사: BLOCK {block_count} · 확인 {warning_count} · 정보 "
+            f"{sum(issue.severity == 'info' for issue in issues)}"
+        )
+        self.topology_role_var.set(
+            f"이 PC 역할: {describe_current_roles(config, current_windows_name=platform.node())}"
+        )
+
+        def status_for(layer: str, key: str, *, include_children: bool = False) -> tuple[str, str]:
+            matched = [
+                issue
+                for issue in issues
+                if (issue.layer == layer and issue.key == key)
+                or (include_children and issue.key.startswith(f"{key}:"))
+            ]
+            if any(issue.severity == "block" for issue in matched):
+                return "BLOCK", "block"
+            if any(issue.severity == "warning" for issue in matched):
+                return "확인 필요", "warning"
+            return "READY", "ok"
+
+        previous_selection = tuple(self.topology_tree.selection())
+        self.topology_tree.delete(*self.topology_tree.get_children())
+        self._topology_details: dict[str, str] = {}
+        self._topology_item_by_issue_key: dict[tuple[str, str], str] = {}
+        master_key = config.master.controller_id or "master"
+        master_status, master_tag = status_for("MASTER", master_key)
+        if not config.master.controller_id:
+            master_status, master_tag = status_for("MASTER", "master")
+        master_identity = " · ".join(
+            value for value in (config.master.alias, config.master.controller_id) if value
+        ) or "미설정"
+        self.topology_tree.insert(
+            "",
+            "end",
+            iid="master",
+            text="1  제어 Master PC",
+            values=(
+                master_identity,
+                config.master.physical_location or "-",
+                f"Windows {config.master.windows_name or '-'} · 작업 생성/상태 조회",
+                master_status,
+            ),
+            tags=(master_tag,),
+            open=True,
+        )
+        self._topology_details["master"] = (
+            f"Master PC | ID {config.master.controller_id or '-'} | 별명 {config.master.alias or '-'} | "
+            f"Windows {config.master.windows_name or '-'} | 위치 {config.master.physical_location or '-'}"
+        )
+        self._topology_item_by_issue_key[("MASTER", master_key)] = "master"
+        self._topology_item_by_issue_key[("MASTER", "master")] = "master"
+        ftp_key = config.host or "ftp"
+        ftp_status, ftp_tag = status_for("FTP", ftp_key)
+        if not config.host:
+            ftp_status, ftp_tag = status_for("FTP", "ftp")
+        self.topology_tree.insert(
+            "master",
+            "end",
+            iid="ftp",
+            text="2  FTP Server",
+            values=(
+                config.ftp_alias or config.host or "미설정",
+                config.ftp_location or "-",
+                f"{config.host or '-'}:{config.port}{config.root_dir}",
+                ftp_status,
+            ),
+            tags=(ftp_tag,),
+            open=True,
+        )
+        self._topology_details["ftp"] = (
+            f"FTP Server | 별명 {config.ftp_alias or '-'} | 주소 {config.host or '-'}:{config.port} | "
+            f"전용 Root {config.root_dir or '-'} | 위치 {config.ftp_location or '-'}"
+        )
+        self._topology_item_by_issue_key[("FTP", ftp_key)] = "ftp"
+        self._topology_item_by_issue_key[("FTP", "ftp")] = "ftp"
+        for slave_index, slave in enumerate(config.slaves):
+            pc_status, pc_tag = status_for("SLAVE_PC", slave.node_id, include_children=True)
+            pc_identity = " · ".join(
+                value for value in (slave.label(), slave.node_id, slave.asset_id) if value
+            )
+            pc_iid = f"pc:{slave_index}"
+            self.topology_tree.insert(
+                "ftp",
+                "end",
+                iid=pc_iid,
+                text="3  실장기 연결 PC",
+                values=(
+                    pc_identity,
+                    slave.physical_location or "-",
+                    f"Windows {slave.windows_name or '-'} · FTP {config.poll_interval_seconds:g}초 · {slave.host or 'IP 미설정'}",
+                    pc_status,
+                ),
+                tags=(pc_tag,),
+                open=True,
+            )
+            self._topology_details[pc_iid] = (
+                f"실장기 연결 PC | Node {slave.node_id or '-'} | 별명 {slave.alias or '-'} | "
+                f"자산 {slave.asset_id or '-'} | Windows {slave.windows_name or '-'} | "
+                f"IP {slave.host or '-'} | 위치 {slave.physical_location or '-'} | "
+                f"연결 실장기 {len(slave.channels)}대"
+            )
+            self._topology_item_by_issue_key[("SLAVE_PC", slave.node_id)] = pc_iid
+            for channel_index, channel in enumerate(slave.channels):
+                fixture_key = f"{slave.node_id}:{channel.label()}"
+                fixture_status, fixture_tag = status_for("FIXTURE", fixture_key)
+                identity = " · ".join(
+                    value
+                    for value in (
+                        channel.fixture_id,
+                        channel.label(),
+                        channel.fixture_serial,
+                    )
+                    if value
+                )
+                connection = f"{channel.com_port or 'COM 미설정'} @ {channel.baud_rate}"
+                if channel.usb_location:
+                    connection += f" · {channel.usb_location}"
+                fixture_iid = f"fixture:{slave_index}:{channel_index}"
+                self.topology_tree.insert(
+                    pc_iid,
+                    "end",
+                    iid=fixture_iid,
+                    text="4  물리 실장기",
+                    values=(identity or "미설정", channel.physical_location or "-", connection, fixture_status),
+                    tags=(fixture_tag,),
+                )
+                self._topology_details[fixture_iid] = (
+                    f"물리 실장기 | ID {channel.fixture_id or '-'} | CH {channel.label()} | "
+                    f"Model {channel.fixture_model or '-'} | Serial {channel.fixture_serial or '-'} | "
+                    f"위치 {channel.physical_location or '-'} | Console {channel.com_port or '-'} @ {channel.baud_rate} | "
+                    f"HWID {channel.console_identity or '-'} | USB {channel.usb_location or '-'}"
+                )
+                self._topology_item_by_issue_key[("FIXTURE", fixture_key)] = fixture_iid
+
+        self.topology_issue_tree.delete(*self.topology_issue_tree.get_children())
+        for index, issue in enumerate(issues):
+            self.topology_issue_tree.insert(
+                "",
+                "end",
+                iid=f"issue:{index}",
+                values=(issue.severity.upper(), issue.layer, issue.key, issue.message, issue.action),
+                tags=(issue.severity,),
+            )
+        if not issues:
+            self.topology_issue_tree.insert(
+                "",
+                "end",
+                values=("OK", "ALL", "4계층", "차단 또는 확인 필요 항목이 없습니다.", "-"),
+                tags=("ok",),
+            )
+        restored = next(
+            (item for item in previous_selection if self.topology_tree.exists(item)),
+            "master",
+        )
+        self.topology_tree.selection_set(restored)
+        self.topology_tree.see(restored)
+        self._update_topology_selection_detail()
+
+    def _update_topology_selection_detail(self, _event: Any = None) -> None:
+        selection = self.topology_tree.selection() if hasattr(self, "topology_tree") else ()
+        if not selection:
+            return
+        detail = getattr(self, "_topology_details", {}).get(selection[0], "")
+        if detail:
+            self.topology_detail_var.set(detail)
+            self.topology_detail_entry.xview_moveto(0)
+
+    def _focus_topology_issue(self, _event: Any = None) -> None:
+        selection = self.topology_issue_tree.selection()
+        if not selection or not selection[0].startswith("issue:"):
+            return
+        index = int(selection[0].split(":", 1)[1])
+        if not 0 <= index < len(self._topology_issues):
+            return
+        issue = self._topology_issues[index]
+        item = getattr(self, "_topology_item_by_issue_key", {}).get(
+            (issue.layer, issue.key)
+        )
+        if item and self.topology_tree.exists(item):
+            self.topology_tree.selection_set(item)
+            self.topology_tree.see(item)
+            self._update_topology_selection_detail()
+
+    def _edit_master_ftp_topology(self) -> None:
+        values = self._ask_field_values(
+            "Master PC · FTP Server 식별",
+            [
+                ("master_id", "Master PC ID", self.master_id_var.get()),
+                ("master_alias", "Master 별명", self.master_alias_var.get()),
+                ("master_windows", "Master Windows 이름", self.master_windows_name_var.get()),
+                ("master_location", "Master 실제 위치", self.master_location_var.get()),
+                ("ftp_alias", "FTP Server 별명", self.ftp_alias_var.get()),
+                ("ftp_location", "FTP Server 실제 위치", self.ftp_location_var.get()),
+            ],
+        )
+        if values is None:
+            return
+        self.master_id_var.set(values["master_id"])
+        self.master_alias_var.set(values["master_alias"])
+        self.master_windows_name_var.set(values["master_windows"])
+        self.master_location_var.set(values["master_location"])
+        self.ftp_alias_var.set(values["ftp_alias"])
+        self.ftp_location_var.set(values["ftp_location"])
+        self._refresh_config_summary()
+        self._refresh_topology_view()
+
+    def _edit_selected_topology(self) -> None:
+        selection = self.topology_tree.selection() if hasattr(self, "topology_tree") else ()
+        if not selection:
+            self._show_error(FtpSpoolError("수정할 Master, FTP, 연결 PC 또는 실장기를 선택하세요."))
+            return
+        item = selection[0]
+        if item in {"master", "ftp"}:
+            self._edit_master_ftp_topology()
+            return
+        if item.startswith("pc:"):
+            self._edit_settings_slave(int(item.split(":", 1)[1]))
+            return
+        if item.startswith("fixture:"):
+            _prefix, slave_index, channel_index = item.split(":")
+            self._edit_settings_channel_direct(int(slave_index), int(channel_index))
+
+    def _edit_settings_channel_direct(self, slave_index: int, channel_index: int) -> None:
+        if not 0 <= slave_index < len(self._settings_slaves):
+            return
+        slave = self._settings_slaves[slave_index]
+        channels = [dict(item) for item in (slave.get("channels") or []) if isinstance(item, dict)]
+        if not 0 <= channel_index < len(channels):
+            return
+        values = self._ask_channel_values(channels[channel_index], parent=self)
+        if values is None:
+            return
+        channels[channel_index] = values
+        slave["channels"] = channels
+        self._settings_slaves[slave_index] = slave
+        self._refresh_settings_slaves()
+
+    def _compare_selected_topology_ports(self) -> None:
+        selection = self.topology_tree.selection() if hasattr(self, "topology_tree") else ()
+        if not selection:
+            self._show_error(FtpSpoolError("실장기 연결 PC 또는 실장기를 먼저 선택하세요."))
+            return
+        item = selection[0]
+        if item.startswith("pc:"):
+            slave_index = int(item.split(":", 1)[1])
+        elif item.startswith("fixture:"):
+            slave_index = int(item.split(":")[1])
+        else:
+            self._show_error(FtpSpoolError("COM 대조는 실장기 연결 PC 또는 실장기에서 실행합니다."))
+            return
+        self._scan_ports_for_slave_index(slave_index)
 
     def _entry_row(
         self,
@@ -951,7 +1346,14 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             variables = row.get("variables") if isinstance(row.get("variables"), dict) else {}
             channels = row.get("channels") if isinstance(row.get("channels"), list) else []
             channel_labels = [
-                str(channel.get("channel_id") or channel.get("name") or channel.get("slot_id") or "")
+                " / ".join(
+                    part
+                    for part in (
+                        str(channel.get("fixture_id") or ""),
+                        str(channel.get("channel_id") or channel.get("name") or channel.get("slot_id") or ""),
+                    )
+                    if part
+                )
                 for channel in channels
                 if isinstance(channel, dict)
             ]
@@ -962,13 +1364,22 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                 values=(
                     row.get("alias", ""),
                     row.get("node_id", ""),
-                    row.get("host", ""),
+                    " / ".join(
+                        part
+                        for part in (
+                            str(row.get("asset_id") or ""),
+                            str(row.get("physical_location") or ""),
+                        )
+                        if part
+                    ) or row.get("host", ""),
                     ", ".join(label for label in channel_labels if label),
                     self._format_settings_variables(variables),
                 ),
             )
         if hasattr(self, "device_target_combo"):
             self._refresh_device_inventory()
+        if hasattr(self, "topology_tree"):
+            self._refresh_topology_view()
 
     def _selected_settings_slave_index(self) -> int | None:
         selection = self.settings_slave_tree.selection()
@@ -992,12 +1403,14 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             edit_index = index
         variables = row.get("variables") if isinstance(row.get("variables"), dict) else {}
         values = self._ask_field_values(
-            "Slave PC 추가" if edit_index is None else "Slave PC 수정",
+            "실장기 연결 PC 추가" if edit_index is None else "실장기 연결 PC 수정",
             [
                 ("node_id", "Node ID", str(row.get("node_id", ""))),
                 ("alias", "별명 (예: PC04)", str(row.get("alias", ""))),
-                ("host", "IP / Host", str(row.get("host", ""))),
-                ("port", "관리 포트 (없으면 0)", str(row.get("port", 0))),
+                ("asset_id", "PC 자산 ID", str(row.get("asset_id", ""))),
+                ("windows_name", "Windows PC 이름", str(row.get("windows_name", ""))),
+                ("host", "IP / Host (현장 대조용)", str(row.get("host", ""))),
+                ("physical_location", "실제 위치 (동/층/랙)", str(row.get("physical_location", ""))),
                 ("variables", "PC별 변수 (; 구분)", self._format_settings_variables(variables)),
                 ("notes", "메모", str(row.get("notes", ""))),
             ],
@@ -1006,16 +1419,18 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         if values is None:
             return
         try:
-            port = int(values["port"] or "0")
             parsed_variables = self._parse_settings_variables(values["variables"])
-        except (ValueError, FtpSpoolError) as exc:
+        except FtpSpoolError as exc:
             self._show_error(FtpSpoolError(f"Slave PC 설정을 확인하세요: {exc}"))
             return
         mapped: dict[str, Any] = {
             "node_id": values["node_id"],
             "alias": values["alias"],
             "host": values["host"],
-            "port": port,
+            "port": int(row.get("port") or 0),
+            "asset_id": values["asset_id"],
+            "windows_name": values["windows_name"],
+            "physical_location": values["physical_location"],
             "notes": values["notes"],
             "variables": parsed_variables,
             "channels": [
@@ -1048,6 +1463,81 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         self._settings_slaves.pop(index)
         self._refresh_settings_slaves()
 
+    def _import_inventory_csv(self) -> None:
+        path = filedialog.askopenfilename(
+            title="PC · 실장기 목록 가져오기",
+            filetypes=[
+                ("CSV / TSV", "*.csv *.tsv *.txt"),
+                ("CSV", "*.csv"),
+                ("All files", "*.*"),
+            ],
+            parent=self,
+        )
+        if not path:
+            return
+        try:
+            text = Path(path).read_text(encoding="utf-8-sig")
+            merged = merge_inventory_csv(text, self._settings_slaves)
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+        fixture_count = sum(len(row.get("channels") or []) for row in merged)
+        if not messagebox.askyesno(
+            "PC · 실장기 목록 가져오기",
+            f"Node ID와 CH 이름을 기준으로 현재 목록에 병합합니다.\n\n"
+            f"결과: 연결 PC {len(merged)}대 · 실장기 {fixture_count}대\n"
+            "CSV에 없는 기존 PC/실장기와 기존 시험 상세값은 유지됩니다. 적용할까요?",
+            parent=self,
+        ):
+            return
+        self._settings_slaves = merged
+        self._refresh_settings_slaves()
+        self.init_nodes_var.set(
+            " ".join(
+                str(row.get("alias") or row.get("node_id") or "")
+                for row in self._settings_slaves
+                if row.get("node_id")
+            )
+        )
+        self._append_master_log(
+            f"Imported inventory CSV: {path} ({len(merged)} PC / {fixture_count} fixtures)"
+        )
+
+    def _export_inventory_csv(self) -> None:
+        path = filedialog.asksaveasfilename(
+            title="현재 PC · 실장기 목록 내보내기",
+            defaultextension=".csv",
+            initialfile="rig-inventory.csv",
+            filetypes=[("CSV", "*.csv"), ("All files", "*.*")],
+            parent=self,
+        )
+        if not path:
+            return
+        try:
+            Path(path).write_text(
+                "\ufeff" + dump_inventory_csv(self._settings_slaves),
+                encoding="utf-8",
+            )
+            self._append_master_log(f"Exported inventory CSV: {path}")
+        except BaseException as exc:
+            self._show_error(exc)
+
+    def _save_inventory_csv_template(self) -> None:
+        path = filedialog.asksaveasfilename(
+            title="PC · 실장기 CSV 템플릿 저장",
+            defaultextension=".csv",
+            initialfile="rig-inventory-template.csv",
+            filetypes=[("CSV", "*.csv"), ("All files", "*.*")],
+            parent=self,
+        )
+        if not path:
+            return
+        try:
+            Path(path).write_text("\ufeff" + inventory_template_csv(), encoding="utf-8")
+            self._append_master_log(f"Saved inventory CSV template: {path}")
+        except BaseException as exc:
+            self._show_error(exc)
+
     def _manage_settings_channels(self) -> None:
         slave_index = self._selected_settings_slave_index()
         if slave_index is None:
@@ -1058,7 +1548,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         channels = [dict(channel) for channel in raw_channels if isinstance(channel, dict)]
 
         dialog = tk.Toplevel(self)
-        dialog.title(f"CH / 자재 / Binary - {slave.get('alias') or slave.get('node_id')}")
+        dialog.title(f"실장기 / 자재 / Binary - {slave.get('alias') or slave.get('node_id')}")
         dialog.transient(self)
         dialog.geometry("1080x520")
         dialog.minsize(860, 420)
@@ -1066,44 +1556,38 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         dialog.rowconfigure(0, weight=1)
 
         columns = (
+            "fixture",
             "channel",
-            "name",
-            "slot",
-            "com",
-            "baud",
+            "location",
+            "connection",
+            "identity",
             "soc",
-            "tool",
             "binary",
             "material",
             "test",
-            "sequence",
         )
         tree = ttk.Treeview(dialog, columns=columns, show="headings", selectmode="browse")
         headings = {
+            "fixture": "실장기 ID",
             "channel": "CH",
-            "name": "이름",
-            "slot": "Slot",
-            "com": "COM",
-            "baud": "Baud",
+            "location": "실제 위치",
+            "connection": "PC 연결",
+            "identity": "예상 COM HWID",
             "soc": "SoC",
-            "tool": "Downloader",
             "binary": "Binary",
             "material": "DRAM / Lot",
-            "test": "현재 Test",
-            "sequence": "SEQ",
+            "test": "현재 Test / SEQ",
         }
         widths = {
+            "fixture": 120,
             "channel": 75,
-            "name": 90,
-            "slot": 70,
-            "com": 70,
-            "baud": 80,
+            "location": 170,
+            "connection": 180,
+            "identity": 190,
             "soc": 130,
-            "tool": 120,
             "binary": 160,
             "material": 170,
-            "test": 120,
-            "sequence": 150,
+            "test": 220,
         }
         for column in columns:
             tree.heading(column, text=headings[column])
@@ -1123,11 +1607,19 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                     "end",
                     iid=str(index),
                     values=(
+                        channel.get("fixture_id", ""),
                         channel.get("channel_id", ""),
-                        channel.get("name", ""),
-                        channel.get("slot_id", ""),
-                        channel.get("com_port", ""),
-                        channel.get("baud_rate", 115200),
+                        channel.get("physical_location", ""),
+                        " / ".join(
+                            part
+                            for part in (
+                                str(channel.get("com_port", "")),
+                                str(channel.get("baud_rate", 115200)),
+                                str(channel.get("usb_location", "")),
+                            )
+                            if part
+                        ),
+                        channel.get("console_identity", ""),
                         " ".join(
                             part
                             for part in (
@@ -1136,7 +1628,6 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                             )
                             if part
                         ),
-                        channel.get("firmware_tool_id", ""),
                         " ".join(
                             part
                             for part in (
@@ -1153,8 +1644,14 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                             )
                             if part
                         ),
-                        channel.get("current_test", ""),
-                        channel.get("sequence_name", ""),
+                        " / ".join(
+                            part
+                            for part in (
+                                str(channel.get("current_test", "")),
+                                str(channel.get("sequence_name", "")),
+                            )
+                            if part
+                        ),
                     ),
                 )
 
@@ -1219,7 +1716,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
 
         controls = ttk.Frame(dialog, padding=12)
         controls.grid(row=2, column=0, columnspan=2, sticky="ew")
-        ttk.Button(controls, text="CH 추가", command=add_channel).pack(side="left")
+        ttk.Button(controls, text="실장기 추가", command=add_channel).pack(side="left")
         ttk.Button(controls, text="수정", command=edit_channel).pack(side="left", padx=(6, 0))
         ttk.Button(controls, text="삭제", command=delete_channel).pack(side="left", padx=(6, 0))
         ttk.Button(controls, text="Binary 정보 불러오기", command=import_binary_metadata).pack(
@@ -1242,21 +1739,29 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         parent: tk.Misc,
     ) -> dict[str, Any] | None:
         pages = {
-            "장치": [
+            "실장기 식별": [
+                ("fixture_id", "실장기 자산 ID"),
                 ("channel_id", "CH (예: CH11)"),
                 ("name", "표시 이름"),
                 ("slot_id", "Slot ID"),
+                ("fixture_model", "실장기 모델"),
+                ("fixture_serial", "실장기 Serial"),
+                ("physical_location", "실제 위치 (랙/선반/자리)"),
                 ("soc_vendor", "SoC Vendor"),
                 ("soc_model", "SoC Model"),
             ],
-            "통신 · 전원": [
+            "PC 연결": [
                 ("com_port", "Console COM"),
                 ("baud_rate", "Baud rate"),
+                ("console_identity", "예상 COM HWID / USB Serial"),
+                ("usb_location", "USB Hub / Port / 케이블 라벨"),
                 ("firmware_port", "Download COM"),
-                ("firmware_tool_id", "Downloader 도구"),
                 ("download_identity", "USB Download 식별자"),
                 ("adb_executable", "ADB 실행 파일"),
                 ("adb_serial", "ADB Serial"),
+            ],
+            "전원 · 도구": [
+                ("firmware_tool_id", "Downloader 도구"),
                 ("power_on_command", "전원 ON 명령"),
                 ("power_off_command", "전원 OFF 명령"),
                 ("status_command", "상태 명령"),
@@ -1334,12 +1839,12 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             communication_page,
             text="이 CH에서 ADB 사용",
             variable=adb_enabled,
-        ).grid(row=6, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(10, 0))
         ttk.Checkbutton(
             communication_page,
             text="Binary 업데이트 후 이 ADB 장치가 online이어야 성공",
             variable=adb_required,
-        ).grid(row=6, column=2, columnspan=2, sticky="w", pady=(10, 0))
+        ).grid(row=5, column=2, columnspan=2, sticky="w", pady=(10, 0))
 
         def save() -> None:
             nonlocal result
@@ -1651,17 +2156,26 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         channel_status_page.columnconfigure(0, weight=1)
         channel_status_page.rowconfigure(0, weight=1)
 
-        columns = ("alias", "node", "state", "job", "updated", "message")
+        columns = ("alias", "node", "state", "job", "location", "origin", "updated")
         self.status_tree = ttk.Treeview(pc_status_page, columns=columns, show="headings", height=6)
         headings = {
-            "alias": "별명",
+            "alias": "PC / 자산",
             "node": "Node",
             "state": "상태",
             "job": "현재 작업",
+            "location": "실제 위치",
+            "origin": "요청 Master",
             "updated": "마지막 신호",
-            "message": "상세",
         }
-        widths = {"alias": 90, "node": 130, "state": 80, "job": 180, "updated": 155, "message": 260}
+        widths = {
+            "alias": 135,
+            "node": 115,
+            "state": 75,
+            "job": 175,
+            "location": 190,
+            "origin": 140,
+            "updated": 155,
+        }
         for column in columns:
             self.status_tree.heading(column, text=headings[column])
             self.status_tree.column(column, width=widths[column], anchor="w")
@@ -1679,18 +2193,16 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         channel_columns = (
             "alias",
             "node",
+            "fixture",
+            "location",
             "channel",
-            "slot",
+            "connection",
             "soc",
             "binary",
-            "binary_updated",
-            "source",
             "material",
-            "lot_sample",
             "test",
             "sequence",
             "campaign",
-            "attempt",
             "state",
             "grid",
             "acceptance",
@@ -1705,18 +2217,16 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         channel_headings = {
             "alias": "PC",
             "node": "Node",
-            "channel": "CH / 이름",
-            "slot": "Slot",
+            "fixture": "실장기 ID",
+            "location": "실제 위치",
+            "channel": "CH / Slot",
+            "connection": "PC 연결",
             "soc": "SoC",
             "binary": "Binary",
-            "binary_updated": "Binary 최신 시각",
-            "source": "원본 폴더",
-            "material": "DRAM 자재",
-            "lot_sample": "Lot / Sample",
+            "material": "DRAM / Lot / Sample",
             "test": "현재 Test",
             "sequence": "SEQ",
-            "campaign": "캠페인",
-            "attempt": "시도",
+            "campaign": "캠페인 / 시도",
             "state": "상태",
             "grid": "Grid 진행",
             "acceptance": "판정",
@@ -1725,18 +2235,16 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         channel_widths = {
             "alias": 75,
             "node": 110,
-            "channel": 90,
-            "slot": 65,
+            "fixture": 120,
+            "location": 180,
+            "channel": 100,
+            "connection": 190,
             "soc": 130,
             "binary": 170,
-            "binary_updated": 155,
-            "source": 260,
-            "material": 140,
-            "lot_sample": 150,
+            "material": 200,
             "test": 130,
             "sequence": 160,
             "campaign": 180,
-            "attempt": 55,
             "state": 85,
             "grid": 150,
             "acceptance": 80,
@@ -2170,7 +2678,13 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         )
 
     def _fields_from_config(self, config: FtpSpoolConfig) -> None:
+        self.master_id_var.set(config.master.controller_id)
+        self.master_alias_var.set(config.master.alias)
+        self.master_windows_name_var.set(config.master.windows_name)
+        self.master_location_var.set(config.master.physical_location)
         self.host_var.set(config.host)
+        self.ftp_alias_var.set(config.ftp_alias)
+        self.ftp_location_var.set(config.ftp_location)
         self.port_var.set(str(config.port))
         self.username_var.set(config.username)
         self.password_var.set(config.password)
@@ -2202,12 +2716,22 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             self.result_node_var.set(config.node_id)
         self._run_profiles = [profile.to_mapping() for profile in config.run_profiles]
         self._refresh_run_profile_columns()
+        self._refresh_config_summary()
+        self._refresh_topology_view()
 
     def _config_from_fields(self) -> FtpSpoolConfig:
         password_env = self.password_env_var.get().strip()
         password = os.environ.get(password_env, self.password_var.get()) if password_env else self.password_var.get()
         return FtpSpoolConfig(
+            master=MasterInfo(
+                controller_id=self.master_id_var.get().strip(),
+                alias=self.master_alias_var.get().strip(),
+                windows_name=self.master_windows_name_var.get().strip(),
+                physical_location=self.master_location_var.get().strip(),
+            ),
             host=self.host_var.get().strip(),
+            ftp_alias=self.ftp_alias_var.get().strip(),
+            ftp_location=self.ftp_location_var.get().strip(),
             username=self.username_var.get().strip(),
             password=password,
             password_env=password_env,
@@ -2242,6 +2766,67 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         config = self._config_from_fields()
         local_root = self.local_root_var.get().strip()
         return config, self._backend(config, local_root), local_root
+
+    def _job_origin(self) -> dict[str, str]:
+        return {
+            key: value
+            for key, value in {
+                "controller_id": self.master_id_var.get().strip(),
+                "alias": self.master_alias_var.get().strip(),
+                "windows_name": self.master_windows_name_var.get().strip(),
+                "physical_location": self.master_location_var.get().strip(),
+            }.items()
+            if value
+        }
+
+    def _require_topology_ready(
+        self,
+        config: FtpSpoolConfig,
+        *,
+        node_id: str = "",
+        include_transport: bool = True,
+        require_fixture: bool = True,
+    ) -> None:
+        target_node = node_id.strip()
+        if target_node and target_node != "all" and not any(
+            slave.node_id.casefold() == target_node.casefold() for slave in config.slaves
+        ):
+            raise FtpSpoolError(
+                f"대상 PC {target_node}가 연결 구조에 없습니다. "
+                "Rig 설정 > 연결 구조에서 PC를 등록하세요."
+            )
+        global_codes = {
+            "slave_missing",
+            "duplicate_pc_asset",
+            "duplicate_pc_alias",
+            "duplicate_pc_host",
+            "duplicate_windows_name",
+            "duplicate_node",
+            "duplicate_fixture_id",
+            "duplicate_fixture_serial",
+            "duplicate_adb_serial",
+        }
+        blocked = []
+        for issue in audit_topology(config, current_windows_name=platform.node()):
+            if issue.severity != "block":
+                continue
+            if not include_transport and issue.layer in {"MASTER", "FTP"}:
+                continue
+            if issue.layer == "FIXTURE" and not require_fixture:
+                continue
+            if target_node and target_node != "all" and issue.layer in {"SLAVE_PC", "FIXTURE"}:
+                if issue.code in global_codes:
+                    blocked.append(issue)
+                    continue
+                if issue.key != target_node and not issue.key.startswith(f"{target_node}:"):
+                    continue
+            blocked.append(issue)
+        if blocked:
+            first = blocked[0]
+            raise FtpSpoolError(
+                f"연결 구조 BLOCK {len(blocked)}건: {first.message} "
+                "(Rig 설정 > 연결 구조에서 확인)"
+            )
 
     def _test_connection(self) -> None:
         try:
@@ -2705,8 +3290,14 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         return {
             "channel": channel.channel_id or channel.name,
             "slot_id": channel.slot_id,
+            "fixture_id": channel.fixture_id,
+            "fixture_model": channel.fixture_model,
+            "fixture_serial": channel.fixture_serial,
+            "fixture_location": channel.physical_location,
             "com_port": channel.com_port,
             "baud_rate": str(channel.baud_rate),
+            "console_identity": channel.console_identity,
+            "usb_location": channel.usb_location,
             "soc_vendor": channel.soc_vendor,
             "soc_model": channel.soc_model,
             "firmware_tool_id": channel.firmware_tool_id,
@@ -2746,6 +3337,10 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                 for key in (
                     "channel",
                     "slot_id",
+                    "fixture_id",
+                    "fixture_model",
+                    "fixture_serial",
+                    "fixture_location",
                     "com_port",
                     "soc_vendor",
                     "soc_model",
@@ -2822,34 +3417,51 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
 
     def _submit_run_profiles(self) -> None:
         try:
-            _config, backend, _local_root = self._snapshot_backend()
+            config, backend, _local_root = self._snapshot_backend()
             rows = [row for row in self._run_profiles if row.get("enabled", True)]
             if not rows:
                 raise FtpSpoolError("실행할 PC 행을 추가하고 실행 열을 체크하세요.")
             args = shlex.split(self.job_args_var.get(), posix=False) if self.job_args_var.get().strip() else []
             timeout = float(self.job_timeout_var.get() or "0")
             direct_counts: dict[tuple[str, str, str], int] = {}
+            prepared_rows: list[tuple[dict[str, Any], str]] = []
             for row in rows:
                 if not str(row.get("target", "")).strip() or not str(row.get("package", "")).strip():
                     raise FtpSpoolError("모든 실행 행에 PC / Node와 매크로를 입력하세요.")
+                targets = self._targets(str(row["target"]), config=config)
+                if len(targets) != 1:
+                    raise FtpSpoolError("PC별 실행표의 각 행에는 대상 PC 하나만 입력하세요.")
+                target = targets[0]
+                if target == "all":
+                    raise FtpSpoolError(
+                        "PC별 실행표에는 all을 사용할 수 없습니다. 각 행에 실장기 연결 PC를 지정하세요."
+                    )
                 package = next(
                     (item for item in self._packages if item.name == str(row["package"])),
                     None,
                 )
                 if package is None:
                     raise FtpSpoolError(f"업로드 목록에 없는 파일입니다: {row['package']}")
+                fixture_required = False
                 if package.runner == "sequence":
                     backend_mode, _launcher_name = self._prepare_sequence_execution(
                         row.setdefault("variables", {})
                     )
                     self._apply_campaign_package_variables(package, row["variables"])
                     if backend_mode == "serial":
+                        fixture_required = True
                         group_key = (
-                            str(row["target"]),
+                            target,
                             str(row["variables"].get("campaign_id", "")),
                             str(row["variables"].get("campaign_attempt", "1")),
                         )
                         direct_counts[group_key] = direct_counts.get(group_key, 0) + 1
+                self._require_topology_ready(
+                    config,
+                    node_id=target,
+                    require_fixture=fixture_required,
+                )
+                prepared_rows.append((row, target))
             oversized = next((key for key, count in direct_counts.items() if count > 4), None)
             if oversized is not None:
                 raise FtpSpoolError(
@@ -2862,7 +3474,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         def worker() -> None:
             submitted: list[str] = []
             direct_groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
-            for row in rows:
+            for row, target in prepared_rows:
                 package = next(
                     (item for item in self._packages if item.name == str(row["package"])),
                     None,
@@ -2872,7 +3484,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                 }
                 if package and package.runner == "sequence" and variables.get("sequence_backend") == "serial":
                     group_key = (
-                        str(row["target"]),
+                        target,
                         variables.get("campaign_id", ""),
                         variables.get("campaign_attempt", "1"),
                     )
@@ -2895,8 +3507,9 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                         "pass_variables": bool(package and package.runner == "python" and package.variables),
                     },
                     variables=variables,
+                    origin=self._job_origin(),
                 )
-                submitted.extend(submit_job(backend, job, [str(row["target"])]))
+                submitted.extend(submit_job(backend, job, [target]))
             for (target, _campaign_id, _attempt), runs in direct_groups.items():
                 batch_job = SpoolJob.create(
                     kind="sequence_batch",
@@ -2904,6 +3517,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                         "runs": runs,
                         "timeout_seconds": timeout,
                     },
+                    origin=self._job_origin(),
                 )
                 submitted.extend(submit_job(backend, batch_job, [target]))
             self._queue.put(
@@ -2938,12 +3552,19 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             if package.runner != "workflow":
                 raise FtpSpoolError("상태 규칙 실행은 Picker에서 export한 workflow만 지원합니다.")
             targets = self._targets(self.job_target_var.get(), config=config) or ["all"]
+            for target in targets:
+                self._require_topology_ready(
+                    config,
+                    node_id=target,
+                    require_fixture=False,
+                )
             variables = self._parse_vars(self.job_vars_var.get())
             timeout = float(self.job_timeout_var.get() or "0")
             job = SpoolJob.create(
                 kind="monitor",
                 payload={"package": package.name, "timeout_seconds": timeout},
                 variables=variables,
+                origin=self._job_origin(),
             )
         except BaseException as exc:
             self._show_error(exc)
@@ -2956,19 +3577,29 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         self._start_worker("상태 규칙 전송", worker)
 
     def _selected_package_job(self) -> tuple[Any, PackageInfo, list[str], SpoolJob]:
-        _config, backend, _local_root = self._snapshot_backend()
+        config, backend, _local_root = self._snapshot_backend()
         package = self._selected_package()
         if package is None:
             raise FtpSpoolError("Select an uploaded macro first.")
         timeout = float(self.job_timeout_var.get() or "0")
         args = shlex.split(self.job_args_var.get(), posix=False) if self.job_args_var.get().strip() else []
         variables = self._parse_vars(self.job_vars_var.get())
-        targets = self._targets(self.job_target_var.get(), config=_config) or ["all"]
+        targets = self._targets(self.job_target_var.get(), config=config) or ["all"]
         launcher_name = ""
         sequence_backend = ""
         if package.runner == "sequence":
             sequence_backend, launcher_name = self._prepare_sequence_execution(variables)
             self._apply_campaign_package_variables(package, variables)
+            if sequence_backend == "serial" and "all" in targets:
+                raise FtpSpoolError(
+                    "직접 COM SEQ는 all로 전송할 수 없습니다. COM을 소유한 PC 하나를 지정하세요."
+                )
+        for target in targets:
+            self._require_topology_ready(
+                config,
+                node_id=target,
+                require_fixture=sequence_backend == "serial",
+            )
         job = SpoolJob.create(
             kind=package_job_kind(package),
             payload={
@@ -2980,6 +3611,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                 "pass_variables": bool(package.runner == "python" and package.variables),
             },
             variables=variables,
+            origin=self._job_origin(),
         )
         return backend, package, targets, job
 
@@ -3044,7 +3676,11 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                 )
             if not allowed_targets:
                 return
-            job = SpoolJob.create(kind="screenshot", payload={"label": "manual"})
+            job = SpoolJob.create(
+                kind="screenshot",
+                payload={"label": "manual"},
+                origin=self._job_origin(),
+            )
             for target in allowed_targets:
                 self._last_screenshot_request_by_node[target] = now
         except BaseException as exc:
@@ -3398,13 +4034,23 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         for row in rows:
             node = str(row.get("node_id") or "")
             alias = self._slave_label(node, config)
+            pc_label = " / ".join(
+                part for part in (alias, str(row.get("asset_id") or "")) if part
+            )
+            origin = row.get("current_origin") if isinstance(row.get("current_origin"), dict) else None
+            if not origin and isinstance(row.get("last_origin"), dict):
+                origin = row.get("last_origin")
+            origin_label = ""
+            if isinstance(origin, dict):
+                origin_label = str(origin.get("alias") or origin.get("controller_id") or "")
             values = (
-                alias,
+                pc_label,
                 node,
                 row.get("state", ""),
                 row.get("current_job") or "-",
+                row.get("physical_location", ""),
+                origin_label,
                 row.get("updated_at", ""),
-                row.get("message", ""),
             )
             health = str(row.get("health") or "online")
             if node:
@@ -3463,36 +4109,43 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                     )
                     if part
                 )
-                lot_sample = " / ".join(
+                material = " / ".join(
                     part
                     for part in (
+                        str(channel.get("dram_part") or ""),
                         str(channel.get("lot_id") or ""),
                         str(channel.get("sample_id") or ""),
+                    )
+                    if part
+                )
+                channel_slot = " / ".join(
+                    part for part in (channel_label, str(channel.get("slot_id") or "")) if part
+                )
+                connection = f"{channel.get('com_port') or 'COM 미설정'} @ {channel.get('baud_rate') or 115200}"
+                if channel.get("usb_location"):
+                    connection += f" / {channel.get('usb_location')}"
+                campaign = " | ".join(
+                    part
+                    for part in (
+                        str(channel.get("campaign_id") or ""),
+                        str(channel.get("campaign_title") or ""),
+                        f"시도 {channel.get('campaign_attempt')}" if channel.get("campaign_attempt") else "",
                     )
                     if part
                 )
                 values = (
                     alias,
                     node,
-                    channel_label,
-                    channel.get("slot_id", ""),
+                    channel.get("fixture_id", ""),
+                    channel.get("physical_location", ""),
+                    channel_slot,
+                    connection,
                     soc,
                     binary,
-                    channel.get("binary_updated_at", ""),
-                    channel.get("binary_source_path", ""),
-                    channel.get("dram_part", ""),
-                    lot_sample,
+                    material,
                     channel.get("current_test", ""),
                     channel.get("sequence_name", ""),
-                    " | ".join(
-                        part
-                        for part in (
-                            str(channel.get("campaign_id") or ""),
-                            str(channel.get("campaign_title") or ""),
-                        )
-                        if part
-                    ),
-                    channel.get("campaign_attempt", ""),
+                    campaign,
                     state,
                     progress,
                     channel.get("acceptance_result", ""),
@@ -3558,15 +4211,36 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                 self._show_error(exc)
                 return
         pc_table: list[list[Any]] = [
-            ["Alias", "Node", "State", "Current job", "Updated", "Last result", "Last finished", "Message"]
+            [
+                "Alias",
+                "Node",
+                "PC Asset ID",
+                "Windows Name",
+                "Physical Location",
+                "IP / Host",
+                "State",
+                "Current job",
+                "Request Master",
+                "Updated",
+                "Last result",
+                "Last finished",
+                "Message",
+            ]
         ]
         channel_table: list[list[Any]] = [
             [
                 "Alias",
                 "Node",
+                "Fixture ID",
+                "Fixture Model",
+                "Fixture Serial",
+                "Physical Location",
                 "CH / Name",
                 "Slot",
                 "COM",
+                "Baud",
+                "Console Identity",
+                "USB Location",
                 "SoC Vendor",
                 "SoC Model",
                 "Binary Name",
@@ -3598,8 +4272,24 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                 [
                     alias,
                     node,
+                    row.get("asset_id", ""),
+                    row.get("windows_name", ""),
+                    row.get("physical_location", ""),
+                    row.get("host", ""),
                     row.get("state", ""),
                     row.get("current_job") or "",
+                    " / ".join(
+                        part
+                        for part in (
+                            str((row.get("current_origin") or row.get("last_origin") or {}).get("alias") or "")
+                            if isinstance(row.get("current_origin") or row.get("last_origin"), dict)
+                            else "",
+                            str((row.get("current_origin") or row.get("last_origin") or {}).get("controller_id") or "")
+                            if isinstance(row.get("current_origin") or row.get("last_origin"), dict)
+                            else "",
+                        )
+                        if part
+                    ),
                     row.get("updated_at", ""),
                     "PASS" if row.get("last_ok") is True else "FAIL" if row.get("last_ok") is False else "",
                     row.get("last_finished_at", ""),
@@ -3614,9 +4304,16 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                     [
                         alias,
                         node,
+                        channel.get("fixture_id", ""),
+                        channel.get("fixture_model", ""),
+                        channel.get("fixture_serial", ""),
+                        channel.get("physical_location", ""),
                         channel.get("channel_id") or channel.get("name") or "",
                         channel.get("slot_id", ""),
                         channel.get("com_port", ""),
+                        channel.get("baud_rate", ""),
+                        channel.get("console_identity", ""),
+                        channel.get("usb_location", ""),
                         channel.get("soc_vendor", ""),
                         channel.get("soc_model", ""),
                         channel.get("binary_name", ""),
@@ -3670,7 +4367,11 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                     f"Screenshot for {label} skipped: wait {wait_seconds:.0f}s before requesting again."
                 )
                 return
-            job = SpoolJob.create(kind="screenshot", payload={})
+            job = SpoolJob.create(
+                kind="screenshot",
+                payload={},
+                origin=self._job_origin(),
+            )
             request_label = f"master-view-{job.job_id}"
             job = replace(job, payload={"label": request_label})
             self._last_screenshot_request_by_node[node] = now
@@ -4037,6 +4738,12 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             node = self.node_id_var.get().strip() or config.node_id
             if not node:
                 raise FtpSpoolError("Node ID is required to start slave.")
+            if sys.platform.startswith("win"):
+                validate_agent_ownership(
+                    config,
+                    node,
+                    current_windows_name=platform.node(),
+                )
         except BaseException as exc:
             self._show_error(exc)
             return
@@ -4046,46 +4753,50 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         self.slave_state_var.set(f"Running: {node}")
 
         def worker() -> None:
-            self._queue.put(("slave_log", f"Started slave loop for {node}."))
-            failures = 0
-            directories_ready = False
-            status_context: dict[str, Any] = {}
             try:
-                while not stop_event.is_set():
-                    try:
-                        results = run_slave_once(
-                            backend,
-                            config,
-                            node_id=node,
-                            ensure_directories=not directories_ready,
-                            status_context=status_context,
-                        )
-                    except Exception as exc:
-                        failures += 1
-                        directories_ready = False
-                        self._queue.put(("slave_state", f"Reconnecting ({failures})"))
-                        self._queue.put(("slave_log", f"FTP poll failed ({failures}): {exc}"))
-                    else:
-                        failures = 0
-                        directories_ready = True
-                        self._queue.put(("slave_state", f"Running: {node}"))
-                        for result in results:
-                            state = "OK" if result.ok else "FAIL"
-                            self._queue.put(
-                                (
-                                    "slave_log",
-                                    f"[{state}] {result.job_id} {result.kind} rc={result.returncode}",
-                                )
+                with agent_instance_lock(config, node):
+                    self._queue.put(("slave_log", f"Started slave loop for {node}."))
+                    failures = 0
+                    directories_ready = False
+                    status_context: dict[str, Any] = {}
+                    while not stop_event.is_set():
+                        try:
+                            results = run_slave_once(
+                                backend,
+                                config,
+                                node_id=node,
+                                ensure_directories=not directories_ready,
+                                status_context=status_context,
                             )
-                    delay = max(0.2, config.poll_interval_seconds)
-                    jitter = max(0.0, config.poll_jitter_seconds)
-                    if jitter:
-                        delay += random.uniform(0.0, jitter)
-                    if failures:
-                        delay = min(60.0, max(delay, 2.0) * (2 ** min(failures - 1, 4)))
-                    deadline = time.monotonic() + delay
-                    while time.monotonic() < deadline and not stop_event.is_set():
-                        time.sleep(0.2)
+                        except Exception as exc:
+                            failures += 1
+                            directories_ready = False
+                            self._queue.put(("slave_state", f"Reconnecting ({failures})"))
+                            self._queue.put(("slave_log", f"FTP poll failed ({failures}): {exc}"))
+                        else:
+                            failures = 0
+                            directories_ready = True
+                            self._queue.put(("slave_state", f"Running: {node}"))
+                            for result in results:
+                                state = "OK" if result.ok else "FAIL"
+                                self._queue.put(
+                                    (
+                                        "slave_log",
+                                        f"[{state}] {result.job_id} {result.kind} rc={result.returncode}",
+                                    )
+                                )
+                        delay = max(0.2, config.poll_interval_seconds)
+                        jitter = max(0.0, config.poll_jitter_seconds)
+                        if jitter:
+                            delay += random.uniform(0.0, jitter)
+                        if failures:
+                            delay = min(60.0, max(delay, 2.0) * (2 ** min(failures - 1, 4)))
+                        deadline = time.monotonic() + delay
+                        while time.monotonic() < deadline and not stop_event.is_set():
+                            time.sleep(0.2)
+            except BaseException as exc:
+                self._queue.put(("error", exc))
+                self._queue.put(("slave_log", f"Agent start failed for {node}: {exc}"))
             finally:
                 self._queue.put(("slave_stopped", "Stopped"))
                 self._queue.put(("slave_log", f"Stopped slave loop for {node}."))
@@ -4103,7 +4814,8 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             return
 
         def worker() -> None:
-            results = run_slave_once(backend, config, node_id=node)
+            with agent_instance_lock(config, node):
+                results = run_slave_once(backend, config, node_id=node)
             if not results:
                 self._queue.put(("slave_log", f"{node}: no pending jobs."))
             for result in results:

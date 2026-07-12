@@ -19,10 +19,10 @@ FTP는 실시간 터미널 스트림으로 사용하지 않습니다. Slave Agen
 
 ## 최초 CH 설정
 
-1. `3 Rig 설정 > Master · 원격 PC > 원격 PC · CH`를 엽니다.
-2. PC를 선택하고 `CH 관리`를 누릅니다.
-3. `장치` 탭에서 자유 CH 이름, Slot, Vendor와 SoC를 입력합니다.
-4. `통신 · 전원` 탭에서 Console COM과 baud를 입력합니다.
+1. `3 Rig 설정 > Master · 원격 PC > 실장기 연결 PC`를 엽니다.
+2. PC를 선택하고 `실장기 관리`를 누릅니다.
+3. `실장기 식별` 탭에서 물리 실장기 ID, Model, Serial, 실제 위치와 자유 CH/Slot을 입력합니다.
+4. `PC 연결` 탭에서 Console COM, baud, 예상 HWID와 USB Hub/Port를 입력합니다.
 5. 필요하면 `ADB 사용`을 켜고 ADB serial, Download COM, USB 식별자와 전원 명령을 입력합니다.
 6. MTK에서 실제로 검증한 명령이 있을 때만 `preloader 종료 명령`을 입력합니다.
 
@@ -39,8 +39,14 @@ CH 이름은 `CH1`로 고정되지 않습니다. `CH9`, `CH11`, `QC-DL`, `PC04-R
 4. 각 패널에서 `COM @ baud`, SoC와 현재 부팅 상태를 확인합니다.
 5. 공통 명령을 입력하고 `전송`을 누릅니다.
 
-`COM 검색`은 Windows가 현재 감지한 port, description과 HWID를 보여줍니다. USB 재연결로
-COM 번호가 바뀌었으면 이 값을 확인하고 `Rig 설정 > CH 관리`에서 수정합니다.
+`COM 대조`는 Windows가 현재 감지한 port, description, HWID와 USB location을 설정값과
+비교합니다. 예상 HWID가 다른 COM에서 정확히 한 번만 발견될 때만 `안전한 COM 변경 적용`이
+활성화됩니다. 여러 COM에 동시에 일치하거나 설정 COM이 다른 하드웨어이면 자동 변경하지
+않습니다.
+
+수동 콘솔, 직접 COM SEQ와 전원 명령은 실제 COM을 열기 직전에 같은 HWID 검사를 다시
+수행합니다. 전체 식별 체계와 이동 절차는 [PC · 실장기 · COM 연결 구조](fixture-topology.md)를
+따릅니다.
 
 입력칸은 출력 가능한 ASCII만 받습니다. `;`, `-`, `_`, `/`, `0x`는 사용할 수 있지만
 한글과 제어 문자는 거부합니다. 제어 문자는 `제어 키`에서 보냅니다.

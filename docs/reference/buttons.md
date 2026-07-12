@@ -48,7 +48,7 @@
 | 버튼 | 동작 |
 | --- | --- |
 | `선택 연결` | 이 Slave PC의 선택 COM을 지속 연결 |
-| `COM 검색` | 이 PC가 감지한 COM, description과 HWID 표시 |
+| `COM 대조` | 이 PC의 COM/HWID를 물리 실장기 설정과 비교하고 고유한 이동만 변경 제안 |
 | `전송` | 선택 CH에 출력 가능한 ASCII와 Enter 전송 |
 | `제어 키` | Enter, Ctrl+C/0x03, Ctrl+V/0x16 또는 검증된 ASCII 붙여넣기 |
 | `동시 실행` | 선택한 최대 4개 CH에서 `.seq`를 병렬 실행 |
@@ -93,18 +93,22 @@
 
 | 버튼 | 동작 |
 | --- | --- |
+| `연결 구조 > 구성 검사` | Master/FTP/PC/실장기 4계층의 누락·중복·소유권 검사 |
+| `연결 구조 > 선택 수정` | 선택한 계층의 안정 ID와 실제 위치 수정 |
+| `연결 구조 > 이 PC COM 대조` | 선택 PC가 이 Windows에 물리적으로 연결된 경우 COM/HWID 대조 |
 | `장치 도구 > 도구 추가` | MTK/QC 외부 Downloader CLI와 결과 규칙 등록 |
 | `Slave 설정 내보내기` | PC별 FTP 및 장치 설정 파일 두 개 생성 |
 
 | 위치 | 버튼/메뉴 | 설명 |
 | --- | --- | --- |
-| `Master 연결` | `파일` | config 선택·불러오기·예제 생성 |
-| `Master 연결` | `저장` | 현재 `rig-ftp.info` 저장 |
-| `Master 연결` | `연결 확인` | FTP 권한 확인 |
-| `원격 PC · CH` | `PC 추가` | 별명, Node ID, IP, PC별 변수 등록 |
-| `원격 PC · CH` | `CH 관리` | 자유 CH/이름, Slot, COM, SoC, Binary, 자재 등록 |
-| `원격 PC · CH` | `서버 폴더 준비` | PC별 FTP spool 폴더 생성 |
-| `원격 PC · CH` | `Slave 설정 내보내기` | 각 PC용 `rig-ftp.info` 생성 |
+| `Master · FTP` | `파일` | config 선택·불러오기·예제 생성 |
+| `Master · FTP` | `저장` | 현재 `rig-ftp.info` 저장 |
+| `Master · FTP` | `연결 확인` | FTP 권한 확인 |
+| `실장기 연결 PC` | `연결 PC 추가` | 별명, Node ID, 자산 ID, Windows 이름, IP, 위치와 PC별 변수 등록 |
+| `실장기 연결 PC` | `실장기 관리` | 물리 ID/Serial/위치, 자유 CH, COM/HWID, SoC, Binary, 자재 등록 |
+| `연결 PC 편집` | `CSV 가져오기/내보내기` | 여러 PC와 실장기를 Node+CH 기준으로 일괄 병합·내보내기 |
+| `실장기 연결 PC` | `서버 폴더 준비` | PC별 FTP spool 폴더 생성 |
+| `실장기 연결 PC` | `Slave 설정 내보내기` | 각 PC용 `rig-ftp.info`와 `rig-commander.config.json` 생성 |
 | `이 PC Agent` | `Agent 시작` / `Agent 중지` | slave polling 시작·중지 |
 | `Agent 더보기` | `한 번 확인` | pending job 1회 확인 |
 | `Agent 더보기` | `중단 신호 해제` | 이 PC stop signal 제거 |

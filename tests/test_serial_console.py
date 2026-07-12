@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import deque
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -12,6 +13,7 @@ from win_automation_picker.serial_console import (
     detect_boot_state,
     parse_serial_sequence,
     validate_ascii_text,
+    verify_serial_port_binding,
 )
 
 
@@ -74,6 +76,39 @@ def test_parse_serial_sequence_rejects_field_invalid_command_layout(text, messag
 def test_boot_state_uses_latest_console_marker() -> None:
     assert detect_boot_state("PRELOADER... bootloader... LK2]") == "LK"
     assert detect_boot_state("LK2]\nAndroid console ready") == "OS CONSOLE"
+
+
+def test_serial_binding_rejects_hwid_that_moved_to_another_com() -> None:
+    config = SerialPortConfig(
+        id="CH1",
+        port="COM3",
+        baud=115200,
+        console_identity="USB-SERIAL-A",
+    )
+    observations = (
+        SimpleNamespace(device="COM3", description="USB UART", hwid="USB-SERIAL-B", location="1-1"),
+        SimpleNamespace(device="COM7", description="USB UART", hwid="USB-SERIAL-A", location="1-2"),
+    )
+
+    with pytest.raises(SerialConsoleError, match="moved from COM3 to COM7"):
+        verify_serial_port_binding(config, observations)
+
+
+def test_serial_binding_accepts_exact_com_and_hwid() -> None:
+    config = SerialPortConfig(
+        id="CH1",
+        port="COM3",
+        baud=115200,
+        console_identity="USB-SERIAL-A",
+    )
+    observation = SimpleNamespace(
+        device="COM3",
+        description="USB UART",
+        hwid="VID_0403 USB-SERIAL-A",
+        location="1-1",
+    )
+
+    assert verify_serial_port_binding(config, (observation,)) is observation
 
 
 def test_session_sends_control_and_character_delayed_ascii() -> None:

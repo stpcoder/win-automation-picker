@@ -26,7 +26,15 @@ FTP Server
 Slave PC
   RigFtpCommander.exe
   └─ This PC Agent
+      ├─ Physical fixture A ─ COM/HWID
+      ├─ Physical fixture B ─ COM/HWID
+      ├─ Physical fixture C ─ COM/HWID
+      └─ Physical fixture D ─ COM/HWID
 ```
+
+Master는 원격 COM을 직접 열지 않습니다. FTP는 job과 결과를 전달하고, 해당 Node의 Agent만
+자기 PC에 연결된 물리 실장기 COM을 엽니다. 식별 기준은
+[PC · 실장기 · COM 연결 구조](../fixture-topology.md)를 확인합니다.
 
 ## FTP 폴더 역할
 
@@ -44,8 +52,8 @@ Slave PC
 
 ## 권장 운영 흐름
 
-1. `3 Rig 설정 > Master 연결`에서 FTP config를 저장합니다.
-2. `연결 확인` 후 `원격 PC · CH > 서버 폴더 준비`로 FTP 폴더를 준비합니다.
+1. `3 Rig 설정 > 연결 구조`에서 4계층을 검사하고 `Master · FTP`에서 config를 저장합니다.
+2. `연결 확인` 후 `실장기 연결 PC > 서버 폴더 준비`로 FTP 폴더를 준비합니다.
 3. slave별 `rig-ftp.info`를 만듭니다.
 4. 각 slave PC에서 `이 PC Agent > Agent 시작`을 누릅니다.
 5. `2 자동화 준비`에서 검증한 macro와 SEQ를 `서버 라이브러리 등록`으로 올립니다.
@@ -63,4 +71,4 @@ Test Sequence Generator가 내보낸 `.rigseq.zip`은 Slave가 체크섬과 vali
 `${seq_path}`, `${channel}`, `${slot_id}`를 전달합니다. 전체 절차는
 [SEQ Generator와 실장기 실행 연동](seq-integration.md)을 따릅니다.
 
-`.rigbinary.json`은 FTP package가 아니라 Master 설정용 metadata 교환 파일입니다. `CH 관리`에서 읽은 뒤 `.info`와 heartbeat에 필요한 provenance만 저장하며 실제 binary payload는 FTP spool로 올리지 않습니다.
+`.rigbinary.json`은 FTP package가 아니라 Master 설정용 metadata 교환 파일입니다. `실장기 관리`에서 읽은 뒤 `.info`와 heartbeat에 필요한 provenance만 저장하며 실제 binary payload는 FTP spool로 올리지 않습니다.
