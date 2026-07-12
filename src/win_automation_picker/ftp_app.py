@@ -1788,6 +1788,16 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                 ("adb_executable", "ADB 실행 파일"),
                 ("adb_serial", "ADB Serial"),
             ],
+            "Download 진입": [
+                ("preloader_exit_command", "MTK 진입 명령"),
+                ("preloader_exit_count", "명령 반복 횟수"),
+                ("preloader_exit_interval_ms", "명령 간격 ms"),
+                ("preloader_ready_marker", "진입 확인 marker"),
+                ("preloader_ready_timeout_ms", "Marker 대기 ms"),
+                ("download_wait_seconds", "USB Download 대기 초"),
+                ("download_poll_interval_seconds", "USB 재탐색 간격 초"),
+                ("download_reentry_command", "포맷 후 재진입 명령"),
+            ],
             "전원 · 도구": [
                 ("firmware_tool_id", "Downloader 도구"),
                 ("bootstrap_path", "MTK Download Agent / lk.bin"),
@@ -1803,8 +1813,6 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                 ("power_on_command", "전원 ON 명령"),
                 ("power_off_command", "전원 OFF 명령"),
                 ("status_command", "상태 명령"),
-                ("preloader_exit_command", "MTK preloader 종료 명령"),
-                ("download_reentry_command", "포맷 후 Download 재진입 명령"),
             ],
             "자재 · 시험": [
                 ("binary_name", "Binary 이름"),
@@ -1856,6 +1864,16 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                     if key == "adb_executable"
                     else "ufs"
                     if key == "storage_type"
+                    else "2"
+                    if key == "preloader_exit_count"
+                    else "150"
+                    if key == "preloader_exit_interval_ms"
+                    else "3000"
+                    if key == "preloader_ready_timeout_ms"
+                    else "90"
+                    if key == "download_wait_seconds"
+                    else "2"
+                    if key == "download_poll_interval_seconds"
                     else ""
                 )
                 initial_value = initial.get(key, default)
@@ -1911,12 +1929,12 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             text="Binary 업데이트 후 이 ADB 장치가 online이어야 성공",
             variable=adb_required,
         ).grid(row=7, column=2, columnspan=2, sticky="w", pady=(10, 0))
-        tool_page = notebook.nametowidget(notebook.tabs()[2])
+        tool_page = notebook.nametowidget(notebook.tabs()[3])
         ttk.Checkbutton(
             tool_page,
             text="MTK Download Agent Authentication (DAA) 사용",
             variable=daa_enabled,
-        ).grid(row=9, column=0, columnspan=4, sticky="w", pady=(10, 0))
+        ).grid(row=8, column=0, columnspan=4, sticky="w", pady=(10, 0))
 
         def save() -> None:
             nonlocal result

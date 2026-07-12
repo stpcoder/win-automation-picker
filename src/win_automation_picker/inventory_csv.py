@@ -58,6 +58,12 @@ CHANNEL_COLUMNS = {
     "power_off_command": "power_off_command",
     "status_command": "status_command",
     "preloader_exit_command": "preloader_exit_command",
+    "preloader_exit_count": "preloader_exit_count",
+    "preloader_exit_interval_ms": "preloader_exit_interval_ms",
+    "preloader_ready_marker": "preloader_ready_marker",
+    "preloader_ready_timeout_ms": "preloader_ready_timeout_ms",
+    "download_wait_seconds": "download_wait_seconds",
+    "download_poll_interval_seconds": "download_poll_interval_seconds",
     "download_reentry_command": "download_reentry_command",
     "binary_name": "binary_name",
     "binary_version": "binary_version",
@@ -72,7 +78,14 @@ CHANNEL_COLUMNS = {
 }
 
 INVENTORY_COLUMNS = tuple(PC_COLUMNS) + ("pc_variables",) + tuple(CHANNEL_COLUMNS)
-INTEGER_FIELDS = {"port", "baud_rate"}
+INTEGER_FIELDS = {
+    "port",
+    "baud_rate",
+    "preloader_exit_count",
+    "preloader_exit_interval_ms",
+    "preloader_ready_timeout_ms",
+}
+FLOAT_FIELDS = {"download_wait_seconds", "download_poll_interval_seconds"}
 BOOLEAN_FIELDS = {"adb_enabled", "adb_required_after_update", "daa_enabled"}
 LIST_FIELDS = {"firmware_partitions"}
 
@@ -272,6 +285,18 @@ def _coerce_value(field_name: str, value: str, line_number: int) -> Any:
         raise FtpSpoolError(
             f"Inventory CSV row {line_number} field {field_name} must be true or false."
         )
+    if field_name in FLOAT_FIELDS:
+        try:
+            parsed_float = float(value)
+        except ValueError as exc:
+            raise FtpSpoolError(
+                f"Inventory CSV row {line_number} field {field_name} must be a number."
+            ) from exc
+        if parsed_float <= 0:
+            raise FtpSpoolError(
+                f"Inventory CSV row {line_number} field {field_name} is out of range."
+            )
+        return parsed_float
     if field_name in LIST_FIELDS:
         return [item.strip() for item in value.replace(",", ";").split(";") if item.strip()]
     return value

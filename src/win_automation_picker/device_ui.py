@@ -13,6 +13,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Any
 
 from .binary_exchange import BinaryReleaseMetadata, read_binary_release_metadata
+from .firmware_plan import FirmwarePlanError, inspect_firmware_package
 from .ftp_spool import (
     ChannelInfo,
     DeviceToolInfo,
@@ -54,6 +55,10 @@ class DeviceWorkspaceMixin:
         self._device_sequence_stop: threading.Event | None = None
         self._device_sequence_active = 0
         self._device_binary_metadata: BinaryReleaseMetadata | None = None
+        self._device_binary_direct_path = ""
+        self._device_binary_direct_sha256 = ""
+        self._device_binary_direct_target = ""
+        self._device_binary_inspection_generation = 0
 
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(0, weight=1)
@@ -249,18 +254,29 @@ class DeviceWorkspaceMixin:
         binary = ttk.Labelframe(parent, text="2  Binary와 안전 조건", padding=12)
         binary.grid(row=1, column=0, sticky="ew", pady=(0, 8))
         binary.columnconfigure(1, weight=1)
-        ttk.Label(binary, text="Metadata").grid(row=0, column=0, sticky="w", padx=(0, 7))
-        self.device_binary_metadata_path_var = tk.StringVar(value="")
-        ttk.Entry(binary, textvariable=self.device_binary_metadata_path_var, state="readonly").grid(
-            row=0, column=1, sticky="ew"
-        )
-        ttk.Button(binary, text="불러오기", command=self._browse_device_binary_metadata).grid(
-            row=0, column=2, padx=(7, 0)
-        )
-        ttk.Label(binary, text="Slave XML 경로").grid(row=1, column=0, sticky="w", padx=(0, 7), pady=(8, 0))
+        ttk.Label(binary, text="Firmware XML").grid(row=0, column=0, sticky="w", padx=(0, 7))
         self.device_binary_xml_var = tk.StringVar(value="")
         ttk.Entry(binary, textvariable=self.device_binary_xml_var).grid(
-            row=1, column=1, columnspan=2, sticky="ew", pady=(8, 0)
+            row=0, column=1, sticky="ew"
+        )
+        ttk.Button(
+            binary,
+            text="XML 선택 · 전체 검사",
+            command=self._browse_device_binary_package,
+        ).grid(row=0, column=2, padx=(7, 0))
+        ttk.Label(binary, text="Release metadata").grid(
+            row=1,
+            column=0,
+            sticky="w",
+            padx=(0, 7),
+            pady=(8, 0),
+        )
+        self.device_binary_metadata_path_var = tk.StringVar(value="")
+        ttk.Entry(binary, textvariable=self.device_binary_metadata_path_var, state="readonly").grid(
+            row=1, column=1, sticky="ew", pady=(8, 0)
+        )
+        ttk.Button(binary, text="불러오기", command=self._browse_device_binary_metadata).grid(
+            row=1, column=2, padx=(7, 0), pady=(8, 0)
         )
         options = ttk.Frame(binary)
         options.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(10, 0))
@@ -294,19 +310,19 @@ class DeviceWorkspaceMixin:
         self.device_run_preloader_var = tk.BooleanVar(value=False)
         self.device_qc_switch_check = ttk.Checkbutton(
             options,
-            text="QC 물리 Download 스위치 확인",
+            text="QC Download 스위치 준비",
             variable=self.device_qc_switch_var,
         )
         self.device_qc_switch_check.pack(side="left", padx=(24, 0))
         self.device_mtk_preloader_check = ttk.Checkbutton(
             options,
-            text="MTK preloader 종료 확인",
+            text="MTK 진입 상태 수동 확인",
             variable=self.device_mtk_preloader_var,
         )
         self.device_mtk_preloader_check.pack(side="left", padx=(12, 0))
         self.device_run_preloader_check = ttk.Checkbutton(
             options,
-            text="등록 명령으로 종료",
+            text="등록 진입 명령 자동 실행",
             variable=self.device_run_preloader_var,
         )
         self.device_run_preloader_check.pack(side="left", padx=(12, 0))
@@ -325,7 +341,7 @@ class DeviceWorkspaceMixin:
         actions.grid(row=2, column=0, sticky="ew", pady=(0, 8))
         actions.columnconfigure(0, weight=1)
         self.device_binary_state_var = tk.StringVar(
-            value="Metadata를 불러온 뒤 원격 사전점검을 통과해야 업데이트할 수 있습니다."
+            value="XML을 직접 선택하거나 Release metadata를 불러온 뒤 사전점검을 실행하세요."
         )
         ttk.Label(actions, textvariable=self.device_binary_state_var, style="Panel.TLabel").grid(
             row=0, column=0, sticky="w"
@@ -356,7 +372,7 @@ class DeviceWorkspaceMixin:
         self.device_binary_log.grid(row=0, column=0, sticky="nsew")
         self.device_binary_log.insert(
             "1.0",
-            "실행 순서\n1. CH 통신 점검\n2. Seq Generator의 .rigbinary.json 불러오기\n"
+            "실행 순서\n1. CH 통신 점검\n2. Firmware XML 전체 검사 또는 metadata 불러오기\n"
             "3. QC/MTK 물리 조건 확인\n4. 원격 사전점검\n5. 한 CH씩 업데이트\n",
         )
 
@@ -1355,10 +1371,17 @@ class DeviceWorkspaceMixin:
         vendor = channel.soc_vendor.casefold()
         is_qc = vendor == "qualcomm"
         is_mtk = vendor == "mediatek"
-        self.device_qc_switch_check.configure(state="normal" if is_qc else "disabled")
+        self.device_qc_switch_check.configure(
+            state="normal" if is_qc else "disabled",
+            text=f"QC 스위치 준비 · {channel.download_wait_seconds:g}초 감지",
+        )
         self.device_mtk_preloader_check.configure(state="normal" if is_mtk else "disabled")
         self.device_run_preloader_check.configure(
-            state="normal" if is_mtk and bool(channel.preloader_exit_command) else "disabled"
+            state="normal" if is_mtk and bool(channel.preloader_exit_command) else "disabled",
+            text=(
+                f"{channel.preloader_exit_command or '진입 명령'} x"
+                f"{channel.preloader_exit_count} 자동 실행"
+            ),
         )
         if not is_qc:
             self.device_qc_switch_var.set(False)
@@ -1380,6 +1403,11 @@ class DeviceWorkspaceMixin:
         self.device_download_radio.configure(state="normal" if download_allowed else "disabled")
         self.device_format_radio.configure(state="normal" if format_allowed else "disabled")
         self.device_provision_radio.configure(state="normal" if provision_allowed else "disabled")
+        self.device_provision_radio.configure(
+            text="Vendor BROM / Provision"
+            if str((tool or {}).get("adapter_kind") or "generic") == "generic"
+            else "UFS Provision only"
+        )
         if self.device_binary_mode_var.get() not in allowed_modes:
             self.device_binary_mode_var.set(
                 next(
@@ -1413,6 +1441,15 @@ class DeviceWorkspaceMixin:
             f"({str((tool or {}).get('adapter_kind') or 'generic')})  |  "
             f"{channel.storage_type.upper()}  |  {mode_summary}"
         )
+        selected_target = f"{slave.get('node_id') or ''}:{channel.label()}"
+        if (
+            self._device_binary_metadata is None
+            and self._device_binary_direct_path
+            and self._device_binary_direct_target != selected_target
+        ):
+            self.device_binary_state_var.set(
+                "대상 CH가 변경되었습니다. 현재 CH에서 Firmware XML 전체 검사를 다시 실행하세요."
+            )
         mode = self.device_binary_mode_var.get()
         adapter_kind = str((tool or {}).get("adapter_kind") or "generic")
         requires_mtk_preloader = is_mtk and adapter_kind != "mediatek-genio"
@@ -1440,6 +1477,108 @@ class DeviceWorkspaceMixin:
             else "Generic Download only에서는 비워둡니다."
         )
 
+    def _browse_device_binary_package(self) -> None:
+        try:
+            slave, channel = self._selected_binary_channel()
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+        path = filedialog.askopenfilename(
+            title="Firmware XML / package descriptor",
+            filetypes=[
+                ("Firmware descriptor", "*.xml *.json *.zip"),
+                ("XML", "*.xml"),
+                ("All files", "*.*"),
+            ],
+        )
+        if not path:
+            return
+        tool = next(
+            (
+                row
+                for row in self._settings_device_tools
+                if str(row.get("id") or "").casefold()
+                == channel.firmware_tool_id.casefold()
+            ),
+            None,
+        )
+        adapter_kind = str((tool or {}).get("adapter_kind") or "generic")
+        target_key = f"{slave.get('node_id') or ''}:{channel.label()}"
+        self._device_binary_inspection_generation += 1
+        generation = self._device_binary_inspection_generation
+        self._device_binary_metadata = None
+        self._device_binary_direct_path = ""
+        self._device_binary_direct_sha256 = ""
+        self._device_binary_direct_target = ""
+        self.device_binary_metadata_path_var.set("")
+        self.device_binary_xml_var.set(path)
+        self.device_binary_state_var.set("Descriptor와 참조 payload 전체를 검사하고 있습니다...")
+
+        def worker() -> None:
+            try:
+                inspection = inspect_firmware_package(
+                    path,
+                    vendor=channel.soc_vendor,
+                    adapter_kind=adapter_kind,
+                    storage_type=channel.storage_type,
+                )
+                if not inspection.ready:
+                    raise FirmwarePlanError("; ".join(inspection.errors))
+                digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+            except (OSError, FirmwarePlanError, ValueError) as exc:
+                message = str(exc)
+
+                def show_error() -> None:
+                    if (
+                        generation != self._device_binary_inspection_generation
+                        or self.device_binary_xml_var.get().strip() != path
+                    ):
+                        return
+                    self._device_binary_direct_path = ""
+                    self._device_binary_direct_sha256 = ""
+                    self._device_binary_direct_target = ""
+                    self.device_binary_state_var.set("Firmware package 검사 실패")
+                    messagebox.showerror("Firmware XML 검사", message, parent=self)
+
+                self.after(0, show_error)
+                return
+
+            def apply_result() -> None:
+                if (
+                    generation != self._device_binary_inspection_generation
+                    or self.device_binary_xml_var.get().strip() != path
+                ):
+                    return
+                try:
+                    current_slave, current_channel = self._selected_binary_channel()
+                except BaseException:
+                    self.device_binary_state_var.set(
+                        "대상 CH가 변경되었습니다. Firmware XML 검사를 다시 실행하세요."
+                    )
+                    return
+                current_target = (
+                    f"{current_slave.get('node_id') or ''}:{current_channel.label()}"
+                )
+                if current_target != target_key:
+                    self.device_binary_state_var.set(
+                        "대상 CH가 변경되었습니다. 현재 CH에서 Firmware XML 검사를 다시 실행하세요."
+                    )
+                    return
+                self._device_binary_metadata = None
+                self._device_binary_direct_path = path
+                self._device_binary_direct_sha256 = digest
+                self._device_binary_direct_target = target_key
+                self.device_binary_metadata_path_var.set("")
+                self.device_binary_state_var.set(
+                    f"READY · {inspection.adapter_kind} · descriptor "
+                    f"{len(inspection.descriptors)} · payload {len(inspection.payloads)} · "
+                    f"지문 {inspection.fingerprint[:12]}"
+                )
+
+            self.after(0, apply_result)
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def _browse_device_binary_metadata(self) -> None:
         path = filedialog.askopenfilename(
             title="Seq Generator Binary Metadata",
@@ -1452,7 +1591,11 @@ class DeviceWorkspaceMixin:
         except BaseException as exc:
             self._show_error(exc)
             return
+        self._device_binary_inspection_generation += 1
         self._device_binary_metadata = metadata
+        self._device_binary_direct_path = metadata.xml_path
+        self._device_binary_direct_sha256 = metadata.xml_sha256
+        self._device_binary_direct_target = ""
         self.device_binary_metadata_path_var.set(path)
         self.device_binary_xml_var.set(metadata.xml_path)
         self.device_binary_state_var.set(
@@ -1510,29 +1653,43 @@ class DeviceWorkspaceMixin:
 
     def _device_update_args(self, command: str) -> tuple[str, list[str]]:
         metadata = self._device_binary_metadata
-        if metadata is None:
-            raise FtpSpoolError("Seq Generator의 .rigbinary.json을 먼저 불러오세요.")
         slave, channel = self._selected_binary_channel()
-        metadata_soc = re.sub(r"[^A-Za-z0-9]+", "", metadata.soc_model).casefold()
-        channel_soc = re.sub(r"[^A-Za-z0-9]+", "", channel.soc_model).casefold()
-        if metadata.soc_vendor != channel.soc_vendor.casefold() or metadata_soc != channel_soc:
-            raise FtpSpoolError(
-                "Binary Metadata의 Vendor/SoC가 선택 CH와 다릅니다. 잘못된 장치 다운로드를 차단했습니다."
-            )
-        if (
-            metadata.recommended_storage_type
-            and metadata.recommended_storage_type != channel.storage_type
+        selected_target = f"{slave.get('node_id') or ''}:{channel.label()}"
+        xml_path = self.device_binary_xml_var.get().strip()
+        if not xml_path:
+            raise FtpSpoolError("Firmware XML 또는 package descriptor를 선택하세요.")
+        if metadata is not None:
+            metadata_soc = re.sub(r"[^A-Za-z0-9]+", "", metadata.soc_model).casefold()
+            channel_soc = re.sub(r"[^A-Za-z0-9]+", "", channel.soc_model).casefold()
+            if metadata.soc_vendor != channel.soc_vendor.casefold() or metadata_soc != channel_soc:
+                raise FtpSpoolError(
+                    "Binary Metadata의 Vendor/SoC가 선택 CH와 다릅니다. 잘못된 장치 다운로드를 차단했습니다."
+                )
+            if (
+                metadata.recommended_storage_type
+                and metadata.recommended_storage_type != channel.storage_type
+            ):
+                raise FtpSpoolError(
+                    "Binary Metadata의 storage 종류가 선택 CH와 다릅니다."
+                )
+            if (
+                metadata.recommended_download_serial
+                and channel.download_serial
+                and metadata.recommended_download_serial != channel.download_serial
+            ):
+                raise FtpSpoolError(
+                    "Binary Metadata의 Download/EDL serial이 선택 CH와 다릅니다."
+                )
+            expected_sha256 = metadata.xml_sha256
+        elif (
+            xml_path == self._device_binary_direct_path
+            and re.fullmatch(r"[0-9a-f]{64}", self._device_binary_direct_sha256)
+            and self._device_binary_direct_target == selected_target
         ):
+            expected_sha256 = self._device_binary_direct_sha256
+        else:
             raise FtpSpoolError(
-                "Binary Metadata의 storage 종류가 선택 CH와 다릅니다."
-            )
-        if (
-            metadata.recommended_download_serial
-            and channel.download_serial
-            and metadata.recommended_download_serial != channel.download_serial
-        ):
-            raise FtpSpoolError(
-                "Binary Metadata의 Download/EDL serial이 선택 CH와 다릅니다."
+                "현재 PC/CH에서 XML 선택 · 전체 검사로 package 지문을 확정하거나 Release metadata를 불러오세요."
             )
         node, target, args = self._device_base_rig_args()
         args.extend(
@@ -1541,9 +1698,9 @@ class DeviceWorkspaceMixin:
                 "--target",
                 target,
                 "--xml",
-                self.device_binary_xml_var.get().strip(),
+                xml_path,
                 "--xml-sha256",
-                metadata.xml_sha256,
+                expected_sha256,
                 "--mode",
                 self.device_binary_mode_var.get(),
             ]

@@ -101,6 +101,12 @@ class ChannelInfo:
     power_off_command: str = ""
     status_command: str = ""
     preloader_exit_command: str = ""
+    preloader_exit_count: int = 2
+    preloader_exit_interval_ms: int = 150
+    preloader_ready_marker: str = ""
+    preloader_ready_timeout_ms: int = 3000
+    download_wait_seconds: float = 90.0
+    download_poll_interval_seconds: float = 2.0
     download_reentry_command: str = ""
     binary_name: str = ""
     binary_version: str = ""
@@ -131,6 +137,29 @@ class ChannelInfo:
         storage_type = str(data.get("storage_type") or "ufs").strip().casefold()
         if storage_type not in {"emmc", "nand", "nvme", "spinor", "ufs"}:
             raise FtpSpoolError(f"Unsupported channel storage_type: {storage_type!r}.")
+        preloader_exit_count = int(data.get("preloader_exit_count", 2))
+        preloader_exit_interval_ms = int(data.get("preloader_exit_interval_ms", 150))
+        preloader_ready_timeout_ms = int(data.get("preloader_ready_timeout_ms", 3000))
+        download_wait_seconds = float(data.get("download_wait_seconds", 90.0))
+        download_poll_interval_seconds = float(
+            data.get("download_poll_interval_seconds", 2.0)
+        )
+        if not 1 <= preloader_exit_count <= 8:
+            raise FtpSpoolError("Channel preloader_exit_count must be between 1 and 8.")
+        if not 0 <= preloader_exit_interval_ms <= 10_000:
+            raise FtpSpoolError(
+                "Channel preloader_exit_interval_ms must be between 0 and 10000."
+            )
+        if not 100 <= preloader_ready_timeout_ms <= 120_000:
+            raise FtpSpoolError(
+                "Channel preloader_ready_timeout_ms must be between 100 and 120000."
+            )
+        if not 1.0 <= download_wait_seconds <= 900.0:
+            raise FtpSpoolError("Channel download_wait_seconds must be between 1 and 900.")
+        if not 0.25 <= download_poll_interval_seconds <= 30.0:
+            raise FtpSpoolError(
+                "Channel download_poll_interval_seconds must be between 0.25 and 30."
+            )
         channel = cls(
             channel_id=str(data.get("channel_id") or data.get("channel") or "").strip(),
             name=str(data.get("name") or data.get("alias") or "").strip(),
@@ -179,6 +208,12 @@ class ChannelInfo:
             power_off_command=str(data.get("power_off_command") or "").strip(),
             status_command=str(data.get("status_command") or "").strip(),
             preloader_exit_command=str(data.get("preloader_exit_command") or "").strip(),
+            preloader_exit_count=preloader_exit_count,
+            preloader_exit_interval_ms=preloader_exit_interval_ms,
+            preloader_ready_marker=str(data.get("preloader_ready_marker") or "").strip(),
+            preloader_ready_timeout_ms=preloader_ready_timeout_ms,
+            download_wait_seconds=download_wait_seconds,
+            download_poll_interval_seconds=download_poll_interval_seconds,
             download_reentry_command=str(
                 data.get("download_reentry_command") or ""
             ).strip(),
@@ -254,6 +289,12 @@ class ChannelInfo:
             "power_off_command": self.power_off_command,
             "status_command": self.status_command,
             "preloader_exit_command": self.preloader_exit_command,
+            "preloader_exit_count": self.preloader_exit_count,
+            "preloader_exit_interval_ms": self.preloader_exit_interval_ms,
+            "preloader_ready_marker": self.preloader_ready_marker,
+            "preloader_ready_timeout_ms": self.preloader_ready_timeout_ms,
+            "download_wait_seconds": self.download_wait_seconds,
+            "download_poll_interval_seconds": self.download_poll_interval_seconds,
             "download_reentry_command": self.download_reentry_command,
             "binary_name": self.binary_name,
             "binary_version": self.binary_version,
@@ -877,6 +918,12 @@ def build_slave_rig_config(
                 "gpio_reset": channel.gpio_reset,
                 "gpio_download": channel.gpio_download,
                 "firmware_partitions": list(channel.firmware_partitions),
+                "preloader_exit_count": channel.preloader_exit_count,
+                "preloader_exit_interval_ms": channel.preloader_exit_interval_ms,
+                "preloader_ready_marker": channel.preloader_ready_marker,
+                "preloader_ready_timeout_ms": channel.preloader_ready_timeout_ms,
+                "download_wait_seconds": channel.download_wait_seconds,
+                "download_poll_interval_seconds": channel.download_poll_interval_seconds,
                 "adb": {
                     "enabled": bool(channel.adb_enabled or channel.adb_required_after_update),
                     "executable": channel.adb_executable or "adb.exe",
