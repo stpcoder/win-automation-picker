@@ -6,6 +6,7 @@ GitHub Releases의 `latest`에서 다음 파일을 받습니다.
 
 | 파일 | 설명 |
 | --- | --- |
+| `AEWorkbench-Windows-x64.zip` | 권장 묶음. 아래 EXE 5개와 SHA-256 manifest 포함 |
 | `AEWorkbench.exe` | 권장 통합 앱 |
 | `WinAutomationPicker.exe` | 매크로 생성기 |
 | `RigFtpCommander.exe` | FTP master/slave GUI |
@@ -16,6 +17,7 @@ GitHub Releases의 `latest`에서 다음 파일을 받습니다.
 
 ```text
 https://github.com/stpcoder/win-automation-picker/releases/latest/download/AEWorkbench.exe
+https://github.com/stpcoder/win-automation-picker/releases/latest/download/AEWorkbench-Windows-x64.zip
 https://github.com/stpcoder/win-automation-picker/releases/latest/download/WinAutomationPicker.exe
 https://github.com/stpcoder/win-automation-picker/releases/latest/download/RigFtpCommander.exe
 https://github.com/stpcoder/win-automation-picker/releases/latest/download/RigFtpCli.exe
@@ -24,6 +26,12 @@ https://github.com/stpcoder/win-automation-picker/releases/latest/download/RigCo
 
 !!! note "SmartScreen 경고"
     코드 서명된 exe가 아니므로 Windows SmartScreen 경고가 나올 수 있습니다. 사내 배포 정책에 맞게 허용 후 실행합니다.
+
+압축 파일의 `windows-release-manifest.json`에서 source commit과 각 EXE SHA-256을 확인할 수
+있습니다. Qualcomm QDL과 MediaTek Genio Tools 실행 파일은 라이선스와 현장 승인 문제 때문에
+묶음에 포함하지 않습니다. 별도로 설치한 뒤 Binary 도구 프로필에 경로를 지정하며, 앱 CI는
+manifest에 기록된 공식 저장소와 QDL/Genio source commit의 실제 parser로 생성 인자를
+dry-run합니다. 이 검증은 실제 장치 쓰기 성공을 의미하지 않습니다.
 
 ## 권한
 

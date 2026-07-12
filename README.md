@@ -10,13 +10,17 @@ A Windows UI Automation macro studio with a real nested block workspace, Python 
 
 | File | Purpose |
 | --- | --- |
+| [AEWorkbench-Windows-x64.zip](https://github.com/stpcoder/win-automation-picker/releases/latest/download/AEWorkbench-Windows-x64.zip) | Recommended bundle containing all five executables and their SHA-256 manifest |
 | [AEWorkbench.exe](https://github.com/stpcoder/win-automation-picker/releases/latest/download/AEWorkbench.exe) | Integrated SEQ, Scratch macro, validation, FTP deployment, and monitoring workspace |
 | [WinAutomationPicker.exe](https://github.com/stpcoder/win-automation-picker/releases/latest/download/WinAutomationPicker.exe) | Build, run, and export block macros |
 | [RigFtpCommander.exe](https://github.com/stpcoder/win-automation-picker/releases/latest/download/RigFtpCommander.exe) | FTP master/slave GUI |
 | [RigFtpCli.exe](https://github.com/stpcoder/win-automation-picker/releases/latest/download/RigFtpCli.exe) | Advanced FTP CLI |
 | [RigCommander.exe](https://github.com/stpcoder/win-automation-picker/releases/latest/download/RigCommander.exe) | COM, PowerShell, and SSH rig-control CLI |
 
-The executables are not code-signed, so Windows SmartScreen may show a warning.
+The executables are not code-signed, so Windows SmartScreen may show a warning. Qualcomm QDL and
+MediaTek Genio Tools are not redistributed in this bundle; install an approved copy separately.
+The release manifest records the official repositories, exact source commits, expected versions,
+and parser dry-run scope used by contract tests.
 
 ## Highlights
 
@@ -165,7 +169,9 @@ RigCommander.exe device system-check
 
 ## CI and releases
 
-Every push to `main` runs tests, builds all five Windows executables, and updates the `latest` release assets. Documentation changes deploy to `gh-pages`.
+Every push to `main` runs tests and pinned QDL/Genio parser contracts, rebuilds all five Windows
+executables in the release job, and updates the `latest` assets directly. The release does not
+depend on expiring GitHub Actions artifact storage. Documentation changes deploy to `gh-pages`.
 
 ## Limitations
 

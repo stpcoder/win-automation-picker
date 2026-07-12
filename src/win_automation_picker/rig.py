@@ -2400,6 +2400,8 @@ def _validate_firmware_capability_result(
     required: set[str] = set()
     if plan.adapter_kind == "qualcomm-qdl":
         required.update({"--dry-run", "--storage"})
+        if "erase" in lowered_arguments:
+            required.add("erase")
         for marker in ("--skip-reset", "--finalize-provisioning", "--slot"):
             if marker in lowered_arguments:
                 required.add(marker)

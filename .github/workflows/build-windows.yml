@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
@@ -35,8 +35,88 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
+  qdl-cli-contract:
+    name: Qualcomm QDL CLI contract
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      QDL_COMMIT: a00d81bc639908875862582f0d3cb0775d92e269
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install QDL build and test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcmocka-dev libxml2-dev libusb-1.0-0-dev libzip-dev ninja-build
+          python -m pip install --upgrade pip
+          python -m pip install meson==1.4.0 pytest
+          python -m pip install -e .
+
+      - name: Build pinned QDL source
+        run: |
+          git clone https://github.com/linux-msm/qdl.git vendor/qdl
+          git -C vendor/qdl checkout --detach "${QDL_COMMIT}"
+          test "$(git -C vendor/qdl rev-parse HEAD)" = "${QDL_COMMIT}"
+          meson setup vendor/qdl/build vendor/qdl
+          meson compile -C vendor/qdl/build
+
+      - name: Run generated QDL plan against real parser
+        env:
+          QDL_CONTRACT_EXE: ${{ github.workspace }}/vendor/qdl/build/qdl
+          QDL_EXPECTED_VERSION: v2.7-44-ga00d81b
+        run: python -m pytest tests/test_vendor_tool_contract.py -q -k qdl
+
+  genio-cli-contract:
+    name: MediaTek Genio CLI contract
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    env:
+      GENIO_COMMIT: 3c6e7de6605fb58bb2cae4acf65a148a979b58e1
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+          python -m pip install -e .
+
+      - name: Install pinned Genio Tools source
+        shell: pwsh
+        run: |
+          git clone https://gitlab.com/mediatek/aiot/bsp/genio-tools.git vendor/genio-tools
+          git -C vendor/genio-tools checkout --detach "$env:GENIO_COMMIT"
+          if ((git -C vendor/genio-tools rev-parse HEAD).Trim() -ne $env:GENIO_COMMIT) {
+            throw "Genio Tools source commit mismatch"
+          }
+          python -m pip install ./vendor/genio-tools
+
+      - name: Run generated Genio plan against real Windows parser
+        shell: pwsh
+        run: |
+          $env:GENIO_CONTRACT_EXE = (Get-Command genio-flash).Source
+          $env:GENIO_EXPECTED_VERSION = "1.7.1"
+          python -m pytest tests/test_vendor_tool_contract.py -q -k genio
+
   build-windows:
     name: Build Windows executable
+    if: github.event_name == 'pull_request'
     runs-on: windows-latest
     needs: test
 
@@ -64,115 +144,17 @@ jobs:
           python -c "import tkinter as tk; from win_automation_picker.app import PickerApp; root = tk.Tk(); root.withdraw(); app = PickerApp(root); app.update_idletasks(); app.destroy(); root.destroy()"
           python -c "from win_automation_picker.ftp_app import RigFtpApp; from win_automation_picker.app import PickerApp; app = RigFtpApp(); editor = PickerApp(app); app.update_idletasks(); editor.update_idletasks(); editor.destroy(); app.destroy()"
 
-      - name: Build integrated AE Workbench executable
-        run: >
-          python -m PyInstaller
-          --noconfirm
-          --clean
-          --onefile
-          --windowed
-          --name AEWorkbench
-          --hidden-import serial
-          --hidden-import serial.tools.list_ports
-          --icon src/win_automation_picker/assets/rig_commander.ico
-          --add-data "src/win_automation_picker/assets;win_automation_picker/assets"
-          src/win_automation_picker/ae_workbench.py
-
-      - name: Build GUI executable
-        run: >
-          python -m PyInstaller
-          --noconfirm
-          --clean
-          --onefile
-          --windowed
-          --name WinAutomationPicker
-          --icon src/win_automation_picker/assets/win_automation_picker.ico
-          --add-data "src/win_automation_picker/assets;win_automation_picker/assets"
-          src/win_automation_picker/__main__.py
-
-      - name: Build CLI executable
-        run: >
-          python -m PyInstaller
-          --noconfirm
-          --clean
-          --onefile
-          --console
-          --name RigCommander
-          --hidden-import serial
-          --hidden-import serial.tools.list_ports
-          --icon src/win_automation_picker/assets/rig_commander.ico
-          --add-data "src/win_automation_picker/assets;win_automation_picker/assets"
-          src/win_automation_picker/rig_commander.py
-
-      - name: Build FTP orchestration executable
-        run: >
-          python -m PyInstaller
-          --noconfirm
-          --clean
-          --onefile
-          --windowed
-          --name RigFtpCommander
-          --hidden-import serial
-          --hidden-import serial.tools.list_ports
-          --icon src/win_automation_picker/assets/rig_commander.ico
-          --add-data "src/win_automation_picker/assets;win_automation_picker/assets"
-          src/win_automation_picker/rig_ftp_commander.py
-
-      - name: Build FTP CLI executable
-        run: >
-          python -m PyInstaller
-          --noconfirm
-          --clean
-          --onefile
-          --console
-          --name RigFtpCli
-          --icon src/win_automation_picker/assets/rig_commander.ico
-          --add-data "src/win_automation_picker/assets;win_automation_picker/assets"
-          src/win_automation_picker/rig_ftp_cli.py
-
-      - name: Smoke test built executables
+      - name: Build, smoke test, and package Windows executables
         shell: pwsh
-        run: |
-          function Assert-GuiStarts([string]$Path) {
-            $process = Start-Process $Path -PassThru
-            Start-Sleep -Seconds 5
-            if ($process.HasExited) {
-              throw "$Path exited during startup with code $($process.ExitCode)"
-            }
-            Stop-Process -Id $process.Id -Force
-          }
-
-          Assert-GuiStarts "dist\AEWorkbench.exe"
-          Assert-GuiStarts "dist\WinAutomationPicker.exe"
-          Assert-GuiStarts "dist\RigFtpCommander.exe"
-          & "dist\RigCommander.exe" --help | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "RigCommander.exe --help failed" }
-          & "dist\RigCommander.exe" device system-check
-          if ($LASTEXITCODE -ne 0) { throw "RigCommander.exe device system-check failed" }
-          & "dist\RigCommander.exe" firmware --help | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "RigCommander.exe firmware --help failed" }
-          & "dist\RigCommander.exe" device raw-write --help | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "RigCommander.exe device raw-write --help failed" }
-          & "dist\RigFtpCli.exe" --help | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "RigFtpCli.exe --help failed" }
-
-      - name: Upload executable artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: windows-executables
-          path: |
-            dist/AEWorkbench.exe
-            dist/WinAutomationPicker.exe
-            dist/RigCommander.exe
-            dist/RigFtpCommander.exe
-            dist/RigFtpCli.exe
-          if-no-files-found: error
+        run: ./scripts/build_windows_release.ps1
 
   publish-latest-release:
     name: Publish latest release asset
-    runs-on: ubuntu-latest
-    needs: build-windows
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    needs: [test, qdl-cli-contract, genio-cli-contract]
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
 
     steps:
       - name: Check out repository
@@ -180,30 +162,50 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download executable artifact
-        uses: actions/download-artifact@v8
+      - name: Set up Python
+        uses: actions/setup-python@v6
         with:
-          name: windows-executables
-          path: release
+          python-version: "3.11"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest pyinstaller
+          python -m pip install -e .
+
+      - name: Run tests
+        run: python -m pytest -q
+
+      - name: Build, smoke test, and package release
+        shell: pwsh
+        run: ./scripts/build_windows_release.ps1
 
       - name: Move latest tag
+        shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f latest "$GITHUB_SHA"
+          git tag -f latest "$env:GITHUB_SHA"
           git push origin latest --force
+          if ($LASTEXITCODE -ne 0) { throw "Failed to move latest tag" }
 
       - name: Publish release asset
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: pwsh
         run: |
-          if gh release view latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload latest release/AEWorkbench.exe release/WinAutomationPicker.exe release/RigCommander.exe release/RigFtpCommander.exe release/RigFtpCli.exe --clobber --repo "$GITHUB_REPOSITORY"
-            gh release edit latest --latest --title "Latest Windows build" --repo "$GITHUB_REPOSITORY"
-          else
-            gh release create latest release/AEWorkbench.exe release/WinAutomationPicker.exe release/RigCommander.exe release/RigFtpCommander.exe release/RigFtpCli.exe \
-              --latest \
-              --title "Latest Windows build" \
-              --notes "Automatically built Windows executables from the main branch." \
-              --repo "$GITHUB_REPOSITORY"
-          fi
+          gh release view latest --repo "$env:GITHUB_REPOSITORY" 1>$null 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload latest dist/AEWorkbench.exe dist/WinAutomationPicker.exe dist/RigCommander.exe dist/RigFtpCommander.exe dist/RigFtpCli.exe dist/AEWorkbench-Windows-x64.zip dist/windows-release-manifest.json --clobber --repo "$env:GITHUB_REPOSITORY"
+            if ($LASTEXITCODE -ne 0) { throw "Failed to upload latest release assets" }
+            gh release edit latest --latest --title "Latest Windows build" --repo "$env:GITHUB_REPOSITORY"
+            if ($LASTEXITCODE -ne 0) { throw "Failed to update latest release metadata" }
+          }
+          else {
+            gh release create latest dist/AEWorkbench.exe dist/WinAutomationPicker.exe dist/RigCommander.exe dist/RigFtpCommander.exe dist/RigFtpCli.exe dist/AEWorkbench-Windows-x64.zip dist/windows-release-manifest.json `
+              --latest `
+              --title "Latest Windows build" `
+              --notes "Automatically built Windows executables. External QDL and Genio downloader binaries are not bundled; their pinned CLI contracts are recorded in the manifest." `
+              --repo "$env:GITHUB_REPOSITORY"
+            if ($LASTEXITCODE -ne 0) { throw "Failed to create latest release" }
+          }
