@@ -17,9 +17,11 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any, Callable
 
 from .binary_exchange import read_binary_release_metadata
+from .device_ui import DeviceWorkspaceMixin
 from .exporter import read_exported_variables
 from .ftp_spool import (
     ChannelInfo,
+    DeviceToolInfo,
     FtpSpoolConfig,
     FtpSpoolError,
     PackageInfo,
@@ -27,6 +29,7 @@ from .ftp_spool import (
     SlaveInfo,
     SpoolJob,
     backend_from_config,
+    build_slave_rig_config,
     classify_status_rows,
     cleanup_node_files,
     clear_stop,
@@ -64,7 +67,7 @@ def natural_label_key(value: object) -> tuple[tuple[int, object], ...]:
     )
 
 
-class RigFtpApp(AEWorkbenchMixin, tk.Tk):
+class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("AE Workbench | Rig Control")
@@ -77,6 +80,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         self._run_profiles: list[dict[str, Any]] = []
         self._settings_variables: dict[str, str] = {}
         self._settings_slaves: list[dict[str, Any]] = []
+        self._settings_device_tools: list[dict[str, Any]] = []
         self._slave_stop: threading.Event | None = None
         self._monitor_stop: threading.Event | None = None
         self._last_status_rows: list[dict[str, Any]] = []
@@ -255,7 +259,17 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         self._build_settings_tab(settings)
         self._build_slave_tab(slave)
         self._build_master_tab(today)
-        self._build_workbench_tab(preparation)
+        preparation.columnconfigure(0, weight=1)
+        preparation.rowconfigure(0, weight=1)
+        preparation_workspace = ttk.Notebook(preparation)
+        preparation_workspace.grid(row=0, column=0, sticky="nsew")
+        automation = ttk.Frame(preparation_workspace, padding=8)
+        devices = ttk.Frame(preparation_workspace, padding=8)
+        preparation_workspace.add(automation, text="SEQ · 매크로")
+        preparation_workspace.add(devices, text="실장기 제어 · Binary")
+        self.preparation_workspace = preparation_workspace
+        self._build_workbench_tab(automation)
+        self._build_device_workspace(devices)
 
     def _refresh_config_summary(self) -> None:
         path = Path(self.config_path_var.get().strip() or DEFAULT_CONFIG)
@@ -639,10 +653,13 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         settings_workspace.grid(row=0, column=0, sticky="nsew")
         connection_page = ttk.Frame(settings_workspace, padding=12)
         inventory_page = ttk.Frame(settings_workspace, padding=12)
+        device_tools_page = ttk.Frame(settings_workspace, padding=12)
         advanced_page = ttk.Frame(settings_workspace, padding=12)
         settings_workspace.add(connection_page, text="Master 연결")
         settings_workspace.add(inventory_page, text="원격 PC · CH")
+        settings_workspace.add(device_tools_page, text="장치 도구")
         settings_workspace.add(advanced_page, text="고급 정책")
+        self._build_device_tools_settings(device_tools_page)
 
         connection_page.columnconfigure(0, weight=1)
         profile = ttk.Labelframe(connection_page, text="설정 파일", padding=10)
@@ -950,6 +967,8 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
                     self._format_settings_variables(variables),
                 ),
             )
+        if hasattr(self, "device_target_combo"):
+            self._refresh_device_inventory()
 
     def _selected_settings_slave_index(self) -> int | None:
         selection = self.settings_slave_tree.selection()
@@ -1051,7 +1070,9 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
             "name",
             "slot",
             "com",
+            "baud",
             "soc",
+            "tool",
             "binary",
             "material",
             "test",
@@ -1063,7 +1084,9 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
             "name": "이름",
             "slot": "Slot",
             "com": "COM",
+            "baud": "Baud",
             "soc": "SoC",
+            "tool": "Downloader",
             "binary": "Binary",
             "material": "DRAM / Lot",
             "test": "현재 Test",
@@ -1074,7 +1097,9 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
             "name": 90,
             "slot": 70,
             "com": 70,
+            "baud": 80,
             "soc": 130,
+            "tool": 120,
             "binary": 160,
             "material": 170,
             "test": 120,
@@ -1102,6 +1127,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
                         channel.get("name", ""),
                         channel.get("slot_id", ""),
                         channel.get("com_port", ""),
+                        channel.get("baud_rate", 115200),
                         " ".join(
                             part
                             for part in (
@@ -1110,6 +1136,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
                             )
                             if part
                         ),
+                        channel.get("firmware_tool_id", ""),
                         " ".join(
                             part
                             for part in (
@@ -1214,57 +1241,111 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         *,
         parent: tk.Misc,
     ) -> dict[str, Any] | None:
-        fields = [
-            ("channel_id", "CH (없으면 비움)"),
-            ("name", "표시 이름"),
-            ("slot_id", "Slot ID"),
-            ("com_port", "COM"),
-            ("soc_vendor", "SoC Vendor"),
-            ("soc_model", "SoC Model"),
-            ("binary_name", "Binary 이름"),
-            ("binary_version", "Binary 버전"),
-            ("binary_source_path", "Binary 원본 폴더"),
-            ("binary_updated_at", "Binary 최신 시각"),
-            ("dram_part", "DRAM 자재"),
-            ("lot_id", "Lot"),
-            ("sample_id", "Sample"),
-            ("current_test", "현재 Test"),
-            ("sequence_name", "현재 SEQ"),
-            ("notes", "메모"),
-        ]
+        pages = {
+            "장치": [
+                ("channel_id", "CH (예: CH11)"),
+                ("name", "표시 이름"),
+                ("slot_id", "Slot ID"),
+                ("soc_vendor", "SoC Vendor"),
+                ("soc_model", "SoC Model"),
+            ],
+            "통신 · 전원": [
+                ("com_port", "Console COM"),
+                ("baud_rate", "Baud rate"),
+                ("firmware_port", "Download COM"),
+                ("firmware_tool_id", "Downloader 도구"),
+                ("download_identity", "USB Download 식별자"),
+                ("adb_executable", "ADB 실행 파일"),
+                ("adb_serial", "ADB Serial"),
+                ("power_on_command", "전원 ON 명령"),
+                ("power_off_command", "전원 OFF 명령"),
+                ("status_command", "상태 명령"),
+                ("preloader_exit_command", "MTK preloader 종료 명령"),
+            ],
+            "자재 · 시험": [
+                ("binary_name", "Binary 이름"),
+                ("binary_version", "Binary 버전"),
+                ("binary_source_path", "Binary 원본 폴더"),
+                ("binary_updated_at", "Binary 최신 시각"),
+                ("dram_part", "DRAM 자재"),
+                ("lot_id", "Lot"),
+                ("sample_id", "Sample"),
+                ("current_test", "현재 Test"),
+                ("sequence_name", "현재 SEQ"),
+                ("notes", "메모"),
+            ],
+        }
         dialog = tk.Toplevel(parent)
         dialog.title("CH 정보")
         dialog.transient(parent)
-        dialog.resizable(True, False)
-        for column in (1, 3):
-            dialog.columnconfigure(column, weight=1)
+        dialog.geometry("840x500")
+        dialog.minsize(720, 440)
+        dialog.columnconfigure(0, weight=1)
+        dialog.rowconfigure(0, weight=1)
         variables: dict[str, tk.StringVar] = {}
         result: dict[str, Any] | None = None
-        for index, (key, label) in enumerate(fields):
-            row = index // 2
-            pair = index % 2
-            label_column = pair * 2
-            entry_column = label_column + 1
-            ttk.Label(dialog, text=label).grid(
-                row=row,
-                column=label_column,
-                sticky="w",
-                padx=(12 if pair == 0 else 18, 6),
-                pady=6,
-            )
-            variable = tk.StringVar(value=str(initial.get(key, "") or ""))
-            variables[key] = variable
-            ttk.Entry(dialog, textvariable=variable, width=34).grid(
-                row=row,
-                column=entry_column,
-                sticky="ew",
-                padx=(0, 12),
-                pady=6,
-            )
+        notebook = ttk.Notebook(dialog)
+        notebook.grid(row=0, column=0, sticky="nsew", padx=12, pady=(12, 6))
+        tool_ids = [str(tool.get("id") or "") for tool in self._settings_device_tools]
+        for page_name, fields in pages.items():
+            page = ttk.Frame(notebook, padding=14)
+            notebook.add(page, text=page_name)
+            for column in (1, 3):
+                page.columnconfigure(column, weight=1)
+            for index, (key, label) in enumerate(fields):
+                row = index // 2
+                pair = index % 2
+                label_column = pair * 2
+                entry_column = label_column + 1
+                ttk.Label(page, text=label).grid(
+                    row=row,
+                    column=label_column,
+                    sticky="w",
+                    padx=(0 if pair == 0 else 18, 6),
+                    pady=7,
+                )
+                default = "115200" if key == "baud_rate" else "adb.exe" if key == "adb_executable" else ""
+                variable = tk.StringVar(value=str(initial.get(key, default) or default))
+                variables[key] = variable
+                if key == "soc_vendor":
+                    widget = ttk.Combobox(
+                        page,
+                        textvariable=variable,
+                        values=("qualcomm", "mediatek"),
+                        state="readonly",
+                    )
+                elif key == "firmware_tool_id":
+                    widget = ttk.Combobox(
+                        page,
+                        textvariable=variable,
+                        values=tool_ids,
+                        state="readonly" if tool_ids else "normal",
+                    )
+                else:
+                    widget = ttk.Entry(page, textvariable=variable)
+                widget.grid(row=row, column=entry_column, sticky="ew", pady=7)
+
+        adb_enabled = tk.BooleanVar(
+            value=bool(initial.get("adb_enabled", bool(initial.get("adb_serial"))))
+        )
+        adb_required = tk.BooleanVar(value=bool(initial.get("adb_required_after_update", False)))
+        communication_page = notebook.nametowidget(notebook.tabs()[1])
+        ttk.Checkbutton(
+            communication_page,
+            text="이 CH에서 ADB 사용",
+            variable=adb_enabled,
+        ).grid(row=6, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        ttk.Checkbutton(
+            communication_page,
+            text="Binary 업데이트 후 이 ADB 장치가 online이어야 성공",
+            variable=adb_required,
+        ).grid(row=6, column=2, columnspan=2, sticky="w", pady=(10, 0))
 
         def save() -> None:
             nonlocal result
             mapped = {key: variable.get().strip() for key, variable in variables.items()}
+            mapped["adb_enabled"] = adb_enabled.get()
+            mapped["adb_required_after_update"] = adb_required.get()
             mapped.update(
                 {
                     "state": str(initial.get("state") or "idle"),
@@ -1283,7 +1364,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
             dialog.destroy()
 
         controls = ttk.Frame(dialog, padding=(12, 8, 12, 12))
-        controls.grid(row=(len(fields) + 1) // 2, column=0, columnspan=4, sticky="e")
+        controls.grid(row=1, column=0, sticky="e")
         ttk.Button(controls, text="취소", command=dialog.destroy).pack(side="right")
         ttk.Button(controls, text="저장", command=save, style="Primary.TButton").pack(
             side="right", padx=(0, 6)
@@ -1391,38 +1472,51 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         ttk.Label(jobs, text="대상 PC").grid(row=0, column=0, sticky="w", padx=(0, 6), pady=3)
         self.job_target_var = tk.StringVar(value="all")
         ttk.Entry(jobs, textvariable=self.job_target_var).grid(row=0, column=1, sticky="ew", pady=3)
-        ttk.Label(jobs, text="SK Commander 런처").grid(row=1, column=0, sticky="w", padx=(0, 6), pady=3)
+        ttk.Label(jobs, text="SEQ 실행 방식").grid(row=1, column=0, sticky="w", padx=(0, 6), pady=3)
+        self.run_sequence_backend_var = tk.StringVar(value="직접 COM")
+        self.run_sequence_backend_combo = ttk.Combobox(
+            jobs,
+            textvariable=self.run_sequence_backend_var,
+            state="readonly",
+            values=("직접 COM", "SK Commander"),
+        )
+        self.run_sequence_backend_combo.grid(row=1, column=1, sticky="ew", pady=3)
+        self.run_sequence_backend_combo.bind(
+            "<<ComboboxSelected>>",
+            self._apply_sequence_backend_to_profiles,
+        )
+        ttk.Label(jobs, text="SK Commander 런처").grid(row=2, column=0, sticky="w", padx=(0, 6), pady=3)
         self.sequence_launcher_var = tk.StringVar(value="")
         self.sequence_launcher_combo = ttk.Combobox(
             jobs,
             textvariable=self.sequence_launcher_var,
             state="readonly",
         )
-        self.sequence_launcher_combo.grid(row=1, column=1, sticky="ew", pady=3)
-        ttk.Label(jobs, text="고급 인자").grid(row=2, column=0, sticky="w", padx=(0, 6), pady=3)
+        self.sequence_launcher_combo.grid(row=2, column=1, sticky="ew", pady=3)
+        ttk.Label(jobs, text="고급 인자").grid(row=3, column=0, sticky="w", padx=(0, 6), pady=3)
         self.job_args_var = tk.StringVar(value="")
-        ttk.Entry(jobs, textvariable=self.job_args_var).grid(row=2, column=1, sticky="ew", pady=3)
-        ttk.Label(jobs, text="입력값").grid(row=3, column=0, sticky="w", padx=(0, 6), pady=3)
+        ttk.Entry(jobs, textvariable=self.job_args_var).grid(row=3, column=1, sticky="ew", pady=3)
+        ttk.Label(jobs, text="입력값").grid(row=4, column=0, sticky="w", padx=(0, 6), pady=3)
         self.job_vars_var = tk.StringVar(value="")
-        ttk.Entry(jobs, textvariable=self.job_vars_var).grid(row=3, column=1, sticky="ew", pady=3)
-        ttk.Label(jobs, text="제한 시간(초)").grid(row=4, column=0, sticky="w", padx=(0, 6), pady=3)
+        ttk.Entry(jobs, textvariable=self.job_vars_var).grid(row=4, column=1, sticky="ew", pady=3)
+        ttk.Label(jobs, text="제한 시간(초)").grid(row=5, column=0, sticky="w", padx=(0, 6), pady=3)
         self.job_timeout_var = tk.StringVar(value="0")
-        ttk.Entry(jobs, textvariable=self.job_timeout_var, width=10).grid(row=4, column=1, sticky="w", pady=3)
+        ttk.Entry(jobs, textvariable=self.job_timeout_var, width=10).grid(row=5, column=1, sticky="w", pady=3)
         ttk.Button(jobs, text="선택 파일 전송", command=self._submit_selected_package, style="Primary.TButton").grid(
-            row=5,
+            row=6,
             column=0,
             sticky="ew",
             pady=(8, 0),
             padx=(0, 6),
         )
         ttk.Button(jobs, text="상태 규칙 1회", command=self._submit_selected_monitor).grid(
-            row=6,
+            row=7,
             column=1,
             sticky="w",
             pady=(6, 0),
         )
         job_more_button = ttk.Menubutton(jobs, text="더보기")
-        job_more_button.grid(row=5, column=1, sticky="w", pady=(8, 0))
+        job_more_button.grid(row=6, column=1, sticky="w", pady=(8, 0))
         job_more = tk.Menu(job_more_button, tearoff=False)
         job_more.add_command(label="전체 화면 요청", command=self._submit_screenshot)
         job_more.add_command(label="중단 신호 해제", command=self._clear_stop)
@@ -1442,11 +1536,24 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         ttk.Label(profile_toolbar, text="실행 대상").grid(
             row=0, column=0, sticky="w"
         )
+        ttk.Label(profile_toolbar, text="SEQ 방식").grid(row=0, column=1, padx=(8, 4))
+        self.run_sequence_backend_toolbar = ttk.Combobox(
+            profile_toolbar,
+            textvariable=self.run_sequence_backend_var,
+            state="readonly",
+            values=("직접 COM", "SK Commander"),
+            width=14,
+        )
+        self.run_sequence_backend_toolbar.grid(row=0, column=2, padx=(0, 5))
+        self.run_sequence_backend_toolbar.bind(
+            "<<ComboboxSelected>>",
+            self._apply_sequence_backend_to_profiles,
+        )
         ttk.Button(profile_toolbar, text="Rig 대상 불러오기", command=self._load_run_profiles_from_config).grid(
-            row=0, column=1, padx=(8, 5)
+            row=0, column=3, padx=(0, 5)
         )
         row_edit_button = ttk.Menubutton(profile_toolbar, text="행 편집")
-        row_edit_button.grid(row=0, column=2, padx=(0, 5))
+        row_edit_button.grid(row=0, column=4, padx=(0, 5))
         row_edit_menu = tk.Menu(row_edit_button, tearoff=False)
         row_edit_menu.add_command(label="대상 추가", command=self._add_run_profile_target)
         row_edit_menu.add_command(label="선택 행 복제", command=self._duplicate_run_profiles)
@@ -1457,7 +1564,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
             text="실행 시작",
             command=self._submit_run_profiles,
             style="Primary.TButton",
-        ).grid(row=0, column=3)
+        ).grid(row=0, column=5)
         self.run_profile_tree = ttk.Treeview(profiles, show="headings", height=8, selectmode="extended")
         self.run_profile_tree.grid(row=1, column=0, sticky="nsew")
         run_profile_scroll = ttk.Scrollbar(profiles, orient="vertical", command=self.run_profile_tree.yview)
@@ -2023,11 +2130,23 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
                     encoding="utf-8",
                 )
                 written.append(path)
+                rig_path = node_dir / "rig-commander.config.json"
+                rig_path.write_text(
+                    json.dumps(
+                        build_slave_rig_config(slave, config.device_tools),
+                        indent=2,
+                        ensure_ascii=True,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                written.append(rig_path)
         except BaseException as exc:
             self._show_error(exc)
             return
         self._append_master_log(
-            f"Exported {len(written)} slave info file(s). Copy RigFtpCommander.exe next to each rig-ftp.info."
+            f"Exported {len(written)} setup file(s). Copy AEWorkbench.exe next to rig-ftp.info and "
+            "rig-commander.config.json."
         )
         for path in written:
             self._append_master_log(f"  {path}")
@@ -2072,9 +2191,11 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         self.max_archive_var.set(str(config.max_archive_files))
         self.max_screens_var.set(str(config.max_screenshot_files))
         self._settings_variables = dict(config.variables)
+        self._settings_device_tools = [tool.to_mapping() for tool in config.device_tools]
         self._settings_slaves = [slave.to_mapping() for slave in config.slaves]
         self._refresh_settings_variables()
         self._refresh_settings_slaves()
+        self._refresh_device_inventory()
         if config.slaves:
             self.init_nodes_var.set(" ".join(slave.label() for slave in config.slaves))
         if not self.result_node_var.get().strip():
@@ -2107,6 +2228,9 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
             max_archive_files=int(self.max_archive_var.get() or "500"),
             max_screenshot_files=int(self.max_screens_var.get() or "20"),
             variables=dict(self._settings_variables),
+            device_tools=tuple(
+                DeviceToolInfo.from_mapping(item) for item in self._settings_device_tools
+            ),
             slaves=tuple(SlaveInfo.from_mapping(item) for item in self._settings_slaves),
             run_profiles=tuple(RunProfile.from_mapping(row) for row in self._run_profiles),
         )
@@ -2220,22 +2344,64 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         self._start_worker("Refreshing packages", worker)
 
     def _run_profile_variable_names(self) -> list[str]:
-        names: list[str] = []
+        priority = (
+            "channel",
+            "slot_id",
+            "sequence_backend",
+            "com_port",
+            "baud_rate",
+            "sequence_name",
+            "test_name",
+            "dram_part",
+            "lot_id",
+            "sample_id",
+            "campaign_attempt",
+            "launcher_package",
+        )
+        declared: list[str] = []
         package = self._selected_package() if hasattr(self, "package_list") else None
         for name in (package.variables if package else {}):
-            if name not in names:
-                names.append(name)
+            if name not in declared:
+                declared.append(name)
         for row in self._run_profiles:
             row_package = next(
                 (item for item in self._packages if item.name == str(row.get("package", ""))),
                 None,
             )
             for name in (row_package.variables if row_package else {}):
-                if name not in names:
-                    names.append(name)
+                if name not in declared:
+                    declared.append(name)
+        available = set(declared)
+        for row in self._run_profiles:
             for name in row.get("variables", {}):
-                if name not in names:
-                    names.append(name)
+                if name in priority or name in declared:
+                    available.add(name)
+        has_sequence = bool(package and package.runner == "sequence") or any(
+            item.runner == "sequence"
+            for row in self._run_profiles
+            for item in self._packages
+            if item.name == str(row.get("package", ""))
+        )
+        if has_sequence:
+            available.add("sequence_backend")
+        backend_values = [
+            str(row.get("variables", {}).get("sequence_backend", ""))
+            for row in self._run_profiles
+        ] or [self.run_sequence_backend_var.get() if hasattr(self, "run_sequence_backend_var") else ""]
+        show_launcher = False
+        for value in backend_values:
+            try:
+                backend_mode = self._normalize_sequence_backend(value)
+            except FtpSpoolError:
+                show_launcher = True
+                break
+            if backend_mode in {"auto", "sk_commander"}:
+                show_launcher = True
+                break
+        if not show_launcher:
+            available.discard("launcher_package")
+        names = [name for name in priority if name in available]
+        names.extend(name for name in declared if name in available and name not in names)
         return names
 
     def _refresh_run_profile_columns(self) -> None:
@@ -2250,7 +2416,14 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
                 package,
             )
             for name in variable_names:
-                variables.setdefault(name, row_package.variables.get(name, "") if row_package else "")
+                default_value = row_package.variables.get(name, "") if row_package else ""
+                if name == "sequence_backend" and not default_value:
+                    default_value = self._normalize_sequence_backend(
+                        self.run_sequence_backend_var.get()
+                    )
+                variables.setdefault(name, default_value)
+                if name == "sequence_backend" and not str(variables[name]).strip():
+                    variables[name] = default_value
         columns = ("enabled", "alias", "target", "package", *[f"var::{name}" for name in variable_names])
         self.run_profile_tree.configure(columns=columns)
         base_headings = {"enabled": "실행", "alias": "별명", "target": "PC / Node", "package": "SEQ / 매크로"}
@@ -2258,16 +2431,33 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         variable_headings = {
             "channel": "CH",
             "slot_id": "슬롯",
+            "sequence_backend": "SEQ 방식",
+            "com_port": "COM",
+            "baud_rate": "Baud",
             "launcher_package": "SK Commander 런처",
             "campaign_id": "캠페인 ID",
             "campaign_title": "캠페인",
             "campaign_attempt": "시도",
         }
+        variable_widths = {
+            "channel": 72,
+            "slot_id": 68,
+            "sequence_backend": 108,
+            "com_port": 82,
+            "baud_rate": 88,
+            "sequence_name": 160,
+            "test_name": 145,
+            "dram_part": 130,
+            "lot_id": 100,
+            "sample_id": 110,
+            "campaign_attempt": 64,
+            "launcher_package": 160,
+        }
         for column in columns:
             if column.startswith("var::"):
                 variable_name = column.removeprefix("var::")
                 heading = variable_headings.get(variable_name, variable_name)
-                width = 150
+                width = variable_widths.get(variable_name, 150)
             else:
                 heading = base_headings[column]
                 width = base_widths[column]
@@ -2287,7 +2477,11 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
                 if column == "enabled":
                     values.append("✓" if row.get("enabled", True) else "")
                 elif column.startswith("var::"):
-                    values.append(str(row.get("variables", {}).get(column.removeprefix("var::"), "")))
+                    variable_name = column.removeprefix("var::")
+                    value = str(row.get("variables", {}).get(variable_name, ""))
+                    if variable_name == "sequence_backend":
+                        value = self._sequence_backend_label(value)
+                    values.append(value)
                 else:
                     values.append(str(row.get(column, "")))
             iid = str(index)
@@ -2302,9 +2496,84 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
     def _profile_base_variables(self, package: PackageInfo | None) -> dict[str, str]:
         variables = dict(package.variables if package else {})
         variables.update(self._parse_vars(self.job_vars_var.get()))
-        if package and package.runner == "sequence" and not variables.get("launcher_package"):
-            variables["launcher_package"] = self.sequence_launcher_var.get().strip()
+        if package and package.runner == "sequence":
+            variables["sequence_backend"] = self._normalize_sequence_backend(
+                self.run_sequence_backend_var.get()
+            )
+            if not variables.get("launcher_package"):
+                variables["launcher_package"] = self.sequence_launcher_var.get().strip()
         return variables
+
+    @staticmethod
+    def _normalize_sequence_backend(value: str) -> str:
+        normalized = str(value or "").strip().casefold().replace("-", "_")
+        if normalized in {"serial", "direct", "direct_com", "com", "직접 com", "직접com"}:
+            return "serial"
+        if normalized in {"sk", "sk_commander", "sk commander", "launcher"}:
+            return "sk_commander"
+        if normalized in {"", "auto", "자동", "자동 선택"}:
+            return "auto"
+        raise FtpSpoolError(f"지원하지 않는 SEQ 실행 방식입니다: {value}")
+
+    @classmethod
+    def _sequence_backend_label(cls, value: str) -> str:
+        try:
+            normalized = cls._normalize_sequence_backend(value)
+        except FtpSpoolError:
+            return str(value)
+        return {
+            "serial": "직접 COM",
+            "sk_commander": "SK Commander",
+            "auto": "자동 선택",
+        }[normalized]
+
+    def _apply_sequence_backend_to_profiles(self, _event: Any = None) -> None:
+        try:
+            backend_mode = self._normalize_sequence_backend(self.run_sequence_backend_var.get())
+        except FtpSpoolError as exc:
+            self._show_error(exc)
+            return
+        selected = {
+            int(iid)
+            for iid in self.run_profile_tree.selection()
+            if str(iid).isdigit()
+        } if hasattr(self, "run_profile_tree") else set()
+        candidate_indexes = selected or set(range(len(self._run_profiles)))
+        changed = 0
+        for index in candidate_indexes:
+            if not 0 <= index < len(self._run_profiles):
+                continue
+            row = self._run_profiles[index]
+            package = next(
+                (item for item in self._packages if item.name == str(row.get("package", ""))),
+                None,
+            )
+            if package is not None and package.runner != "sequence":
+                continue
+            row.setdefault("variables", {})["sequence_backend"] = backend_mode
+            if backend_mode == "sk_commander" and not row["variables"].get("launcher_package"):
+                row["variables"]["launcher_package"] = self.sequence_launcher_var.get().strip()
+            changed += 1
+        if changed:
+            self._refresh_run_profile_columns()
+
+    def _prepare_sequence_execution(self, variables: dict[str, str]) -> tuple[str, str]:
+        launcher_name = str(variables.get("launcher_package", "")).strip()
+        launcher_name = launcher_name or self.sequence_launcher_var.get().strip()
+        backend_mode = self._normalize_sequence_backend(
+            variables.get("sequence_backend", "") or self.run_sequence_backend_var.get()
+        )
+        if backend_mode == "auto":
+            backend_mode = "serial" if variables.get("com_port", "").strip() else "sk_commander"
+        if backend_mode == "serial":
+            if not str(variables.get("com_port", "")).strip():
+                channel = variables.get("channel") or variables.get("slot_id") or "대상 CH"
+                raise FtpSpoolError(f"{channel}: 직접 COM 실행에는 COM 포트가 필요합니다.")
+        else:
+            self._require_sequence_launcher(launcher_name)
+        variables["sequence_backend"] = backend_mode
+        variables["launcher_package"] = launcher_name
+        return backend_mode, launcher_name
 
     def _require_sequence_launcher(self, launcher_name: str) -> PackageInfo:
         launcher = next((item for item in self._packages if item.name == launcher_name), None)
@@ -2437,8 +2706,13 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
             "channel": channel.channel_id or channel.name,
             "slot_id": channel.slot_id,
             "com_port": channel.com_port,
+            "baud_rate": str(channel.baud_rate),
             "soc_vendor": channel.soc_vendor,
             "soc_model": channel.soc_model,
+            "firmware_tool_id": channel.firmware_tool_id,
+            "download_identity": channel.download_identity,
+            "adb_serial": channel.adb_serial,
+            "adb_enabled": "true" if channel.adb_enabled else "false",
             "binary_name": channel.binary_name,
             "binary_version": channel.binary_version,
             "binary_source_path": channel.binary_source_path,
@@ -2526,7 +2800,17 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
             key = column
             current = str(row.get(key, ""))
             prompt = {"alias": "별명", "target": "PC / Node", "package": "매크로 파일"}.get(key, key)
-        value = simpledialog.askstring("실행표 값 변경", prompt, initialvalue=current, parent=self)
+        if column == "var::sequence_backend":
+            use_serial = messagebox.askyesnocancel(
+                "SEQ 실행 방식",
+                "직접 COM으로 실행하려면 [예], SK Commander로 실행하려면 [아니오]를 누르세요.",
+                parent=self,
+            )
+            if use_serial is None:
+                return "break"
+            value = "serial" if use_serial else "sk_commander"
+        else:
+            value = simpledialog.askstring("실행표 값 변경", prompt, initialvalue=current, parent=self)
         if value is None:
             return "break"
         if column.startswith("var::"):
@@ -2544,6 +2828,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
                 raise FtpSpoolError("실행할 PC 행을 추가하고 실행 열을 체크하세요.")
             args = shlex.split(self.job_args_var.get(), posix=False) if self.job_args_var.get().strip() else []
             timeout = float(self.job_timeout_var.get() or "0")
+            direct_counts: dict[tuple[str, str, str], int] = {}
             for row in rows:
                 if not str(row.get("target", "")).strip() or not str(row.get("package", "")).strip():
                     raise FtpSpoolError("모든 실행 행에 PC / Node와 매크로를 입력하세요.")
@@ -2554,35 +2839,80 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
                 if package is None:
                     raise FtpSpoolError(f"업로드 목록에 없는 파일입니다: {row['package']}")
                 if package.runner == "sequence":
-                    launcher_name = str(row.get("variables", {}).get("launcher_package", "")).strip()
-                    launcher_name = launcher_name or self.sequence_launcher_var.get().strip()
-                    self._require_sequence_launcher(launcher_name)
-                    row.setdefault("variables", {})["launcher_package"] = launcher_name
+                    backend_mode, _launcher_name = self._prepare_sequence_execution(
+                        row.setdefault("variables", {})
+                    )
                     self._apply_campaign_package_variables(package, row["variables"])
+                    if backend_mode == "serial":
+                        group_key = (
+                            str(row["target"]),
+                            str(row["variables"].get("campaign_id", "")),
+                            str(row["variables"].get("campaign_attempt", "1")),
+                        )
+                        direct_counts[group_key] = direct_counts.get(group_key, 0) + 1
+            oversized = next((key for key, count in direct_counts.items() if count > 4), None)
+            if oversized is not None:
+                raise FtpSpoolError(
+                    f"{oversized[0]}의 같은 캠페인/시도 직접 COM 행은 최대 4개까지 동시 실행합니다."
+                )
         except BaseException as exc:
             self._show_error(exc)
             return
 
         def worker() -> None:
             submitted: list[str] = []
+            direct_groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
             for row in rows:
                 package = next(
                     (item for item in self._packages if item.name == str(row["package"])),
                     None,
                 )
+                variables = {
+                    str(key): str(value) for key, value in row.get("variables", {}).items()
+                }
+                if package and package.runner == "sequence" and variables.get("sequence_backend") == "serial":
+                    group_key = (
+                        str(row["target"]),
+                        variables.get("campaign_id", ""),
+                        variables.get("campaign_attempt", "1"),
+                    )
+                    direct_groups.setdefault(group_key, []).append(
+                        {
+                            "package": str(row["package"]),
+                            "sequence_backend": "serial",
+                            "variables": variables,
+                        }
+                    )
+                    continue
                 job = SpoolJob.create(
                     kind=package_job_kind(package) if package else "python",
                     payload={
                         "package": str(row["package"]),
                         "launcher_package": str(row.get("variables", {}).get("launcher_package", "")),
+                        "sequence_backend": str(row.get("variables", {}).get("sequence_backend", "")),
                         "args": args,
                         "timeout_seconds": timeout,
                         "pass_variables": bool(package and package.runner == "python" and package.variables),
                     },
-                    variables={str(key): str(value) for key, value in row.get("variables", {}).items()},
+                    variables=variables,
                 )
                 submitted.extend(submit_job(backend, job, [str(row["target"])]))
-            self._queue.put(("log", f"Submitted {len(rows)} PC-specific macro job(s): {', '.join(submitted)}"))
+            for (target, _campaign_id, _attempt), runs in direct_groups.items():
+                batch_job = SpoolJob.create(
+                    kind="sequence_batch",
+                    payload={
+                        "runs": runs,
+                        "timeout_seconds": timeout,
+                    },
+                )
+                submitted.extend(submit_job(backend, batch_job, [target]))
+            self._queue.put(
+                (
+                    "log",
+                    f"Submitted {len(rows)} PC/CH run(s) as {len(submitted)} job(s): "
+                    f"{', '.join(submitted)}",
+                )
+            )
 
         self._start_worker("Submitting PC-specific run table", worker)
 
@@ -2635,16 +2965,16 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         variables = self._parse_vars(self.job_vars_var.get())
         targets = self._targets(self.job_target_var.get(), config=_config) or ["all"]
         launcher_name = ""
+        sequence_backend = ""
         if package.runner == "sequence":
-            launcher_name = variables.get("launcher_package", "") or self.sequence_launcher_var.get().strip()
-            self._require_sequence_launcher(launcher_name)
-            variables["launcher_package"] = launcher_name
+            sequence_backend, launcher_name = self._prepare_sequence_execution(variables)
             self._apply_campaign_package_variables(package, variables)
         job = SpoolJob.create(
             kind=package_job_kind(package),
             payload={
                 "package": package.name,
                 "launcher_package": launcher_name,
+                "sequence_backend": sequence_backend,
                 "args": args,
                 "timeout_seconds": timeout,
                 "pass_variables": bool(package.runner == "python" and package.variables),
@@ -3993,6 +4323,8 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
                 kind, payload = self._queue.get_nowait()
             except queue.Empty:
                 break
+            if self._handle_device_queue(kind, payload):
+                continue
             if self._handle_workbench_queue(kind, payload):
                 continue
             if kind == "log":

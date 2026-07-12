@@ -111,6 +111,27 @@ def test_cli_firmware_flash_dry_run_prints_downloader_script(tmp_path, capsys) -
     assert "C:\\fw\\firmware.xml" in output
 
 
+def test_cli_legacy_firmware_execution_is_blocked(tmp_path, capsys) -> None:
+    path = tmp_path / "rigs.json"
+    rig_cli.main(["init-config", "-o", str(path)])
+
+    code = rig_cli.main(
+        [
+            "-c",
+            str(path),
+            "firmware",
+            "flash",
+            "--target",
+            "rig-pc-01:ch1",
+            "--xml",
+            "C:\\fw\\firmware.xml",
+        ]
+    )
+
+    assert code == 2
+    assert "device preflight" in capsys.readouterr().err
+
+
 def test_interactive_loop_shows_help_and_exits(monkeypatch, capsys) -> None:
     commands = iter(["help", "exit"])
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(commands))

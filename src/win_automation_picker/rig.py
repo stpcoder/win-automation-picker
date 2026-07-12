@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+import hashlib
 import json
 import platform
 from pathlib import Path
@@ -21,6 +22,27 @@ class RigExecutionError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class AdbConfig:
+    enabled: bool = False
+    executable: str = "adb"
+    serial: str = ""
+    required_after_update: bool = False
+    timeout_seconds: float = 45.0
+
+    @classmethod
+    def from_mapping(cls, data: dict[str, Any] | None) -> "AdbConfig":
+        if not data:
+            return cls()
+        return cls(
+            enabled=bool(data.get("enabled", True)),
+            executable=_clean(data.get("executable")) or "adb",
+            serial=_clean(data.get("serial")),
+            required_after_update=bool(data.get("required_after_update", False)),
+            timeout_seconds=max(1.0, float(data.get("timeout_seconds", 45.0))),
+        )
+
+
+@dataclass(frozen=True)
 class SerialPortConfig:
     id: str
     port: str
@@ -31,6 +53,11 @@ class SerialPortConfig:
     read_window_ms: int = 800
     commands: dict[str, str] = field(default_factory=dict)
     firmware_port: str = ""
+    soc_vendor: str = ""
+    soc_model: str = ""
+    firmware_tool_id: str = ""
+    download_identity: str = ""
+    adb: AdbConfig = field(default_factory=AdbConfig)
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> "SerialPortConfig":
@@ -45,22 +72,36 @@ class SerialPortConfig:
         if not isinstance(commands, dict):
             raise RigConfigError(f"Serial port {port_id!r} commands must be an object.")
 
+        baud = int(data.get("baud", 115200))
+        if baud < 1 or baud > 4_000_000:
+            raise RigConfigError(f"Serial port {port_id!r} baud must be between 1 and 4000000.")
+
         return cls(
             id=port_id,
             port=port_name,
-            baud=int(data.get("baud", 115200)),
+            baud=baud,
             newline=_decode_newline(str(data.get("newline", "\r\n"))),
             read_timeout_ms=int(data.get("read_timeout_ms", 1000)),
             write_timeout_ms=int(data.get("write_timeout_ms", 1000)),
             read_window_ms=int(data.get("read_window_ms", 800)),
             commands={str(key): str(value) for key, value in commands.items()},
             firmware_port=_clean(data.get("firmware_port")),
+            soc_vendor=_normalize_vendor(data.get("soc_vendor") or data.get("vendor")),
+            soc_model=_clean(data.get("soc_model") or data.get("soc")),
+            firmware_tool_id=_clean(data.get("firmware_tool_id") or data.get("tool_id")),
+            download_identity=_clean(data.get("download_identity")),
+            adb=AdbConfig.from_mapping(data.get("adb")),
         )
 
 
 @dataclass(frozen=True)
 class FirmwareToolConfig:
     executable: str
+    id: str = "default"
+    vendor: str = ""
+    execution_enabled: bool = False
+    cli_evidence_ref: str = ""
+    allowed_modes: tuple[str, ...] = ("download-only",)
     arguments: tuple[str, ...] = (
         "--xml",
         "{xml}",
@@ -77,7 +118,12 @@ class FirmwareToolConfig:
     failure_markers: tuple[str, ...] = ()
 
     @classmethod
-    def from_mapping(cls, data: dict[str, Any] | None) -> "FirmwareToolConfig | None":
+    def from_mapping(
+        cls,
+        data: dict[str, Any] | None,
+        *,
+        default_id: str = "default",
+    ) -> "FirmwareToolConfig | None":
         if not data:
             return None
         executable = _clean(data.get("executable"))
@@ -89,12 +135,24 @@ class FirmwareToolConfig:
         mode_values = data.get("mode_values") or {}
         if not isinstance(mode_values, dict):
             raise RigConfigError("Firmware config 'mode_values' must be an object.")
+        allowed_modes = data.get("allowed_modes", ["download-only"])
+        if not isinstance(allowed_modes, list):
+            raise RigConfigError("Firmware config 'allowed_modes' must be a list.")
         return cls(
             executable=executable,
+            id=_clean(data.get("id")) or default_id,
+            vendor=_normalize_vendor(data.get("vendor") or data.get("soc_vendor")),
+            execution_enabled=bool(data.get("execution_enabled", False)),
+            cli_evidence_ref=_clean(data.get("cli_evidence_ref")),
+            allowed_modes=tuple(str(item) for item in allowed_modes),
             arguments=tuple(str(item) for item in arguments),
             working_dir=_clean(data.get("working_dir")),
             timeout_seconds=float(data.get("timeout_seconds", 1800.0)),
-            mode_values={str(key): str(value) for key, value in mode_values.items()},
+            mode_values={
+                str(key): str(value)
+                for key, value in mode_values.items()
+                if str(value).strip()
+            },
             success_exit_codes=tuple(int(item) for item in data.get("success_exit_codes", [0])),
             success_markers=tuple(str(item) for item in data.get("success_markers", [])),
             failure_markers=tuple(str(item) for item in data.get("failure_markers", [])),
@@ -113,6 +171,7 @@ class HostConfig:
     tags: tuple[str, ...] = ()
     ports: tuple[SerialPortConfig, ...] = ()
     firmware: FirmwareToolConfig | None = None
+    firmware_tools: tuple[FirmwareToolConfig, ...] = ()
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> "HostConfig":
@@ -126,6 +185,22 @@ class HostConfig:
         tags = data.get("tags") or []
         if not isinstance(tags, list):
             raise RigConfigError(f"Host {host_id!r} tags must be a list.")
+        tools = data.get("firmware_tools") or []
+        if not isinstance(tools, list):
+            raise RigConfigError(f"Host {host_id!r} firmware_tools must be a list.")
+        parsed_tools = tuple(
+            tool
+            for index, item in enumerate(tools)
+            if isinstance(item, dict)
+            for tool in [FirmwareToolConfig.from_mapping(item, default_id=f"tool-{index + 1}")]
+            if tool is not None
+        )
+        tool_ids = [tool.id for tool in parsed_tools]
+        duplicate_tools = sorted({tool_id for tool_id in tool_ids if tool_ids.count(tool_id) > 1})
+        if duplicate_tools:
+            raise RigConfigError(
+                f"Host {host_id!r} has duplicate firmware tool ids: {', '.join(duplicate_tools)}"
+            )
 
         return cls(
             id=host_id,
@@ -135,6 +210,7 @@ class HostConfig:
             tags=tuple(str(item) for item in tags),
             ports=tuple(SerialPortConfig.from_mapping(item) for item in ports),
             firmware=FirmwareToolConfig.from_mapping(data.get("firmware")),
+            firmware_tools=parsed_tools,
         )
 
     def port_by_id(self, port_id: str) -> SerialPortConfig:
@@ -154,6 +230,23 @@ class HostConfig:
             platform.node().casefold(),
         }
         return self.transport.casefold() == "local" or address in local_names
+
+    def firmware_for_port(self, port: SerialPortConfig) -> FirmwareToolConfig | None:
+        if port.firmware_tool_id:
+            for tool in self.firmware_tools:
+                if tool.id.casefold() == port.firmware_tool_id.casefold():
+                    return tool
+            if self.firmware and self.firmware.id.casefold() == port.firmware_tool_id.casefold():
+                return self.firmware
+            raise RigConfigError(
+                f"Target {self.id}:{port.id} references unknown firmware tool "
+                f"{port.firmware_tool_id!r}."
+            )
+        if self.firmware is not None:
+            return self.firmware
+        if len(self.firmware_tools) == 1:
+            return self.firmware_tools[0]
+        return None
 
 
 @dataclass(frozen=True)
@@ -260,6 +353,58 @@ class FirmwareManifest:
         }
 
 
+@dataclass(frozen=True)
+class DevicePreflightCheck:
+    id: str
+    ok: bool
+    detail: str
+
+    def to_mapping(self) -> dict[str, Any]:
+        return {"id": self.id, "ok": self.ok, "detail": self.detail}
+
+
+@dataclass(frozen=True)
+class DevicePreflightReport:
+    target: str
+    vendor: str
+    soc_model: str
+    mode: str
+    tool_id: str
+    expected_format_confirmation: str
+    checks: tuple[DevicePreflightCheck, ...]
+
+    @property
+    def ready(self) -> bool:
+        return all(check.ok for check in self.checks)
+
+    def to_mapping(self) -> dict[str, Any]:
+        return {
+            "target": self.target,
+            "vendor": self.vendor,
+            "soc_model": self.soc_model,
+            "mode": self.mode,
+            "tool_id": self.tool_id,
+            "ready": self.ready,
+            "expected_format_confirmation": self.expected_format_confirmation,
+            "checks": [check.to_mapping() for check in self.checks],
+        }
+
+    def render(self) -> str:
+        lines = [
+            f"Device update preflight: {'READY' if self.ready else 'BLOCKED'}",
+            f"Target: {self.target}",
+            f"SoC: {(self.vendor or 'unknown').upper()} {self.soc_model}".rstrip(),
+            f"Mode: {self.mode}",
+            f"Tool: {self.tool_id or '(missing)'}",
+            "",
+        ]
+        lines.extend(
+            f"[{'OK' if check.ok else 'BLOCK'}] {check.id}: {check.detail}"
+            for check in self.checks
+        )
+        return "\n".join(lines)
+
+
 def example_config() -> dict[str, Any]:
     return {
         "default_timeout_seconds": 12,
@@ -270,7 +415,11 @@ def example_config() -> dict[str, Any]:
                 "transport": "powershell",
                 "tags": ["line-a"],
                 "firmware": {
+                    "id": "legacy-default",
                     "executable": "C:\\Tools\\FirmwareDownloader\\FirmwareDownload.exe",
+                    "execution_enabled": False,
+                    "cli_evidence_ref": "",
+                    "allowed_modes": ["download-only"],
                     "working_dir": "C:\\Tools\\FirmwareDownloader",
                     "arguments": ["--xml", "{xml}", "--port", "{port}", "--mode", "{mode}"],
                     "mode_values": {
@@ -282,12 +431,47 @@ def example_config() -> dict[str, Any]:
                     "success_markers": ["Download OK"],
                     "failure_markers": ["FAIL", "ERROR"],
                 },
+                "firmware_tools": [
+                    {
+                        "id": "qc-downloader",
+                        "vendor": "qualcomm",
+                        "executable": "C:\\Tools\\Qualcomm\\VendorDownload.exe",
+                        "execution_enabled": False,
+                        "cli_evidence_ref": "docs/vendor-cli/qc-downloader.md",
+                        "allowed_modes": ["download-only"],
+                        "arguments": ["--xml", "{xml}", "--port", "{port}", "--mode", "{mode}"],
+                        "mode_values": {"download-only": "download_only"},
+                        "success_markers": ["Download OK"],
+                        "failure_markers": ["FAIL", "ERROR"],
+                    },
+                    {
+                        "id": "mtk-downloader",
+                        "vendor": "mediatek",
+                        "executable": "C:\\Tools\\MediaTek\\VendorDownload.exe",
+                        "execution_enabled": False,
+                        "cli_evidence_ref": "docs/vendor-cli/mtk-downloader.md",
+                        "allowed_modes": ["download-only", "format-all-download"],
+                        "arguments": ["--xml", "{xml}", "--port", "{port}", "--mode", "{mode}"],
+                        "success_markers": ["Download OK"],
+                        "failure_markers": ["FAIL", "ERROR"],
+                    },
+                ],
                 "ports": [
                     {
                         "id": "ch1",
                         "port": "COM3",
                         "firmware_port": "COM3",
                         "baud": 115200,
+                        "soc_vendor": "qualcomm",
+                        "soc_model": "SM8850",
+                        "firmware_tool_id": "qc-downloader",
+                        "download_identity": "VID_05C6&PID_9008",
+                        "adb": {
+                            "enabled": True,
+                            "executable": "adb.exe",
+                            "serial": "QC-CH1",
+                            "required_after_update": True
+                        },
                         "newline": "\r\n",
                         "read_timeout_ms": 1000,
                         "write_timeout_ms": 1000,
@@ -304,11 +488,16 @@ def example_config() -> dict[str, Any]:
                         "port": "COM4",
                         "firmware_port": "COM4",
                         "baud": 115200,
+                        "soc_vendor": "mediatek",
+                        "soc_model": "MTK25D",
+                        "firmware_tool_id": "mtk-downloader",
+                        "download_identity": "MediaTek PreLoader USB VCOM",
                         "commands": {
                             "status": "STATUS",
                             "power_on": "POWER ON",
                             "power_off": "POWER OFF",
                             "reset": "RESET",
+                            "preloader_exit": "exit",
                         },
                     },
                 ],
@@ -583,6 +772,329 @@ def inspect_firmware_manifest(path: str | Path) -> FirmwareManifest:
     return FirmwareManifest(path=str(xml_path), files=tuple(files))
 
 
+def build_device_preflight_report(
+    target: SerialTarget,
+    *,
+    xml_path: str,
+    mode: str,
+    expected_xml_sha256: str = "",
+    physical_switch_confirmed: bool = False,
+    preloader_exit_confirmed: bool = False,
+    format_confirmation: str = "",
+) -> DevicePreflightReport:
+    tool = target.host.firmware_for_port(target.port)
+    vendor = target.port.soc_vendor
+    checks: list[DevicePreflightCheck] = []
+
+    def add(check_id: str, ok: bool, detail: str) -> None:
+        checks.append(DevicePreflightCheck(check_id, bool(ok), detail))
+
+    add(
+        "vendor",
+        vendor in {"qualcomm", "mediatek"},
+        f"Configured vendor: {vendor or '(missing)'}.",
+    )
+    add("soc_model", bool(target.port.soc_model), f"Configured SoC: {target.port.soc_model or '(missing)' }.")
+    add("serial_port", bool(target.port.port), f"{target.port.port or '(missing)'} @ {target.port.baud} baud.")
+    add("tool_profile", tool is not None, "A channel-specific downloader profile is selected.")
+
+    tool_id = tool.id if tool else ""
+    if tool is not None:
+        add(
+            "tool_vendor",
+            not tool.vendor or not vendor or tool.vendor == vendor,
+            f"Tool vendor {tool.vendor or 'any'} / channel vendor {vendor or '(missing)' }.",
+        )
+        add(
+            "execution_allowlist",
+            tool.execution_enabled,
+            "Downloader execution is explicitly enabled." if tool.execution_enabled else "Execution is disabled in the tool profile.",
+        )
+        add(
+            "cli_evidence",
+            bool(tool.cli_evidence_ref),
+            f"CLI evidence: {tool.cli_evidence_ref or '(missing)'}.",
+        )
+        add(
+            "result_rules",
+            bool(tool.success_markers) and bool(tool.failure_markers),
+            "Success and failure text rules are configured."
+            if tool.success_markers and tool.failure_markers
+            else "Configure at least one success marker and one failure marker.",
+        )
+        add(
+            "mode_allowlist",
+            mode in tool.allowed_modes,
+            f"Allowed modes: {', '.join(tool.allowed_modes) or '(none)'}.",
+        )
+        if target.host.is_local():
+            add(
+                "tool_path",
+                Path(tool.executable).expanduser().is_file(),
+                f"Downloader: {tool.executable}.",
+            )
+        else:
+            add("tool_path", True, "Downloader path will be checked on the target PC.")
+
+    normalized_sha256 = expected_xml_sha256.strip().casefold()
+    local_xml = target.host.is_local()
+    xml_file = Path(xml_path).expanduser()
+    if local_xml:
+        add("xml_path", xml_file.is_file(), f"XML: {xml_file}.")
+        if xml_file.is_file() and normalized_sha256:
+            actual_sha256 = _sha256_file(xml_file)
+            add(
+                "xml_sha256",
+                actual_sha256 == normalized_sha256,
+                f"Expected {normalized_sha256}; actual {actual_sha256}.",
+            )
+        elif normalized_sha256:
+            add("xml_sha256", False, "XML hash cannot be checked because the file is missing.")
+        if xml_file.is_file():
+            manifest = inspect_firmware_manifest(xml_file)
+            missing = _missing_manifest_files(xml_file, manifest)
+            add(
+                "manifest_files",
+                not missing,
+                "All referenced image files are present."
+                if not missing
+                else f"Missing referenced files: {', '.join(missing[:8])}.",
+            )
+    else:
+        add("xml_path", bool(xml_path), "XML path will be checked on the target PC.")
+        if normalized_sha256:
+            add("xml_sha256", True, "XML SHA-256 will be checked on the target PC.")
+
+    if vendor == "qualcomm":
+        add(
+            "qc_physical_switch",
+            physical_switch_confirmed,
+            "Operator confirmed the physical download/EDL switch."
+            if physical_switch_confirmed
+            else "Physically hold/set the Qualcomm download switch, then confirm it.",
+        )
+    elif vendor == "mediatek":
+        add(
+            "mtk_preloader_exit",
+            preloader_exit_confirmed,
+            "MTK preloader exit was confirmed."
+            if preloader_exit_confirmed
+            else "Run or manually confirm the proven preloader exit procedure.",
+        )
+
+    expected_confirmation = f"FORMAT {target.label()}"
+    if mode == "format-all-download":
+        add(
+            "format_confirmation",
+            format_confirmation == expected_confirmation,
+            f"Type exactly: {expected_confirmation}",
+        )
+
+    if target.port.adb.enabled or target.port.adb.required_after_update:
+        add(
+            "adb_target",
+            bool(target.port.adb.serial),
+            f"ADB serial: {target.port.adb.serial or '(missing)'}. Multiple-device runs must use a fixed serial.",
+        )
+
+    return DevicePreflightReport(
+        target=target.label(),
+        vendor=vendor,
+        soc_model=target.port.soc_model,
+        mode=mode,
+        tool_id=tool_id,
+        expected_format_confirmation=expected_confirmation,
+        checks=tuple(checks),
+    )
+
+
+def build_device_probe_script(
+    target: SerialTarget,
+    *,
+    phase: str = "normal",
+    xml_path: str = "",
+    expected_xml_sha256: str = "",
+) -> str:
+    if phase not in {"normal", "download", "post"}:
+        raise RigConfigError(f"Unknown device probe phase: {phase!r}.")
+    tool = target.host.firmware_for_port(target.port)
+    lines = [
+        "$ErrorActionPreference = 'Stop'",
+        f"$targetLabel = {_ps_quote(target.label())}",
+        f"$expectedPort = {_ps_quote(target.port.port)}",
+        "$ports = [System.IO.Ports.SerialPort]::GetPortNames()",
+        "if ($ports -notcontains $expectedPort) { throw \"Configured COM port is not present: $expectedPort\" }",
+        "Write-Output \"CHECK COM OK $expectedPort\"",
+    ]
+    if phase == "download":
+        if tool is None:
+            lines.append("throw 'No downloader tool profile is configured.'")
+        else:
+            lines.extend(
+                [
+                    f"$downloader = {_ps_quote(tool.executable)}",
+                    "if (-not (Test-Path -LiteralPath $downloader -PathType Leaf)) { throw \"Downloader not found: $downloader\" }",
+                    "Write-Output \"CHECK TOOL OK $downloader\"",
+                ]
+            )
+        lines.extend(
+            [
+                f"$xml = {_ps_quote(xml_path)}",
+                "if (-not (Test-Path -LiteralPath $xml -PathType Leaf)) { throw \"Firmware XML not found: $xml\" }",
+                "Write-Output \"CHECK XML OK $xml\"",
+            ]
+        )
+        if expected_xml_sha256.strip():
+            lines.extend(
+                [
+                    f"$expectedHash = {_ps_quote(expected_xml_sha256.strip().upper())}",
+                    "$actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $xml).Hash.ToUpperInvariant()",
+                    "if ($actualHash -ne $expectedHash) { throw \"Firmware XML SHA-256 mismatch: $actualHash\" }",
+                    "Write-Output \"CHECK HASH OK $actualHash\"",
+                ]
+            )
+        if target.port.download_identity:
+            lines.extend(
+                [
+                    f"$identity = {_ps_quote(target.port.download_identity)}",
+                    "$deviceText = (Get-CimInstance Win32_PnPEntity | ForEach-Object { \"$($_.Name) $($_.PNPDeviceID)\" }) -join \"`n\"",
+                    "if ($deviceText.IndexOf($identity, [StringComparison]::OrdinalIgnoreCase) -lt 0) { throw \"Download device identity not found: $identity\" }",
+                    "Write-Output \"CHECK DOWNLOAD_IDENTITY OK $identity\"",
+                ]
+            )
+    if phase in {"normal", "post"} and (target.port.adb.enabled or target.port.adb.required_after_update):
+        adb = target.port.adb
+        lines.extend(
+            [
+                f"$adb = {_ps_quote(adb.executable)}",
+                f"$adbSerial = {_ps_quote(adb.serial)}",
+                "if (-not $adbSerial) { throw 'ADB serial is required when multiple devices can be attached.' }",
+                "$adbRows = & $adb devices -l 2>&1",
+                "if ($LASTEXITCODE -ne 0) { throw \"adb devices failed: $adbRows\" }",
+                "$escapedSerial = [Regex]::Escape($adbSerial)",
+                "$matched = $adbRows | Where-Object { $_ -match \"^$escapedSerial\\s+device(?:\\s|$)\" }",
+                "if (-not $matched) { throw \"ADB target is not in device state: $adbSerial\" }",
+                "$state = & $adb -s $adbSerial get-state 2>&1",
+                "if ($LASTEXITCODE -ne 0 -or ($state -join '').Trim() -ne 'device') { throw \"ADB get-state failed: $state\" }",
+                "Write-Output \"CHECK ADB OK $adbSerial\"",
+            ]
+        )
+    lines.append("Write-Output \"DEVICE PROBE OK $targetLabel\"")
+    return "\n".join(lines) + "\n"
+
+
+def run_device_probe(
+    target: SerialTarget,
+    *,
+    phase: str = "normal",
+    xml_path: str = "",
+    expected_xml_sha256: str = "",
+    timeout: float = 30.0,
+    dry_run: bool = False,
+) -> CommandResult:
+    return run_powershell_for_host(
+        target.host,
+        build_device_probe_script(
+            target,
+            phase=phase,
+            xml_path=xml_path,
+            expected_xml_sha256=expected_xml_sha256,
+        ),
+        target=target.label(),
+        timeout=timeout,
+        dry_run=dry_run,
+        command=f"device-probe:{phase}",
+    )
+
+
+def run_device_update(
+    target: SerialTarget,
+    *,
+    xml_path: str,
+    mode: str,
+    expected_xml_sha256: str = "",
+    physical_switch_confirmed: bool = False,
+    preloader_exit_confirmed: bool = False,
+    run_preloader_exit: bool = False,
+    format_confirmation: str = "",
+    timeout: float | None = None,
+    dry_run: bool = False,
+) -> CommandResult:
+    if run_preloader_exit:
+        if target.port.soc_vendor != "mediatek":
+            raise RigConfigError("The preloader exit command is only valid for MediaTek targets.")
+        command = resolve_named_command(target, "preloader_exit")
+        exit_result = run_serial_command(
+            target,
+            command,
+            timeout=max(2.0, target.port.read_timeout_ms / 1000.0 + 1.0),
+            dry_run=dry_run,
+        )
+        if not exit_result.ok:
+            return exit_result
+        preloader_exit_confirmed = True
+
+    report = build_device_preflight_report(
+        target,
+        xml_path=xml_path,
+        mode=mode,
+        expected_xml_sha256=expected_xml_sha256,
+        physical_switch_confirmed=physical_switch_confirmed,
+        preloader_exit_confirmed=preloader_exit_confirmed,
+        format_confirmation=format_confirmation,
+    )
+    if not report.ready:
+        blocked = "; ".join(check.detail for check in report.checks if not check.ok)
+        raise RigConfigError(f"Device update preflight blocked for {target.label()}: {blocked}")
+
+    probe = run_device_probe(
+        target,
+        phase="download",
+        xml_path=xml_path,
+        expected_xml_sha256=expected_xml_sha256,
+        timeout=min(60.0, float(timeout or 30.0)),
+        dry_run=dry_run,
+    )
+    if not probe.ok:
+        return probe
+
+    flash = run_firmware_flash(
+        target,
+        xml_path=xml_path,
+        mode=mode,
+        timeout=timeout,
+        dry_run=dry_run,
+        use_channel_tool=True,
+    )
+    if not flash.ok:
+        return flash
+
+    adb = target.port.adb
+    post = None
+    if adb.required_after_update:
+        post = run_device_probe(
+            target,
+            phase="post",
+            timeout=adb.timeout_seconds,
+            dry_run=dry_run,
+        )
+        if not post.ok:
+            return post
+
+    outputs = [report.render(), probe.stdout, flash.stdout]
+    if post is not None:
+        outputs.append(post.stdout)
+    return CommandResult(
+        target=target.label(),
+        ok=True,
+        returncode=0,
+        stdout="\n\n".join(output for output in outputs if output),
+        stderr="\n".join(output for output in (probe.stderr, flash.stderr, post.stderr if post else "") if output),
+        command=f"device-update:{mode}",
+        dry_run=dry_run,
+    )
+
+
 def run_firmware_flash(
     target: SerialTarget,
     *,
@@ -594,8 +1106,13 @@ def run_firmware_flash(
     ready_marker: str = "",
     ready_timeout: float = 0.0,
     ready_interval: float = 2.0,
+    use_channel_tool: bool = False,
 ) -> CommandResult:
-    tool = target.host.firmware
+    tool = (
+        target.host.firmware_for_port(target.port)
+        if use_channel_tool or target.host.firmware is None
+        else target.host.firmware
+    )
     if tool is None:
         raise RigConfigError(f"Host {target.host.id!r} has no firmware tool config.")
 
@@ -808,6 +1325,10 @@ def render_firmware_arguments(
         "host": target.host.id,
         "host_address": target.host.address,
         "channel": target.port.id,
+        "soc_vendor": target.port.soc_vendor,
+        "soc_model": target.port.soc_model,
+        "adb_serial": target.port.adb.serial,
+        "download_identity": target.port.download_identity,
     }
     return tuple(_render_template(item, values) for item in tool.arguments)
 
@@ -970,6 +1491,45 @@ def _strip_xml_namespace(tag: str) -> str:
     if "}" in tag:
         return tag.rsplit("}", 1)[1]
     return tag
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _missing_manifest_files(xml_path: Path, manifest: FirmwareManifest) -> list[str]:
+    missing: list[str] = []
+    seen: set[str] = set()
+    for item in manifest.files:
+        raw = item.path.strip().strip('"')
+        if not raw or raw.casefold().startswith(("http://", "https://")):
+            continue
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            candidate = xml_path.parent / candidate
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        if not candidate.is_file():
+            missing.append(raw)
+    return missing
+
+
+def _normalize_vendor(value: Any) -> str:
+    normalized = _clean(value).casefold()
+    aliases = {
+        "qc": "qualcomm",
+        "qualcomm": "qualcomm",
+        "qcom": "qualcomm",
+        "mtk": "mediatek",
+        "mediatek": "mediatek",
+    }
+    return aliases.get(normalized, normalized)
 
 
 def _clean(value: Any) -> str:

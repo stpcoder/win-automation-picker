@@ -12,6 +12,7 @@ import pytest
 from win_automation_picker.exporter import generate_python_script
 from win_automation_picker.ftp_spool import (
     ChannelInfo,
+    DeviceToolInfo,
     FtpSpoolConfig,
     FtpSpoolError,
     LocalSpoolBackend,
@@ -19,6 +20,7 @@ from win_automation_picker.ftp_spool import (
     SlaveInfo,
     SpoolJob,
     classify_status_rows,
+    build_slave_rig_config,
     cleanup_node_files,
     deploy_package,
     initialize_spool,
@@ -36,6 +38,11 @@ from win_automation_picker.ftp_spool import (
 from win_automation_picker.recipe import AutomationRecipe, AutomationStep
 from win_automation_picker.sequence_bundle import RigSequenceBundleError, read_rig_sequence_bundle
 from win_automation_picker.selector import SelectorSegment, UISelector
+from win_automation_picker.serial_console import (
+    SerialCommandResult,
+    SerialSequenceResult,
+    parse_serial_sequence,
+)
 
 
 def _write_rig_sequence_bundle(
@@ -376,6 +383,7 @@ def test_deploy_rig_sequence_bundle_detects_runner_and_metadata(tmp_path) -> Non
     assert package.variables == {
         "channel": "",
         "slot_id": "",
+        "sequence_backend": "serial",
         "launcher_package": "",
         "campaign_attempt": "1",
     }
@@ -537,6 +545,235 @@ def test_slave_stages_sequence_and_runs_picker_launcher(tmp_path) -> None:
         for run in list_status(backend)[0]["campaign_runs"]
     }
     assert attempts == {1, 2}
+
+
+def test_slave_runs_rig_sequence_directly_over_configured_serial_port(tmp_path, monkeypatch) -> None:
+    backend = LocalSpoolBackend(tmp_path / "spool")
+    sequence_package = tmp_path / "direct.rigseq.zip"
+    _write_rig_sequence_bundle(
+        sequence_package,
+        sequence=b"#BOOT\nexit;exit;\n#RUN\nlog 0xff;\n",
+    )
+    deploy_package(backend, sequence_package)
+    initialize_spool(backend, nodes=["rig-pc-04"])
+    work_dir = tmp_path / "work"
+
+    class FakeSerialSession:
+        def __init__(self, config, *, output_callback, **_kwargs) -> None:
+            self.config = config
+            self.output_callback = output_callback
+
+        def connect(self) -> None:
+            self.output_callback(self.config.id, "[RX] LK2]\n")
+
+        def close(self) -> None:
+            return None
+
+        def run_sequence(self, text, *, stop_event, progress_callback, **_kwargs):
+            commands = [
+                SerialCommandResult(
+                    block=block.name,
+                    command=command,
+                    ok=True,
+                    response="OK\r\nLK2]",
+                )
+                for block in parse_serial_sequence(text)
+                for command in block.commands
+            ]
+            for command in commands:
+                progress_callback(f"PASS {command.block} {command.command}")
+            return SerialSequenceResult(
+                channel=self.config.id,
+                ok=not stop_event.is_set(),
+                stopped=stop_event.is_set(),
+                completed_commands=len(commands),
+                total_commands=len(commands),
+                commands=tuple(commands),
+            )
+
+    monkeypatch.setattr(
+        "win_automation_picker.ftp_spool.SerialConsoleSession",
+        FakeSerialSession,
+    )
+    submit_job(
+        backend,
+        SpoolJob.create(
+            kind="sequence",
+            payload={"package": "direct.rigseq.zip", "sequence_backend": "serial"},
+            variables={
+                "channel": "CH11",
+                "slot_id": "S3",
+                "com_port": "COM7",
+                "baud_rate": "921600",
+            },
+            job_id="direct-serial-job",
+        ),
+        ["rig-pc-04"],
+    )
+
+    result = run_slave_once(
+        backend,
+        FtpSpoolConfig(
+            node_id="rig-pc-04",
+            work_dir=str(work_dir),
+            capture_on_error=False,
+        ),
+    )[0]
+
+    assert result.ok
+    assert result.details["sequence_backend"] == "serial"
+    assert result.details["channel_id"] == "CH11"
+    assert result.details["com_port"] == "COM7"
+    assert result.details["baud_rate"] == 921600
+    assert result.details["completed_grids"] == 2
+    assert result.details["total_grids"] == 2
+    manifest_path = work_dir / "serial-results" / "direct-serial-job" / "manifest.json"
+    console_path = work_dir / "serial-results" / "direct-serial-job" / "console.log"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["completed_commands"] == 3
+    assert manifest["commands"][0]["command"] == "exit;"
+    assert "LK2]" in console_path.read_text(encoding="utf-8")
+
+
+def test_slave_runs_direct_serial_batch_concurrently_and_updates_each_channel(tmp_path, monkeypatch) -> None:
+    backend = LocalSpoolBackend(tmp_path / "spool")
+    sequence_package = tmp_path / "parallel.rigseq.zip"
+    _write_rig_sequence_bundle(sequence_package, sequence=b"#BOOT\nexit;exit;\n")
+    deploy_package(backend, sequence_package)
+    initialize_spool(backend, nodes=["rig-pc-04"])
+    work_dir = tmp_path / "work"
+    active_lock = threading.Lock()
+    active = 0
+    max_active = 0
+
+    class ConcurrentSerialSession:
+        def __init__(self, config, *, output_callback, **_kwargs) -> None:
+            self.config = config
+            self.output_callback = output_callback
+
+        def connect(self) -> None:
+            self.output_callback(self.config.id, "LK2]\n")
+
+        def close(self) -> None:
+            return None
+
+        def run_sequence(self, text, *, stop_event, progress_callback, **_kwargs):
+            nonlocal active, max_active
+            commands = [
+                SerialCommandResult(
+                    block=block.name,
+                    command=command,
+                    ok=True,
+                    response="OK\r\nLK2]",
+                )
+                for block in parse_serial_sequence(text)
+                for command in block.commands
+            ]
+            with active_lock:
+                active += 1
+                max_active = max(max_active, active)
+            try:
+                progress_callback("GRID #BOOT")
+                time.sleep(0.08)
+                for command in commands:
+                    progress_callback(f"PASS {command.block} {command.command}")
+            finally:
+                with active_lock:
+                    active -= 1
+            return SerialSequenceResult(
+                channel=self.config.id,
+                ok=not stop_event.is_set(),
+                stopped=stop_event.is_set(),
+                completed_commands=len(commands),
+                total_commands=len(commands),
+                commands=tuple(commands),
+            )
+
+    monkeypatch.setattr(
+        "win_automation_picker.ftp_spool.SerialConsoleSession",
+        ConcurrentSerialSession,
+    )
+    runs = [
+        {
+            "package": "parallel.rigseq.zip",
+            "sequence_backend": "serial",
+            "variables": {
+                "channel": channel,
+                "slot_id": slot,
+                "com_port": port,
+                "baud_rate": "115200",
+            },
+        }
+        for channel, slot, port in (
+            ("CH11", "S3", "COM7"),
+            ("CH12", "S4", "COM8"),
+        )
+    ]
+    submit_job(
+        backend,
+        SpoolJob.create(
+            kind="sequence_batch",
+            payload={"runs": runs, "timeout_seconds": 5},
+            job_id="parallel-job",
+        ),
+        ["rig-pc-04"],
+    )
+
+    result = run_slave_once(
+        backend,
+        FtpSpoolConfig(
+            node_id="rig-pc-04",
+            work_dir=str(work_dir),
+            capture_on_error=False,
+        ),
+    )[0]
+
+    assert result.ok
+    assert result.kind == "sequence_batch"
+    assert result.details["batch_size"] == 2
+    assert result.details["passed_channels"] == 2
+    assert max_active == 2
+    assert {item["channel_id"] for item in result.details["channels"]} == {"CH11", "CH12"}
+    assert len(list((work_dir / "serial-results").glob("*/manifest.json"))) == 2
+    status = list_status(backend)[0]
+    assert {item["channel_id"] for item in status["channels"]} == {"CH11", "CH12"}
+    assert {item["state"] for item in status["channels"]} == {"pass"}
+
+
+def test_direct_serial_batch_rejects_duplicate_com_ports_before_opening(tmp_path) -> None:
+    backend = LocalSpoolBackend(tmp_path / "spool")
+    sequence_package = tmp_path / "duplicate.rigseq.zip"
+    _write_rig_sequence_bundle(sequence_package)
+    deploy_package(backend, sequence_package)
+    initialize_spool(backend, nodes=["rig-pc-04"])
+    submit_job(
+        backend,
+        SpoolJob.create(
+            kind="sequence_batch",
+            payload={
+                "runs": [
+                    {
+                        "package": "duplicate.rigseq.zip",
+                        "variables": {"channel": "CH11", "com_port": "COM7"},
+                    },
+                    {
+                        "package": "duplicate.rigseq.zip",
+                        "variables": {"channel": "CH12", "com_port": "com7"},
+                    },
+                ]
+            },
+            job_id="duplicate-com-job",
+        ),
+        ["rig-pc-04"],
+    )
+
+    result = run_slave_once(
+        backend,
+        FtpSpoolConfig(node_id="rig-pc-04", capture_on_error=False),
+    )[0]
+
+    assert not result.ok
+    assert "same COM twice" in result.stderr
 
 
 def test_staged_sequence_cleanup_only_removes_owned_hash_directories(tmp_path) -> None:
@@ -932,3 +1169,43 @@ def test_cleanup_prunes_retained_files(tmp_path) -> None:
     assert backend.list_files("results/rig-pc-01") == ["20240102.json"]
     assert backend.list_files("logs/rig-pc-01") == ["20240102.log"]
     assert backend.list_files("screenshots/rig-pc-01") == ["20240102.png"]
+
+
+def test_slave_rig_config_exports_com_adb_power_and_channel_tool() -> None:
+    slave = SlaveInfo(
+        node_id="rig-pc-04",
+        alias="PC04",
+        channels=(
+            ChannelInfo(
+                channel_id="CH11",
+                com_port="COM7",
+                baud_rate=921600,
+                soc_vendor="mediatek",
+                soc_model="MTK25D",
+                firmware_tool_id="mtk-downloader",
+                download_identity="MediaTek PreLoader USB VCOM",
+                adb_serial="MTK-CH11",
+                adb_required_after_update=True,
+                power_on_command="POWER ON 11",
+                power_off_command="POWER OFF 11",
+                preloader_exit_command="exit",
+            ),
+        ),
+    )
+    tool = DeviceToolInfo(
+        id="mtk-downloader",
+        vendor="mediatek",
+        executable="C:\\Tools\\MTK\\download.exe",
+        success_markers=("PASS",),
+        failure_markers=("FAIL",),
+    )
+
+    payload = build_slave_rig_config(slave, [tool])
+    port = payload["hosts"][0]["ports"][0]
+
+    assert payload["hosts"][0]["transport"] == "local"
+    assert port["id"] == "CH11"
+    assert port["baud"] == 921600
+    assert port["firmware_tool_id"] == "mtk-downloader"
+    assert port["adb"]["serial"] == "MTK-CH11"
+    assert port["commands"]["preloader_exit"] == "exit"

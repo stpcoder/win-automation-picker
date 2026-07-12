@@ -13,18 +13,23 @@ from .rig import (
     RigConfig,
     RigConfigError,
     RigExecutionError,
+    build_device_preflight_report,
     check_host,
     inspect_firmware_manifest,
     list_remote_ports,
     resolve_named_command,
     results_to_json,
+    run_device_probe,
+    run_device_update,
     run_firmware_flashes,
     run_host_scripts,
+    run_serial_command,
     run_serial_commands,
     select_hosts,
     select_serial_targets,
     write_example_config,
 )
+from .windows_compat import assess_windows_environment
 
 
 DEFAULT_CONFIG = "rig-commander.config.json"
@@ -127,6 +132,67 @@ def build_parser() -> argparse.ArgumentParser:
     firmware_flash.add_argument("--ready-interval", type=float, default=2.0, help="Seconds between ready polls.")
     firmware_flash.set_defaults(func=_cmd_firmware_flash)
 
+    device_parser = subparsers.add_parser(
+        "device",
+        help="Probe, power, and safely update one or more configured fixture channels.",
+    )
+    device_subparsers = device_parser.add_subparsers(dest="device_command", required=True)
+
+    device_system = device_subparsers.add_parser(
+        "system-check",
+        help="Check Windows build, architecture, PowerShell, and pyserial prerequisites.",
+    )
+    device_system.add_argument("--json", action="store_true")
+    device_system.set_defaults(func=_cmd_device_system_check)
+
+    device_probe = device_subparsers.add_parser("probe", help="Check COM, download identity, or ADB state.")
+    _add_target_args(device_probe)
+    _add_runtime_args(device_probe)
+    device_probe.add_argument(
+        "--phase",
+        choices=("normal", "download", "post"),
+        default="normal",
+        help="normal checks COM/ADB; download checks downloader/XML/USB identity; post checks COM/ADB.",
+    )
+    device_probe.add_argument("--xml", default="", help="Firmware XML path for download phase.")
+    device_probe.add_argument("--xml-sha256", default="", help="Expected XML SHA-256.")
+    device_probe.set_defaults(func=_cmd_device_probe)
+
+    device_power = device_subparsers.add_parser("power", help="Run configured power commands over COM.")
+    _add_target_args(device_power)
+    _add_runtime_args(device_power)
+    device_power.add_argument("action", choices=("on", "off", "cycle"))
+    device_power.add_argument("--cycle-delay", type=float, default=2.0, help="Seconds between off and on.")
+    device_power.set_defaults(func=_cmd_device_power)
+
+    device_preflight = device_subparsers.add_parser(
+        "preflight",
+        help="Validate every destructive-update gate and optionally probe the target PC.",
+    )
+    _add_target_args(device_preflight)
+    _add_runtime_args(device_preflight)
+    _add_device_update_args(device_preflight)
+    device_preflight.add_argument(
+        "--static-only",
+        action="store_true",
+        help="Do not check the target PC's live COM, downloader, XML, and USB identity.",
+    )
+    device_preflight.set_defaults(func=_cmd_device_preflight)
+
+    device_update = device_subparsers.add_parser(
+        "update",
+        help="Run the allowlisted downloader after all vendor and target gates pass.",
+    )
+    _add_target_args(device_update)
+    _add_runtime_args(device_update)
+    _add_device_update_args(device_update)
+    device_update.add_argument(
+        "--run-preloader-exit",
+        action="store_true",
+        help="Send the channel's configured preloader_exit command before MTK update.",
+    )
+    device_update.set_defaults(func=_cmd_device_update)
+
     return parser
 
 
@@ -227,6 +293,23 @@ def _add_runtime_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--json", action="store_true", help="Print JSON results.")
 
 
+def _add_device_update_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--xml", required=True, help="Firmware XML path as seen by the target rig PC.")
+    parser.add_argument("--xml-sha256", default="", help="Expected XML SHA-256 from inventory metadata.")
+    parser.add_argument(
+        "--mode",
+        choices=("download-only", "format-all-download"),
+        default="download-only",
+    )
+    parser.add_argument("--qc-switch-confirmed", action="store_true")
+    parser.add_argument("--mtk-preloader-confirmed", action="store_true")
+    parser.add_argument(
+        "--confirm-format",
+        default="",
+        help="For format mode, type the exact token shown by device preflight.",
+    )
+
+
 def _cmd_init_config(args: argparse.Namespace) -> int:
     path = write_example_config(args.output, force=bool(args.force))
     print(f"Wrote {path}")
@@ -251,6 +334,11 @@ def _cmd_list(args: argparse.Namespace) -> int:
                                     "id": port.id,
                                     "port": port.port,
                                     "baud": port.baud,
+                                    "soc_vendor": port.soc_vendor,
+                                    "soc_model": port.soc_model,
+                                    "firmware_tool_id": port.firmware_tool_id,
+                                    "download_identity": port.download_identity,
+                                    "adb_serial": port.adb.serial,
                                     "commands": sorted(port.commands),
                                 }
                                 for port in host.ports
@@ -271,7 +359,13 @@ def _cmd_list(args: argparse.Namespace) -> int:
         print(f"{host.id} ({state}) address={host.address} transport={host.transport}{tags}")
         for port in host.ports:
             commands = ", ".join(sorted(port.commands)) or "-"
-            print(f"  {port.id}: {port.port} baud={port.baud} commands={commands}")
+            device = " ".join(part for part in (port.soc_vendor.upper(), port.soc_model) if part)
+            adb = f" adb={port.adb.serial}" if port.adb.serial else ""
+            tool = f" tool={port.firmware_tool_id}" if port.firmware_tool_id else ""
+            print(
+                f"  {port.id}: {port.port} baud={port.baud} device={device or '-'}"
+                f"{tool}{adb} commands={commands}"
+            )
     return 0
 
 
@@ -387,6 +481,11 @@ def _cmd_firmware_inspect(args: argparse.Namespace) -> int:
 
 
 def _cmd_firmware_flash(args: argparse.Namespace) -> int:
+    if not args.dry_run:
+        raise RigConfigError(
+            "Legacy 'firmware flash' execution is disabled because it cannot enforce device identity "
+            "and vendor gates. Use 'device preflight' and 'device update'."
+        )
     config = _load_config(args.config)
     targets = select_serial_targets(config, args.target)
     results = run_firmware_flashes(
@@ -403,6 +502,134 @@ def _cmd_firmware_flash(args: argparse.Namespace) -> int:
     )
     _print_results(results, as_json=bool(args.json))
     return _exit_code(results)
+
+
+def _cmd_device_probe(args: argparse.Namespace) -> int:
+    config = _load_config(args.config)
+    phase = str(args.phase)
+    if phase == "download" and not str(args.xml).strip():
+        raise RigConfigError("device probe --phase download requires --xml.")
+    targets = select_serial_targets(config, args.target)
+    results = [
+        run_device_probe(
+            target,
+            phase=phase,
+            xml_path=str(args.xml or ""),
+            expected_xml_sha256=str(args.xml_sha256 or ""),
+            timeout=_timeout(args, config),
+            dry_run=bool(args.dry_run),
+        )
+        for target in targets
+    ]
+    _print_results(results, as_json=bool(args.json))
+    return _exit_code(results)
+
+
+def _cmd_device_system_check(args: argparse.Namespace) -> int:
+    report = assess_windows_environment()
+    if args.json:
+        print(json.dumps(report.to_mapping(), indent=2, ensure_ascii=True))
+    else:
+        print(report.render())
+    return 0 if report.ready else 1
+
+
+def _cmd_device_power(args: argparse.Namespace) -> int:
+    config = _load_config(args.config)
+    targets = select_serial_targets(config, args.target)
+    action = str(args.action)
+    timeout = _timeout(args, config)
+    results: list[CommandResult] = []
+    for target in targets:
+        names = ("power_off", "power_on") if action == "cycle" else (f"power_{action}",)
+        step_results: list[CommandResult] = []
+        for index, name in enumerate(names):
+            step_results.append(
+                run_serial_command(
+                    target,
+                    resolve_named_command(target, name),
+                    timeout=timeout,
+                    dry_run=bool(args.dry_run),
+                )
+            )
+            if not step_results[-1].ok:
+                break
+            if action == "cycle" and index == 0 and not args.dry_run:
+                time.sleep(max(0.0, float(args.cycle_delay)))
+        results.append(
+            CommandResult(
+                target=target.label(),
+                ok=bool(step_results) and all(result.ok for result in step_results),
+                returncode=next((result.returncode for result in step_results if not result.ok), 0),
+                stdout="\n".join(result.stdout for result in step_results if result.stdout),
+                stderr="\n".join(result.stderr for result in step_results if result.stderr),
+                command=f"device-power:{action}",
+                dry_run=bool(args.dry_run),
+            )
+        )
+    _print_results(results, as_json=bool(args.json))
+    return _exit_code(results)
+
+
+def _cmd_device_preflight(args: argparse.Namespace) -> int:
+    config = _load_config(args.config)
+    targets = select_serial_targets(config, args.target)
+    reports = [
+        build_device_preflight_report(
+            target,
+            xml_path=str(args.xml),
+            mode=str(args.mode),
+            expected_xml_sha256=str(args.xml_sha256 or ""),
+            physical_switch_confirmed=bool(args.qc_switch_confirmed),
+            preloader_exit_confirmed=bool(args.mtk_preloader_confirmed),
+            format_confirmation=str(args.confirm_format or ""),
+        )
+        for target in targets
+    ]
+    if args.json:
+        print(json.dumps([report.to_mapping() for report in reports], indent=2, ensure_ascii=True))
+    else:
+        print("\n\n".join(report.render() for report in reports))
+    if not all(report.ready for report in reports):
+        return 1
+    if args.static_only:
+        return 0
+    runtime_results = [
+        run_device_probe(
+            target,
+            phase="download",
+            xml_path=str(args.xml),
+            expected_xml_sha256=str(args.xml_sha256 or ""),
+            timeout=_timeout(args, config),
+            dry_run=bool(args.dry_run),
+        )
+        for target in targets
+    ]
+    _print_results(runtime_results, as_json=False)
+    return _exit_code(runtime_results)
+
+
+def _cmd_device_update(args: argparse.Namespace) -> int:
+    config = _load_config(args.config)
+    targets = select_serial_targets(config, args.target)
+    if len(targets) != 1:
+        raise RigConfigError(
+            "Device update accepts exactly one channel at a time. Submit separate jobs per CH."
+        )
+    result = run_device_update(
+        targets[0],
+        xml_path=str(args.xml),
+        mode=str(args.mode),
+        expected_xml_sha256=str(args.xml_sha256 or ""),
+        physical_switch_confirmed=bool(args.qc_switch_confirmed),
+        preloader_exit_confirmed=bool(args.mtk_preloader_confirmed),
+        run_preloader_exit=bool(args.run_preloader_exit),
+        format_confirmation=str(args.confirm_format or ""),
+        timeout=args.timeout,
+        dry_run=bool(args.dry_run),
+    )
+    _print_results([result], as_json=bool(args.json))
+    return 0 if result.ok else 1
 
 
 def _load_config(path: str | Path) -> RigConfig:
