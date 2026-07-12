@@ -10,29 +10,31 @@
       
       
       
-        <link rel="canonical" href="https://stpcoder.github.io/win-automation-picker/">
+        <link rel="canonical" href="https://stpcoder.github.io/win-automation-picker/rig-ftp/dram-margin/">
       
       
+        <link rel="prev" href="../seq-integration/">
       
-        <link rel="next" href="daily-workflow/">
+      
+        <link rel="next" href="../master-setup/">
       
       
         
       
       
-      <link rel="icon" href="assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>개요 - AE Workbench Manual</title>
+        <title>DRAM DQ margin 원격 실행 - AE Workbench Manual</title>
       
     
     
-      <link rel="stylesheet" href="assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -51,9 +53,9 @@
       
     
     
-      <link rel="stylesheet" href="stylesheets/extra.css">
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
     
-    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -78,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#ae-workbench" class="md-skip">
+        <a href="#dram-dq-margin" class="md-skip">
           콘텐츠로 이동
         </a>
       
@@ -94,7 +96,7 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="상단/헤더">
-    <a href="." title="AE Workbench Manual" class="md-header__button md-logo" aria-label="AE Workbench Manual" data-md-component="logo">
+    <a href="../.." title="AE Workbench Manual" class="md-header__button md-logo" aria-label="AE Workbench Manual" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -114,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              개요
+              DRAM DQ margin 원격 실행
             
           </span>
         </div>
@@ -218,7 +220,7 @@
 
 <nav class="md-nav md-nav--primary" aria-label="네비게이션" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="." title="AE Workbench Manual" class="md-nav__button md-logo" aria-label="AE Workbench Manual" data-md-component="logo">
+    <a href="../.." title="AE Workbench Manual" class="md-nav__button md-logo" aria-label="AE Workbench Manual" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -245,8 +247,6 @@
       
   
   
-    
-  
   
   
     
@@ -259,11 +259,13 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" checked>
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_1" >
         
           
           <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="">
@@ -284,7 +286,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_1">
             <span class="md-nav__icon md-icon"></span>
             
@@ -299,37 +301,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    개요
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="." class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -345,59 +320,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="목차">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      목차
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        업무 주기
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#_2" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        어떤 프로그램을 쓰면 되나
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#_3" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        추천 순서
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -410,7 +332,7 @@
   
   
     <li class="md-nav__item">
-      <a href="daily-workflow/" class="md-nav__link">
+      <a href="../../daily-workflow/" class="md-nav__link">
         
   
   
@@ -438,7 +360,7 @@
   
   
     <li class="md-nav__item">
-      <a href="ae-workbench/" class="md-nav__link">
+      <a href="../../ae-workbench/" class="md-nav__link">
         
   
   
@@ -466,7 +388,7 @@
   
   
     <li class="md-nav__item">
-      <a href="device-control/" class="md-nav__link">
+      <a href="../../device-control/" class="md-nav__link">
         
   
   
@@ -494,7 +416,7 @@
   
   
     <li class="md-nav__item">
-      <a href="fixture-topology/" class="md-nav__link">
+      <a href="../../fixture-topology/" class="md-nav__link">
         
   
   
@@ -522,7 +444,7 @@
   
   
     <li class="md-nav__item">
-      <a href="getting-started/" class="md-nav__link">
+      <a href="../../getting-started/" class="md-nav__link">
         
   
   
@@ -550,7 +472,7 @@
   
   
     <li class="md-nav__item">
-      <a href="interface/" class="md-nav__link">
+      <a href="../../interface/" class="md-nav__link">
         
   
   
@@ -578,7 +500,7 @@
   
   
     <li class="md-nav__item">
-      <a href="ux-readiness/" class="md-nav__link">
+      <a href="../../ux-readiness/" class="md-nav__link">
         
   
   
@@ -667,7 +589,7 @@
   
   
     <li class="md-nav__item">
-      <a href="macro-builder/basic-flow/" class="md-nav__link">
+      <a href="../../macro-builder/basic-flow/" class="md-nav__link">
         
   
   
@@ -695,7 +617,7 @@
   
   
     <li class="md-nav__item">
-      <a href="macro-builder/block-designer/" class="md-nav__link">
+      <a href="../../macro-builder/block-designer/" class="md-nav__link">
         
   
   
@@ -723,7 +645,7 @@
   
   
     <li class="md-nav__item">
-      <a href="macro-builder/conditions-monitoring/" class="md-nav__link">
+      <a href="../../macro-builder/conditions-monitoring/" class="md-nav__link">
         
   
   
@@ -751,7 +673,7 @@
   
   
     <li class="md-nav__item">
-      <a href="macro-builder/data-rows/" class="md-nav__link">
+      <a href="../../macro-builder/data-rows/" class="md-nav__link">
         
   
   
@@ -779,7 +701,7 @@
   
   
     <li class="md-nav__item">
-      <a href="macro-builder/python-export/" class="md-nav__link">
+      <a href="../../macro-builder/python-export/" class="md-nav__link">
         
   
   
@@ -811,8 +733,10 @@
       
   
   
+    
   
   
+  
     
     
     
@@ -823,13 +747,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
           <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
@@ -850,7 +772,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -868,7 +790,7 @@
   
   
     <li class="md-nav__item">
-      <a href="rig-ftp/overview/" class="md-nav__link">
+      <a href="../overview/" class="md-nav__link">
         
   
   
@@ -896,7 +818,7 @@
   
   
     <li class="md-nav__item">
-      <a href="rig-ftp/ae-campaign/" class="md-nav__link">
+      <a href="../ae-campaign/" class="md-nav__link">
         
   
   
@@ -924,7 +846,7 @@
   
   
     <li class="md-nav__item">
-      <a href="rig-ftp/execution-routes/" class="md-nav__link">
+      <a href="../execution-routes/" class="md-nav__link">
         
   
   
@@ -952,7 +874,7 @@
   
   
     <li class="md-nav__item">
-      <a href="rig-ftp/seq-integration/" class="md-nav__link">
+      <a href="../seq-integration/" class="md-nav__link">
         
   
   
@@ -977,10 +899,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="rig-ftp/dram-margin/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DRAM DQ margin 원격 실행
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -996,6 +945,103 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="목차">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      목차
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        실행 구조
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-windows-controller" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Windows controller 준비
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-plan-phy-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. plan과 PHY reference 준비
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. 원격 번들 만들기
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-master" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Master에서 실행
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. 상태와 결과
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ftp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        긴급 중단과 FTP 부하
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1008,7 +1054,7 @@
   
   
     <li class="md-nav__item">
-      <a href="rig-ftp/master-setup/" class="md-nav__link">
+      <a href="../master-setup/" class="md-nav__link">
         
   
   
@@ -1036,7 +1082,7 @@
   
   
     <li class="md-nav__item">
-      <a href="rig-ftp/slave-setup/" class="md-nav__link">
+      <a href="../slave-setup/" class="md-nav__link">
         
   
   
@@ -1064,7 +1110,7 @@
   
   
     <li class="md-nav__item">
-      <a href="rig-ftp/monitoring/" class="md-nav__link">
+      <a href="../monitoring/" class="md-nav__link">
         
   
   
@@ -1153,7 +1199,7 @@
   
   
     <li class="md-nav__item">
-      <a href="reference/buttons/" class="md-nav__link">
+      <a href="../../reference/buttons/" class="md-nav__link">
         
   
   
@@ -1181,7 +1227,7 @@
   
   
     <li class="md-nav__item">
-      <a href="reference/config-files/" class="md-nav__link">
+      <a href="../../reference/config-files/" class="md-nav__link">
         
   
   
@@ -1209,7 +1255,7 @@
   
   
     <li class="md-nav__item">
-      <a href="troubleshooting/" class="md-nav__link">
+      <a href="../../troubleshooting/" class="md-nav__link">
         
   
   
@@ -1267,7 +1313,7 @@
   <a href="#_1" class="md-nav__link">
     <span class="md-ellipsis">
       
-        업무 주기
+        실행 구조
       
     </span>
   </a>
@@ -1275,10 +1321,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#_2" class="md-nav__link">
+  <a href="#1-windows-controller" class="md-nav__link">
     <span class="md-ellipsis">
       
-        어떤 프로그램을 쓰면 되나
+        1. Windows controller 준비
       
     </span>
   </a>
@@ -1286,10 +1332,54 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#_3" class="md-nav__link">
+  <a href="#2-plan-phy-reference" class="md-nav__link">
     <span class="md-ellipsis">
       
-        추천 순서
+        2. plan과 PHY reference 준비
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. 원격 번들 만들기
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-master" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Master에서 실행
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. 상태와 결과
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ftp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        긴급 중단과 FTP 부하
       
     </span>
   </a>
@@ -1316,77 +1406,141 @@
   
 
 
-<h1 id="ae-workbench">AE Workbench 사용 매뉴얼</h1>
-<p>AE Workbench는 Mobile DRAM AE가 프로그램별 자동화를 미리 준비하고, 여러 원격 Rig PC에
-PC/CH별 시험값을 배정한 뒤 한 Master 화면에서 실행·모니터링하는 도구입니다.</p>
-<h2 id="_1">업무 주기</h2>
-<div class="workflow-grid">
-  <div class="workflow-card">
-    <strong>1. 자동화 준비</strong>
-    <span>프로그램이나 시험 절차가 바뀔 때 SEQ와 Scratch 매크로를 한 번 작성합니다.</span>
-  </div>
-  <div class="workflow-card">
-    <strong>2. Rig 설정</strong>
-    <span>PC를 추가할 때 FTP, Node, 자유 CH, Slave Agent를 한 번 설정합니다.</span>
-  </div>
-  <div class="workflow-card">
-    <strong>3. 오늘 실행</strong>
-    <span>저장된 자동화를 선택하고 PC/CH별 변수만 확인해 일괄 실행합니다.</span>
-  </div>
-  <div class="workflow-card">
-    <strong>4. 모니터링·반복</strong>
-    <span>Grid, PASS/FAIL, 화면과 로그를 확인하고 실패 행만 다시 실행합니다.</span>
-  </div>
-</div>
+<h1 id="dram-dq-margin">DRAM DQ margin 원격 실행</h1>
+<h2 id="_1">실행 구조</h2>
+<p>DRAM margin은 일반 Python 매크로나 임의 shell job으로 실행하지 않습니다.</p>
+<div class="highlight"><pre><span></span><code>Master PC
+  DramMarginController.exe bundle
+    -&gt; checksummed *.drammargin.zip
+    -&gt; FTP packages/에 한 번 업로드
 
-<p>가장 먼저 <a href="daily-workflow/">Mobile DRAM AE 업무 흐름</a>을 읽습니다. 화면별 모든 기능을
-외우는 대신 본인이 지금 <code>준비</code>, <code>Rig 설정</code>, <code>일일 실행</code>, <code>모니터링</code> 중 어디에 있는지만
-판단하면 됩니다.</p>
-<h2 id="_2">어떤 프로그램을 쓰면 되나</h2>
+Slave Agent
+  bundle 전체 SHA-256 재검증
+    -&gt; exact PC/CH와 ADB serial 대조
+    -&gt; nominal probe
+    -&gt; DQ sweep / stress
+    -&gt; mV·ps·raw-code acceptance
+    -&gt; CSV와 raw JSONL을 ZIP 한 개로 FTP 업로드
+</code></pre></div>
+<p>번들에는 controller, plan, 승인 PHY reference와 native runner가 모두 들어갑니다. Slave에
+Python이나 <code>mobile-dram-margin-lab</code> 소스를 설치할 필요가 없습니다. 허용된 네 파일 이외의
+ZIP member, path traversal, symlink, 잘못된 PE/ELF architecture, checksum 불일치는 실행 전에
+차단됩니다.</p>
+<h2 id="1-windows-controller">1. Windows controller 준비</h2>
+<p><code>mobile-dram-margin-lab</code> 저장소의 <code>controller-latest</code> release에서 다음 파일을 같은 폴더에
+둡니다.</p>
+<ul>
+<li><code>DramMarginController.exe</code></li>
+<li><code>DramMarginController.exe.sha256</code></li>
+<li><code>windows-controller-manifest.json</code></li>
+</ul>
+<p>SHA-256이 manifest 및 <code>.sha256</code> 파일과 같은지 먼저 확인합니다. Controller는 Windows x64
+one-file 실행 파일입니다.</p>
+<h2 id="2-plan-phy-reference">2. plan과 PHY reference 준비</h2>
+<p>plan의 <code>target.target_id</code>는 Rig 연결 구조의 PC와 CH를 정확히 가리켜야 합니다. 권장값은
+<code>PC04:CH11</code> 형식입니다.</p>
 <table>
 <thead>
 <tr>
-<th>프로그램</th>
-<th>용도</th>
+<th>실행 환경</th>
+<th>plan 값</th>
+<th>runner</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>AEWorkbench.exe</code></td>
-<td>SEQ, Scratch, 검증, 업로드, 실행표와 모니터링을 연결한 권장 통합 앱</td>
+<td>Android OS 실행 중</td>
+<td><code>transport=adb</code>, <code>execution_context=live-os</code></td>
+<td>Android arm64 ELF</td>
 </tr>
 <tr>
-<td><code>WinAutomationPicker.exe</code></td>
-<td>매크로 생성, 블록 디자인, Python export, FTP 업로드</td>
-</tr>
-<tr>
-<td><code>RigFtpCommander.exe</code></td>
-<td>GUI 기반 master/slave 운영, 상태 모니터링, screenshot 요청</td>
-</tr>
-<tr>
-<td><code>RigFtpCli.exe</code></td>
-<td>고급 사용자용 FTP master/slave CLI</td>
-</tr>
-<tr>
-<td><code>RigCommander.exe</code></td>
-<td>터미널 기반 실장기/COM/원격 명령 실행 CLI</td>
+<td>OS 없이 Windows fixture PC에서 실행</td>
+<td><code>transport=local</code>, <code>execution_context=offline</code></td>
+<td>Windows x64 PE</td>
 </tr>
 </tbody>
 </table>
-<h2 id="_3">추천 순서</h2>
+<p>ADB 경로는 plan의 <code>target.adb_serial</code>과 <code>rig-ftp.info</code> CH의 <code>adb_serial</code>이 문자 단위로 같아야
+합니다. <code>adb devices</code>의 첫 장치를 자동 선택하지 않습니다.</p>
+<p>실제 Qualcomm/MediaTek PHY 변경은 <code>backend=vendor</code>, 승인 SoC profile, register/training spec
+SHA-256, 검증된 physical DQ map SHA-256 및 실제 vendor backend가 모두 있어야 합니다. 일반
+release runner는 이 backend를 포함하지 않으므로 이름만 SM8850/MTK25D로 바꿔 실행할 수
+없습니다.</p>
+<p>PHY reference는 plan의 모든 dimension 순서와 일치해야 하며 각 dimension에 raw-code
+conversion이 있어야 합니다. 이 conversion으로 결과의 실제 mV/ps 값까지 다시 계산합니다.</p>
+<h2 id="3">3. 원격 번들 만들기</h2>
+<p>GUI에서는 <code>오늘 작업 &gt; 운영 도구 열기 &gt; 마진 번들 만들기</code>를 누르고 Controller, Plan, PHY
+reference와 출력 위치를 선택합니다. 생성이 끝나면 결과 파일이 패키지 등록 칸에 자동으로
+채워집니다.</p>
+<p>같은 작업을 PowerShell에서 실행할 수도 있습니다.</p>
+<div class="highlight"><pre><span></span><code><span class="p">.\</span><span class="n">DramMarginController</span><span class="p">.</span><span class="n">exe</span> <span class="n">bundle</span> <span class="p">`</span>
+  <span class="p">.\</span><span class="n">plans</span><span class="p">\</span><span class="n">PC04-CH11</span><span class="p">.</span><span class="n">json</span> <span class="p">`</span>
+  <span class="p">.\</span><span class="n">references</span><span class="p">\</span><span class="n">MTK25D-A0</span><span class="p">.</span><span class="n">json</span> <span class="p">`</span>
+  <span class="p">-</span><span class="n">-output</span> <span class="p">.\</span><span class="n">packages</span><span class="p">\</span><span class="n">PC04-CH11</span><span class="p">.</span><span class="n">drammargin</span><span class="p">.</span><span class="n">zip</span>
+
+<span class="p">.\</span><span class="n">DramMarginController</span><span class="p">.</span><span class="n">exe</span> <span class="n">verify-bundle</span> <span class="p">`</span>
+  <span class="p">.\</span><span class="n">packages</span><span class="p">\</span><span class="n">PC04-CH11</span><span class="p">.</span><span class="n">drammargin</span><span class="p">.</span><span class="n">zip</span>
+</code></pre></div>
+<p>frozen controller에서 <code>bundle</code>을 실행하면 현재 <code>DramMarginController.exe</code> 자체가 번들에
+포함됩니다. 원본 plan은 바꾸지 않고, 번들 내부 plan의 runner 경로만 번들 상대 경로로
+고정합니다.</p>
+<h2 id="4-master">4. Master에서 실행</h2>
 <ol>
-<li><a href="daily-workflow/">업무 흐름</a>에서 최초 설정과 일일 업무를 구분합니다.</li>
-<li>프로그램 자동화 담당자는 <a href="macro-builder/basic-flow/">기본 매크로 만들기</a>와
-   <a href="macro-builder/block-designer/">블록 디자인</a>을 확인합니다.</li>
-<li>Rig 담당자는 <a href="rig-ftp/overview/">FTP master/slave 개요</a>를 확인합니다.</li>
-<li>일일 운영자는 <code>오늘 작업</code>과 <a href="rig-ftp/monitoring/">상태 모니터링</a>만 사용합니다.</li>
-<li>문제가 생기면 <a href="troubleshooting/">문제 해결</a>을 확인합니다.</li>
+<li><code>RigFtpCommander.exe</code>의 <code>오늘 작업</code>에서 <code>운영 도구 열기</code>를 누릅니다.</li>
+<li><code>패키지 등록</code>에서 <code>*.drammargin.zip</code>을 선택하고 업로드합니다.</li>
+<li>목록의 <code>[MARGIN]</code> badge와 Target, Backend, Context, DQ/Point 수를 확인합니다.</li>
+<li>대상은 <code>all</code>이 아니라 실장기 연결 PC 한 대를 선택합니다.</li>
+<li>여러 CH 중 하나를 명확히 지정하려면 입력값에 <code>channel=CH11</code>을 넣습니다.</li>
+<li>실행을 누릅니다.</li>
 </ol>
-<p>현재 구현 범위와 남은 기능은 <a href="ux-readiness/">UX 완성도와 지원 범위</a>에서 확인할 수 있습니다.</p>
-<div class="admonition warning">
-<p class="admonition-title">중요</p>
-<p>이 도구는 native Windows UI Automation 대상에 맞춰져 있습니다. 브라우저 DOM, 게임, canvas/custom rendering UI는 UIA 정보가 부족할 수 있습니다.</p>
-</div>
+<p>Agent는 target ID를 PC 별명/Windows 이름/Node ID와 CH ID·slot·fixture ID 조합에 대조합니다.
+일치하는 fixture가 정확히 하나가 아니면 native runner를 시작하지 않습니다.</p>
+<h2 id="5">5. 상태와 결과</h2>
+<p>CH 상태에는 다음 값이 같이 표시됩니다.</p>
+<table>
+<thead>
+<tr>
+<th>필드</th>
+<th>의미</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>margin_status</code></td>
+<td><code>pass</code>, <code>margin-failures</code>, <code>physical-evidence-rejected</code>, <code>interrupted</code></td>
+</tr>
+<tr>
+<td><code>margin_result</code></td>
+<td>DQ stress/margin 자체 PASS/FAIL</td>
+</tr>
+<tr>
+<td><code>physical_unit_acceptance</code></td>
+<td>승인 환산표와 mV/ps/raw-code 증거 일치 여부</td>
+</tr>
+<tr>
+<td><code>result_rows</code></td>
+<td>완료된 sweep point 수</td>
+</tr>
+<tr>
+<td><code>artifact_path</code></td>
+<td>FTP의 검증된 결과 ZIP</td>
+</tr>
+</tbody>
+</table>
+<p>margin 밖의 failing point는 characterization 결과이므로 <code>margin-failures</code>입니다. 실행 오류와
+구별되지만 CH 판정은 FAIL로 표시됩니다. 물리 단위 증거가 reference와 다르면
+<code>physical-evidence-rejected</code>이며 결과를 승인값으로 사용하면 안 됩니다.</p>
+<p>결과 ZIP에는 nominal probe, 각 sweep raw JSONL, run manifest, DQ summary CSV, point grid CSV,
+PHY acceptance 및 campaign manifest가 들어갑니다. 모든 파일은 campaign manifest의 SHA-256과
+size를 다시 확인한 뒤 업로드합니다.</p>
+<h2 id="ftp">긴급 중단과 FTP 부하</h2>
+<p><code>긴급 중단</code>은 Agent가 약 2초 간격으로 확인합니다. Windows에서는 controller process group에
+<code>Ctrl+Break</code>를 보내고, controller가 native runner에 종료를 전달해 nominal 복구를 기다립니다.
+25초 내 복구 증거 없이 끝나지 않으면 강제 종료하고 해당 실행을 승인하지 않습니다.</p>
+<p>FTP로 실시간 JSONL이나 화면 stream을 보내지 않습니다. package는 등록할 때 한 번, 결과 ZIP은
+실행 종료 후 한 번 전송합니다. 기본 DRAM margin artifact 상한은 128 MiB이고 FTP 보관 개수는
+기존 <code>max_artifact_files</code>를 따릅니다. 초과 결과는 Slave 로컬 폴더에 보존되고 FTP 결과에는
+<code>artifact_error</code>가 남습니다.</p>
 
 
 
@@ -1421,15 +1575,31 @@ PC/CH별 시험값을 배정한 뒤 한 Master 화면에서 실행·모니터링
       
       <nav class="md-footer__inner md-grid" aria-label="하단/푸터" >
         
+          
+          <a href="../seq-integration/" class="md-footer__link md-footer__link--prev" aria-label="이전: SEQ Generator와 실장기 실행">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                이전
+              </span>
+              <div class="md-ellipsis">
+                SEQ Generator와 실장기 실행
+              </div>
+            </div>
+          </a>
+        
         
           
-          <a href="daily-workflow/" class="md-footer__link md-footer__link--next" aria-label="다음: Mobile DRAM AE 업무 흐름">
+          <a href="../master-setup/" class="md-footer__link md-footer__link--next" aria-label="다음: Master 세팅">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 다음
               </span>
               <div class="md-ellipsis">
-                Mobile DRAM AE 업무 흐름
+                Master 세팅
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -1466,10 +1636,10 @@ PC/CH별 시험값을 배정한 뒤 한 Master 화면에서 실행·모니터링
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.sections", "navigation.expand", "navigation.top", "navigation.footer", "search.highlight", "search.suggest", "content.code.copy"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "\ud074\ub9bd\ubcf4\ub4dc\uc5d0 \ubcf5\uc0ac\ub428", "clipboard.copy": "\ud074\ub9bd\ubcf4\ub4dc\ub85c \ubcf5\uc0ac", "search.result.more.one": "\uc774 \ubb38\uc11c\uc5d0\uc11c 1\uac1c\uc758 \uac80\uc0c9 \uacb0\uacfc \ub354 \ubcf4\uae30", "search.result.more.other": "\uc774 \ubb38\uc11c\uc5d0\uc11c #\uac1c\uc758 \uac80\uc0c9 \uacb0\uacfc \ub354 \ubcf4\uae30", "search.result.none": "\uac80\uc0c9\uc5b4\uc640 \uc77c\uce58\ud558\ub294 \ubb38\uc11c\uac00 \uc5c6\uc2b5\ub2c8\ub2e4", "search.result.one": "1\uac1c\uc758 \uc77c\uce58\ud558\ub294 \ubb38\uc11c", "search.result.other": "#\uac1c\uc758 \uc77c\uce58\ud558\ub294 \ubb38\uc11c", "search.result.placeholder": "\uac80\uc0c9\uc5b4\ub97c \uc785\ub825\ud558\uc138\uc694", "search.result.term.missing": "\ud3ec\ud568\ub418\uc9c0 \uc54a\uc740 \uac80\uc0c9\uc5b4", "select.version": "\ubc84\uc804 \uc120\ud0dd"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "navigation.footer", "search.highlight", "search.suggest", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "\ud074\ub9bd\ubcf4\ub4dc\uc5d0 \ubcf5\uc0ac\ub428", "clipboard.copy": "\ud074\ub9bd\ubcf4\ub4dc\ub85c \ubcf5\uc0ac", "search.result.more.one": "\uc774 \ubb38\uc11c\uc5d0\uc11c 1\uac1c\uc758 \uac80\uc0c9 \uacb0\uacfc \ub354 \ubcf4\uae30", "search.result.more.other": "\uc774 \ubb38\uc11c\uc5d0\uc11c #\uac1c\uc758 \uac80\uc0c9 \uacb0\uacfc \ub354 \ubcf4\uae30", "search.result.none": "\uac80\uc0c9\uc5b4\uc640 \uc77c\uce58\ud558\ub294 \ubb38\uc11c\uac00 \uc5c6\uc2b5\ub2c8\ub2e4", "search.result.one": "1\uac1c\uc758 \uc77c\uce58\ud558\ub294 \ubb38\uc11c", "search.result.other": "#\uac1c\uc758 \uc77c\uce58\ud558\ub294 \ubb38\uc11c", "search.result.placeholder": "\uac80\uc0c9\uc5b4\ub97c \uc785\ub825\ud558\uc138\uc694", "search.result.term.missing": "\ud3ec\ud568\ub418\uc9c0 \uc54a\uc740 \uac80\uc0c9\uc5b4", "select.version": "\ubc84\uc804 \uc120\ud0dd"}, "version": null}</script>
     
     
-      <script src="assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

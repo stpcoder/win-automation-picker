@@ -900,6 +900,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../rig-ftp/dram-margin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DRAM DQ margin 원격 실행
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../rig-ftp/master-setup/" class="md-nav__link">
         
   
@@ -1387,6 +1415,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#dram-margin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DRAM margin 패키지가 실행 전에 차단됨
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#binary-blocked" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1666,6 +1705,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#dram-margin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DRAM margin 패키지가 실행 전에 차단됨
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#binary-blocked" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1850,12 +1900,22 @@ Manager에서 실제 중복 프로세스를 확인하고 하나만 남깁니다.
 <li>결과 상세의 <code>artifact_error</code>를 확인합니다.</li>
 <li>FTP 업로드가 실패해도 Slave의 <code>work_dir/serial-results/{job_id}</code> 원본은 유지됩니다.</li>
 <li>ZIP 상한보다 큰 경우 <code>고급 정책 &gt; 증거 ZIP 상한(MB)</code>을 검토하되 FTP 정책보다 크게 올리지 않습니다.</li>
-<li>SK Commander 경로의 raw Grid log는 SK Commander 자체 저장 경로에서 확인합니다.</li>
-<li><code>same COM twice</code>이면 같은 PC의 두 CH가 같은 COM을 가리키므로 Device Manager와 설정을 바로잡습니다.</li>
-<li>같은 PC/Campaign/attempt에 5행 이상이면 최대 네 CH씩 attempt 또는 실행 체크를 나눕니다.</li>
-<li><code>whitespace after ';'</code>이면 <code>cmd1;cmd2;</code>처럼 세미콜론 뒤 공백을 제거합니다.</li>
-<li><code>must end with ';'</code>이면 각 command line의 마지막 세미콜론을 추가하고 Generator Validate를 다시 실행합니다.</li>
 </ul>
+<h2 id="dram-margin">DRAM margin 패키지가 실행 전에 차단됨</h2>
+<ol>
+<li>패키지 상세의 Target이 연결 구조의 <code>PC별명:CH</code>와 정확히 같은지 확인합니다.</li>
+<li>ADB 실행이면 plan과 CH의 <code>adb_serial</code>이 같은지 확인합니다.</li>
+<li><code>DramMarginController.exe verify-bundle package.drammargin.zip</code>을 실행합니다.</li>
+<li>controller가 Windows x64 PE인지, ADB runner가 Android arm64 ELF인지 확인합니다.</li>
+<li>PHY reference의 backend, profile, spec/DQ-map SHA-256, dimension 순서와 conversion을 확인합니다.</li>
+</ol>
+<p><code>physical-evidence-rejected</code>는 통신 실패가 아닙니다. probe 또는 실행 결과의 실제 mV/ps/raw-code가
+승인 reference와 다르다는 뜻이므로 reference를 임의 수정하지 말고 SoC 담당 자료와 대조합니다.
+- SK Commander 경로의 raw Grid log는 SK Commander 자체 저장 경로에서 확인합니다.
+- <code>same COM twice</code>이면 같은 PC의 두 CH가 같은 COM을 가리키므로 Device Manager와 설정을 바로잡습니다.
+- 같은 PC/Campaign/attempt에 5행 이상이면 최대 네 CH씩 attempt 또는 실행 체크를 나눕니다.
+- <code>whitespace after ';'</code>이면 <code>cmd1;cmd2;</code>처럼 세미콜론 뒤 공백을 제거합니다.
+- <code>must end with ';'</code>이면 각 command line의 마지막 세미콜론을 추가하고 Generator Validate를 다시 실행합니다.</p>
 <p>실행 중 한 CH만 FAIL이면 <code>work_dir/serial-results/{job-CH}/manifest.json</code>에서 실패 command,
 timeout과 최근 response를 확인합니다. 다른 CH 결과는 같은 batch 안에서도 별도로 보존됩니다.</p>
 <h2 id="binary-blocked">Binary 사전점검이 BLOCKED</h2>
