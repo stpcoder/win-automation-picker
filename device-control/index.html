@@ -1824,6 +1824,10 @@ Download only도 사전점검에 표시된 <code>FLASH PC:CH 지문12자리</cod
 <li>CH의 Download 식별자와 <code>EDL / Download Serial</code>을 모두 저장합니다. QDL은 Serial이
   없으면 첫 장치를 임의 선택할 수 있으므로 실행을 차단합니다.</li>
 <li>여러 장치가 연결됐을 때 ADB 명령은 항상 CH의 serial을 사용합니다.</li>
+<li>Built-in QDL 계획은 upstream commit <code>a00d81bc639908875862582f0d3cb0775d92e269</code>
+  (<code>v2.7-44-ga00d81b</code>)의 실제 parser와 CI에서 dry-run합니다. 순수 <code>&lt;erase&gt;</code> XML은 QDL이
+  파일 종류를 직접 감지하지 못하므로, XML에 명시된 숫자 sector 범위만
+  <code>erase physical_partition/start+length</code>로 변환합니다. 범위가 불명확하면 실행을 차단합니다.</li>
 <li><code>contents.xml</code>의 storage/flavor 또는 <code>flashmap.json</code>의 layout 선택이 필요하면 CH의
   <code>QDL Package selector</code>에 <code>ufs,safe_rtos</code> 또는 <code>layout1/ufs</code>를 저장합니다.</li>
 <li><code>Download only</code>는 programmer, <code>rawprogram*.xml</code>, <code>patch*.xml</code>을 dry-run한 뒤 실행합니다.</li>
@@ -1844,6 +1848,10 @@ Download only도 사전점검에 표시된 <code>FLASH PC:CH 지문12자리</cod
   Genio는 board-control 생략 모드가 없으므로 Console HWID만으로는 실행하지 않습니다.</li>
 <li><code>Download Agent / lk.bin</code>, bootstrap SRAM 주소와 <code>aarch32/aarch64</code>는 한 세트입니다.
   이 주소는 DA를 올리는 SoC SRAM 주소이며 UFS write 주소가 아닙니다.</li>
+<li>Built-in Genio 계획은 Windows용 Genio Tools <code>1.7.1</code>의 실제 parser와 CI에서
+  dry-run합니다. 설정과 화면에는 검토하기 쉬운 <code>0x...</code> SRAM 주소를 유지하되, 해당 버전의
+  parser가 hexadecimal 문자열을 직접 받지 못하므로 프로세스 실행 인자만 같은 값의 decimal로
+  변환합니다. UFS write 주소로 변환하는 것이 아닙니다.</li>
 <li>DAA 장치에서는 package 안의 signature/auth 파일과 <code>DAA 사용</code>을 함께 설정합니다.</li>
 <li>Generic MTK에서 <code>등록 진입 명령 자동 실행</code>을 켜면 기본적으로 한 COM session에서 <code>exit</code>를
   2회, 150 ms 간격으로 보냅니다. CH별 반복 횟수·간격과 <code>LK2]</code> 같은 marker/timeout을 바꿀
