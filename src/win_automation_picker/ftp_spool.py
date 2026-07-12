@@ -8,6 +8,7 @@ import io
 import json
 import os
 from pathlib import Path, PurePosixPath
+import platform
 import posixpath
 import random
 import re
@@ -17,8 +18,8 @@ import tempfile
 import threading
 import time
 import uuid
-from contextlib import redirect_stderr, redirect_stdout
-from typing import Any, Callable, Iterable, Protocol, Sequence
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
+from typing import Any, Callable, Iterable, Iterator, Protocol, Sequence
 
 from . import rig_cli
 from .exporter import parse_exported_workflow
@@ -53,8 +54,14 @@ class ChannelInfo:
     channel_id: str = ""
     name: str = ""
     slot_id: str = ""
+    fixture_id: str = ""
+    fixture_model: str = ""
+    fixture_serial: str = ""
+    physical_location: str = ""
     com_port: str = ""
     baud_rate: int = 115200
+    console_identity: str = ""
+    usb_location: str = ""
     firmware_port: str = ""
     soc_vendor: str = ""
     soc_model: str = ""
@@ -95,8 +102,14 @@ class ChannelInfo:
             channel_id=str(data.get("channel_id") or data.get("channel") or "").strip(),
             name=str(data.get("name") or data.get("alias") or "").strip(),
             slot_id=str(data.get("slot_id") or data.get("slot") or "").strip(),
+            fixture_id=str(data.get("fixture_id") or data.get("asset_id") or "").strip(),
+            fixture_model=str(data.get("fixture_model") or data.get("rig_model") or "").strip(),
+            fixture_serial=str(data.get("fixture_serial") or data.get("serial_number") or "").strip(),
+            physical_location=str(data.get("physical_location") or data.get("location") or "").strip(),
             com_port=str(data.get("com_port") or data.get("com") or "").strip(),
             baud_rate=max(1, int(data.get("baud_rate") or data.get("baud") or 115200)),
+            console_identity=str(data.get("console_identity") or data.get("console_hwid") or "").strip(),
+            usb_location=str(data.get("usb_location") or data.get("hub_port") or "").strip(),
             firmware_port=str(data.get("firmware_port") or "").strip(),
             soc_vendor=str(data.get("soc_vendor") or data.get("vendor") or "").strip(),
             soc_model=str(data.get("soc_model") or data.get("soc") or "").strip(),
@@ -146,8 +159,14 @@ class ChannelInfo:
             "channel_id": self.channel_id,
             "name": self.name,
             "slot_id": self.slot_id,
+            "fixture_id": self.fixture_id,
+            "fixture_model": self.fixture_model,
+            "fixture_serial": self.fixture_serial,
+            "physical_location": self.physical_location,
             "com_port": self.com_port,
             "baud_rate": self.baud_rate,
+            "console_identity": self.console_identity,
+            "usb_location": self.usb_location,
             "firmware_port": self.firmware_port,
             "soc_vendor": self.soc_vendor,
             "soc_model": self.soc_model,
@@ -252,11 +271,43 @@ class DeviceToolInfo:
 
 
 @dataclass(frozen=True)
+class MasterInfo:
+    controller_id: str = ""
+    alias: str = ""
+    windows_name: str = ""
+    physical_location: str = ""
+
+    @classmethod
+    def from_mapping(cls, data: dict[str, Any] | None) -> "MasterInfo":
+        source = data or {}
+        return cls(
+            controller_id=str(source.get("controller_id") or source.get("id") or "").strip(),
+            alias=str(source.get("alias") or source.get("name") or "").strip(),
+            windows_name=str(source.get("windows_name") or source.get("hostname") or "").strip(),
+            physical_location=str(source.get("physical_location") or source.get("location") or "").strip(),
+        )
+
+    def to_mapping(self) -> dict[str, str]:
+        return {
+            "controller_id": self.controller_id,
+            "alias": self.alias,
+            "windows_name": self.windows_name,
+            "physical_location": self.physical_location,
+        }
+
+    def label(self) -> str:
+        return self.alias or self.controller_id or self.windows_name or "Master PC"
+
+
+@dataclass(frozen=True)
 class SlaveInfo:
     node_id: str
     alias: str = ""
     host: str = ""
     port: int = 0
+    asset_id: str = ""
+    windows_name: str = ""
+    physical_location: str = ""
     notes: str = ""
     variables: dict[str, str] = field(default_factory=dict)
     channels: tuple[ChannelInfo, ...] = ()
@@ -281,6 +332,9 @@ class SlaveInfo:
             alias=str(data.get("alias") or data.get("name") or "").strip(),
             host=str(data.get("host") or data.get("ip") or "").strip(),
             port=int(data.get("port") or 0),
+            asset_id=str(data.get("asset_id") or data.get("pc_asset_id") or "").strip(),
+            windows_name=str(data.get("windows_name") or data.get("hostname") or "").strip(),
+            physical_location=str(data.get("physical_location") or data.get("location") or "").strip(),
             notes=str(data.get("notes") or "").strip(),
             variables={str(key): str(value) for key, value in variables.items()},
             channels=tuple(
@@ -294,6 +348,9 @@ class SlaveInfo:
             "alias": self.alias,
             "host": self.host,
             "port": self.port,
+            "asset_id": self.asset_id,
+            "windows_name": self.windows_name,
+            "physical_location": self.physical_location,
             "notes": self.notes,
             "variables": dict(self.variables),
             "channels": [channel.to_mapping() for channel in self.channels],
@@ -336,7 +393,10 @@ class RunProfile:
 
 @dataclass(frozen=True)
 class FtpSpoolConfig:
+    master: MasterInfo = field(default_factory=MasterInfo)
     host: str = ""
+    ftp_alias: str = ""
+    ftp_location: str = ""
     username: str = ""
     password: str = ""
     password_env: str = ""
@@ -365,6 +425,7 @@ class FtpSpoolConfig:
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> "FtpSpoolConfig":
         ftp_data = data.get("ftp") or data
+        master_data = data.get("master") or data.get("controller") or {}
         runtime_data = data.get("runtime") or {}
         variables = data.get("variables") or {}
         if not isinstance(variables, dict):
@@ -394,7 +455,10 @@ class FtpSpoolConfig:
         if password_env:
             password = os.environ.get(password_env, password)
         return cls(
+            master=MasterInfo.from_mapping(master_data if isinstance(master_data, dict) else {}),
             host=str(ftp_data.get("host", "") or ""),
+            ftp_alias=str(ftp_data.get("alias", "") or ""),
+            ftp_location=str(ftp_data.get("physical_location", ftp_data.get("location", "")) or ""),
             username=str(ftp_data.get("username", "") or ""),
             password=password,
             password_env=password_env,
@@ -450,8 +514,11 @@ class FtpSpoolConfig:
 
     def to_mapping(self) -> dict[str, Any]:
         return {
+            "master": self.master.to_mapping(),
             "ftp": {
                 "host": self.host,
+                "alias": self.ftp_alias,
+                "physical_location": self.ftp_location,
                 "port": self.port,
                 "username": self.username,
                 "password": "" if self.password_env else self.password,
@@ -484,11 +551,19 @@ class FtpSpoolConfig:
 
 def example_spool_config() -> dict[str, Any]:
     return FtpSpoolConfig(
+        master=MasterInfo(
+            controller_id="ae-master-01",
+            alias="AE Master",
+            windows_name="AE-MASTER-01",
+            physical_location="Lab A / Control desk",
+        ),
         host="192.168.0.10",
+        ftp_alias="AE FTP",
+        ftp_location="Internal data center / Rack F1",
         username="macro_user",
         password="change-me",
         root_dir="/win_automation_macros",
-        node_id="rig-pc-01",
+        node_id="rig-pc-04",
         python_executable="python",
         variables={
             "line": "line-a",
@@ -519,14 +594,23 @@ def example_spool_config() -> dict[str, Any]:
                 alias="PC04",
                 host="192.168.0.104",
                 port=0,
+                asset_id="PC-ASSET-004",
+                windows_name="RIG-PC-04",
+                physical_location="Lab A / Rack R2 / Shelf 1",
                 notes="Line A channel 4",
                 variables={"channel": "ch4"},
                 channels=(
                     ChannelInfo(
                         channel_id="CH4",
                         slot_id="A4",
+                        fixture_id="FIXTURE-A04",
+                        fixture_model="Mobile DRAM Fixture",
+                        fixture_serial="FX-A04-001",
+                        physical_location="Rack R2 / Shelf 1 / Position 4",
                         com_port="COM4",
                         baud_rate=115200,
+                        console_identity="VID_0403&PID_6001",
+                        usb_location="USB-HUB-R2 / Port 4",
                         soc_vendor="qualcomm",
                         soc_model="SM8850",
                         firmware_tool_id="qc-downloader",
@@ -589,6 +673,12 @@ def build_slave_rig_config(
                 "port": channel.com_port,
                 "baud": channel.baud_rate,
                 "newline": "\\r\\n",
+                "fixture_id": channel.fixture_id,
+                "fixture_model": channel.fixture_model,
+                "fixture_serial": channel.fixture_serial,
+                "physical_location": channel.physical_location,
+                "console_identity": channel.console_identity,
+                "usb_location": channel.usb_location,
                 "firmware_port": channel.firmware_port or channel.com_port,
                 "soc_vendor": channel.soc_vendor,
                 "soc_model": channel.soc_model,
@@ -751,6 +841,7 @@ class SpoolJob:
     kind: str
     payload: dict[str, Any] = field(default_factory=dict)
     variables: dict[str, str] = field(default_factory=dict)
+    origin: dict[str, str] = field(default_factory=dict)
     created_at: str = ""
 
     @classmethod
@@ -760,6 +851,7 @@ class SpoolJob:
         kind: str,
         payload: dict[str, Any],
         variables: dict[str, str] | None = None,
+        origin: dict[str, str] | None = None,
         job_id: str = "",
     ) -> "SpoolJob":
         return cls(
@@ -767,6 +859,7 @@ class SpoolJob:
             kind=kind,
             payload=dict(payload),
             variables=dict(variables or {}),
+            origin={str(key): str(value) for key, value in (origin or {}).items() if str(value).strip()},
             created_at=_utc_now(),
         )
 
@@ -774,13 +867,15 @@ class SpoolJob:
     def from_mapping(cls, data: dict[str, Any]) -> "SpoolJob":
         variables = data.get("variables") or {}
         payload = data.get("payload") or {}
-        if not isinstance(variables, dict) or not isinstance(payload, dict):
-            raise FtpSpoolError("Job variables and payload must be objects.")
+        origin = data.get("origin") or {}
+        if not isinstance(variables, dict) or not isinstance(payload, dict) or not isinstance(origin, dict):
+            raise FtpSpoolError("Job variables, payload, and origin must be objects.")
         return cls(
             job_id=str(data.get("job_id") or ""),
             kind=str(data.get("kind") or ""),
             payload=payload,
             variables={str(key): str(value) for key, value in variables.items()},
+            origin={str(key): str(value) for key, value in origin.items()},
             created_at=str(data.get("created_at") or ""),
         )
 
@@ -792,13 +887,16 @@ class SpoolJob:
         return cls.from_mapping(data)
 
     def to_mapping(self) -> dict[str, Any]:
-        return {
+        mapping = {
             "job_id": self.job_id,
             "kind": self.kind,
             "payload": dict(self.payload),
             "variables": dict(self.variables),
             "created_at": self.created_at,
         }
+        if self.origin:
+            mapping["origin"] = dict(self.origin)
+        return mapping
 
     def to_json(self) -> str:
         return json.dumps(self.to_mapping(), indent=2, ensure_ascii=True)
@@ -1092,6 +1190,14 @@ def run_slave_once(
     node = _clean_node_id(node_id or config.node_id)
     if not node:
         raise FtpSpoolError("Slave node_id is required.")
+    if sys.platform.startswith("win"):
+        from .topology import validate_agent_ownership
+
+        validate_agent_ownership(
+            config,
+            node,
+            current_windows_name=platform.node(),
+        )
     if ensure_directories:
         ensure_node_dirs(backend, node)
     active_status = status_context if status_context is not None else {}
@@ -1118,15 +1224,23 @@ def run_slave_once(
                 stderr=f"Invalid job file {path}: {exc}",
             )
         else:
+            running_details = dict(active_status)
+            if job.origin:
+                running_details["current_origin"] = dict(job.origin)
             write_status(
                 backend,
                 node,
                 state="running",
                 message=job.kind,
                 current_job=job.job_id,
-                details=active_status,
+                details=running_details,
             )
             result = execute_job(backend, config, job, node_id=node)
+            if job.origin:
+                result = replace(
+                    result,
+                    details={**result.details, "origin": dict(job.origin)},
+                )
             if config.capture_on_error and not result.ok:
                 try:
                     screenshot_path = capture_screenshot(
@@ -1151,6 +1265,8 @@ def run_slave_once(
                 "last_finished_at": result.finished_at,
             }
         )
+        if job.origin:
+            active_status["last_origin"] = dict(job.origin)
         _update_channel_status(active_status, job, result)
     if processed_broadcast and config.slaves:
         cleanup_completed_broadcast_jobs(backend, [slave.node_id for slave in config.slaves])
@@ -1169,6 +1285,56 @@ def run_slave_once(
     return results
 
 
+@contextmanager
+def agent_instance_lock(config: FtpSpoolConfig, node_id: str) -> Iterator[Path]:
+    node = _clean_node_id(node_id)
+    if not node:
+        raise FtpSpoolError("Slave node_id is required for the Agent lock.")
+    lock_dir = Path(tempfile.gettempdir()) / "ae-workbench-agent-locks"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = lock_dir / f".agent-{_safe_name(node)}.lock"
+    handle = lock_path.open("a+b")
+    locked = False
+    try:
+        if sys.platform.startswith("win"):
+            import msvcrt
+
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(b"0")
+                handle.flush()
+            handle.seek(0)
+            try:
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError as exc:
+                raise FtpSpoolError(
+                    f"Agent {node}가 이미 이 PC에서 실행 중입니다. 중복 EXE를 닫으세요."
+                ) from exc
+        else:
+            import fcntl
+
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as exc:
+                raise FtpSpoolError(
+                    f"Agent {node}가 이미 이 PC에서 실행 중입니다. 중복 프로세스를 종료하세요."
+                ) from exc
+        locked = True
+        yield lock_path
+    finally:
+        if locked:
+            if sys.platform.startswith("win"):
+                import msvcrt
+
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        handle.close()
+
+
 def slave_loop(
     backend: SpoolBackend,
     config: FtpSpoolConfig,
@@ -1176,6 +1342,35 @@ def slave_loop(
     node_id: str | None = None,
     once: bool = False,
     count: int = 0,
+) -> None:
+    node = _clean_node_id(node_id or config.node_id)
+    if not node:
+        raise FtpSpoolError("Slave node_id is required.")
+    if sys.platform.startswith("win"):
+        from .topology import validate_agent_ownership
+
+        validate_agent_ownership(
+            config,
+            node,
+            current_windows_name=platform.node(),
+        )
+    with agent_instance_lock(config, node):
+        _slave_loop_unlocked(
+            backend,
+            config,
+            node_id=node,
+            once=once,
+            count=count,
+        )
+
+
+def _slave_loop_unlocked(
+    backend: SpoolBackend,
+    config: FtpSpoolConfig,
+    *,
+    node_id: str,
+    once: bool,
+    count: int,
 ) -> None:
     rounds = 0
     failures = 0
@@ -1470,8 +1665,14 @@ def _update_channel_status(
                 _apply_nonempty_channel_values(
                     channel,
                     {
+                        "fixture_id": item.get("fixture_id", ""),
+                        "fixture_model": item.get("fixture_model", ""),
+                        "fixture_serial": item.get("fixture_serial", ""),
+                        "physical_location": item.get("physical_location", ""),
                         "com_port": item.get("com_port", ""),
                         "baud_rate": item.get("baud_rate", ""),
+                        "console_identity": item.get("console_identity", ""),
+                        "usb_location": item.get("usb_location", ""),
                         "soc_vendor": item.get("soc_vendor", ""),
                         "soc_model": item.get("soc_model", ""),
                         "binary_name": item.get("binary_name", ""),
@@ -1499,6 +1700,14 @@ def _update_channel_status(
             _apply_nonempty_channel_values(
                 channel,
                 {
+                    "fixture_id": job.variables.get("fixture_id", ""),
+                    "fixture_model": job.variables.get("fixture_model", ""),
+                    "fixture_serial": job.variables.get("fixture_serial", ""),
+                    "physical_location": job.variables.get("fixture_location", ""),
+                    "com_port": job.variables.get("com_port", ""),
+                    "baud_rate": job.variables.get("baud_rate", ""),
+                    "console_identity": job.variables.get("console_identity", ""),
+                    "usb_location": job.variables.get("usb_location", ""),
                     "soc_vendor": job.variables.get("soc_vendor", ""),
                     "soc_model": job.variables.get("soc_model", ""),
                     "binary_name": job.variables.get("binary_name", ""),
@@ -1815,6 +2024,11 @@ def classify_status_rows(
             slave.node_id,
             {
                 "node_id": slave.node_id,
+                "alias": slave.alias,
+                "host": slave.host,
+                "asset_id": slave.asset_id,
+                "windows_name": slave.windows_name,
+                "physical_location": slave.physical_location,
                 "state": "offline",
                 "message": "No heartbeat received",
                 "current_job": "",
@@ -1829,6 +2043,12 @@ def classify_status_rows(
         row = dict(original)
         row["node_id"] = node_id
         configured_slave = configured_by_node.get(node_id)
+        if configured_slave is not None:
+            row.setdefault("alias", configured_slave.alias)
+            row.setdefault("host", configured_slave.host)
+            row.setdefault("asset_id", configured_slave.asset_id)
+            row.setdefault("windows_name", configured_slave.windows_name)
+            row.setdefault("physical_location", configured_slave.physical_location)
         configured_channels = configured_slave.channels if configured_slave else ()
         reported_channels = row.get("channels") if isinstance(row.get("channels"), list) else []
         row["channels"] = merge_channel_rows(configured_channels, reported_channels)
@@ -2344,8 +2564,14 @@ def _execute_sequence_batch(
                 "initial": {
                     "channel_id": channel,
                     "slot_id": run_variables.get("slot_id", ""),
+                    "fixture_id": run_variables.get("fixture_id", ""),
+                    "fixture_model": run_variables.get("fixture_model", ""),
+                    "fixture_serial": run_variables.get("fixture_serial", ""),
+                    "physical_location": run_variables.get("fixture_location", ""),
                     "com_port": com_port,
                     "baud_rate": int(run_variables.get("baud_rate") or run_variables.get("baud") or 115200),
+                    "console_identity": run_variables.get("console_identity", ""),
+                    "usb_location": run_variables.get("usb_location", ""),
                     "state": "running",
                     "sequence_name": bundle.recipe_name,
                     "current_test": run_variables.get("test_name", "")
@@ -2593,6 +2819,12 @@ def _execute_serial_sequence_bundle(
             "port": com_port,
             "baud": baud,
             "newline": variables.get("serial_newline") or "\\r\\n",
+            "fixture_id": variables.get("fixture_id", ""),
+            "fixture_model": variables.get("fixture_model", ""),
+            "fixture_serial": variables.get("fixture_serial", ""),
+            "physical_location": variables.get("fixture_location", ""),
+            "console_identity": variables.get("console_identity", ""),
+            "usb_location": variables.get("usb_location", ""),
         }
     )
     stop_event = threading.Event()
@@ -2672,8 +2904,14 @@ def _execute_serial_sequence_bundle(
         "node_id": node_id,
         "channel_id": channel,
         "slot_id": variables.get("slot_id", ""),
+        "fixture_id": variables.get("fixture_id", ""),
+        "fixture_model": variables.get("fixture_model", ""),
+        "fixture_serial": variables.get("fixture_serial", ""),
+        "physical_location": variables.get("fixture_location", ""),
         "com_port": com_port,
         "baud_rate": baud,
+        "console_identity": variables.get("console_identity", ""),
+        "usb_location": variables.get("usb_location", ""),
         "sequence_name": bundle.recipe_name,
         "sequence_bundle_id": bundle.bundle_id,
         "package": package_name,
@@ -2700,8 +2938,14 @@ def _execute_serial_sequence_bundle(
         "sequence_backend": "serial",
         "channel_id": channel,
         "slot_id": variables.get("slot_id", ""),
+        "fixture_id": variables.get("fixture_id", ""),
+        "fixture_model": variables.get("fixture_model", ""),
+        "fixture_serial": variables.get("fixture_serial", ""),
+        "physical_location": variables.get("fixture_location", ""),
         "com_port": com_port,
         "baud_rate": baud,
+        "console_identity": variables.get("console_identity", ""),
+        "usb_location": variables.get("usb_location", ""),
         "sequence_name": bundle.recipe_name,
         "sequence_bundle_id": bundle.bundle_id,
         "current_test": variables.get("test_name", "") or package_details.get("purpose", ""),

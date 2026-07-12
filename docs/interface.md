@@ -13,7 +13,7 @@
 | `3 Rig 설정` | Master FTP, 원격 PC/CH, Agent와 고급 보관 정책 |
 
 상단에는 현재 설정 파일, 연결 상태, `연결 확인`, `Rig 설정`만 표시됩니다. 설정 파일
-찾기·불러오기·저장은 `3 Rig 설정 > Master 연결`에 있습니다.
+찾기·불러오기·저장은 `3 Rig 설정 > Master · FTP`에 있습니다.
 
 ## Win Automation Picker
 
@@ -109,7 +109,10 @@
 | `오늘 작업 > 실행` | 프로그램 매크로/SEQ 선택과 PC별 실행 요청 |
 | `오늘 작업 > 캠페인` | 캠페인 목적/판정 기준과 PC/CH/attempt 보드 |
 | `오늘 작업 > PC · CH 상태` | online/offline, 결과 이력과 전체 화면 확인 |
-| `Rig 설정 > Master · 원격 PC` | FTP, 공통 변수, PC·자유 CH, 보관 정책 |
+| `Rig 설정 > 연결 구조` | Master/FTP/실장기 연결 PC/물리 실장기 소유권과 구성 오류 |
+| `Rig 설정 > Master · FTP` | 설정 파일과 FTP 연결 |
+| `Rig 설정 > 실장기 연결 PC` | 공통 변수, PC·물리 실장기·자유 CH, CSV와 Slave 내보내기 |
+| `Rig 설정 > 장치 도구 / 고급 정책` | Downloader allowlist와 polling·보관 제한 |
 | `Rig 설정 > 이 PC Agent` | 현재 PC의 slave polling 실행 |
 
 `PC / 슬롯 / CH별 실행표`는 실행에 필요한 CH, SEQ 방식, COM/baud와 package 사용자 변수만

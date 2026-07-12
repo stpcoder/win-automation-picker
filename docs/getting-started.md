@@ -66,7 +66,7 @@ COM과 UI Automation은 로그인된 interactive Windows 11 desktop에서 한 CH
 ## FTP 운영 프로그램 실행
 
 1. master PC에서 `RigFtpCommander.exe`를 실행합니다.
-2. `3 Rig 설정 > Master · 원격 PC > Master 연결`에 FTP 정보를 입력합니다.
+2. `3 Rig 설정 > Master · 원격 PC > Master · FTP`에 FTP 정보를 입력합니다.
 3. `연결 확인` 후 설정 파일 영역의 `저장`을 눌러 `rig-ftp.info`를 저장합니다.
 4. slave PC에는 `AEWorkbench.exe`, 해당 PC용 `rig-ftp.info`,
    `rig-commander.config.json`을 같은 폴더에 둡니다.

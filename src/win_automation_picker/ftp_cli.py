@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import json
 import shlex
 import sys
@@ -12,6 +13,7 @@ from .ftp_spool import (
     FtpSpoolConfig,
     FtpSpoolError,
     SpoolJob,
+    agent_instance_lock,
     backend_from_config,
     cleanup_node_files,
     clear_stop,
@@ -328,7 +330,9 @@ def _cmd_clear_stop(args: argparse.Namespace) -> int:
 def _cmd_slave(args: argparse.Namespace) -> int:
     config, backend = _load(args)
     if args.once:
-        results = run_slave_once(backend, config, node_id=args.node_id or None)
+        node = args.node_id or config.node_id
+        with agent_instance_lock(config, node):
+            results = run_slave_once(backend, config, node_id=node)
         for result in results:
             state = "OK" if result.ok else "FAIL"
             print(f"[{state}] {result.node_id} {result.job_id} {result.kind}")
@@ -392,7 +396,21 @@ def _cmd_monitor(args: argparse.Namespace) -> int:
 
 
 def _submit(args: argparse.Namespace, job: SpoolJob) -> int:
-    _config, backend = _load(args)
+    config, backend = _load(args)
+    if not job.origin:
+        job = replace(
+            job,
+            origin={
+                key: value
+                for key, value in {
+                    "controller_id": config.master.controller_id,
+                    "alias": config.master.alias,
+                    "windows_name": config.master.windows_name,
+                    "physical_location": config.master.physical_location,
+                }.items()
+                if value
+            },
+        )
     paths = submit_job(backend, job, args.target or ["all"])
     for path in paths:
         print(path)

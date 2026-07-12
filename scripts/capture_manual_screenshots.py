@@ -19,7 +19,13 @@ from types import SimpleNamespace
 
 from win_automation_picker.exporter import generate_python_script
 from win_automation_picker.ftp_app import RigFtpApp
-from win_automation_picker.ftp_spool import ChannelInfo, FtpSpoolConfig, PackageInfo, SlaveInfo
+from win_automation_picker.ftp_spool import (
+    ChannelInfo,
+    FtpSpoolConfig,
+    MasterInfo,
+    PackageInfo,
+    SlaveInfo,
+)
 from win_automation_picker.ftp_spool import DeviceToolInfo
 from win_automation_picker.binary_exchange import BinaryReleaseMetadata
 from win_automation_picker.project_file import AutomationProject
@@ -253,8 +259,14 @@ def _demo_config() -> FtpSpoolConfig:
         ChannelInfo(
             channel_id=f"CH{number}",
             slot_id=f"S{number}",
+            fixture_id=f"RIG-PC04-{number}",
+            fixture_model="SK-RIG-QC" if number < 11 else "SK-RIG-MTK",
+            fixture_serial=f"AE-RIG-{number:04d}",
+            physical_location=f"Mobile AE Lab / Rack 04 / Bay {number - 8}",
             com_port=f"COM{number + 2}",
             baud_rate=115200,
+            console_identity=f"VID_0403&PID_6001\\AE-RIG-{number:04d}",
+            usb_location=f"Rack04 Hub-A / Port {number - 8}",
             soc_vendor="Qualcomm" if number < 11 else "MediaTek",
             soc_model="SM8850" if number < 11 else "MTK 25D",
             firmware_tool_id="qc-downloader" if number < 11 else "mtk-downloader",
@@ -280,7 +292,15 @@ def _demo_config() -> FtpSpoolConfig:
         for number in range(9, 13)
     )
     return FtpSpoolConfig(
+        master=MasterInfo(
+            controller_id="MASTER-AE-01",
+            alias="AE Control 01",
+            windows_name="AE-MASTER-01",
+            physical_location="Mobile AE Lab / Control Desk 1",
+        ),
         host="10.20.30.10",
+        ftp_alias="AE Automation FTP",
+        ftp_location="Internal DC / Storage Zone A",
         username="ae_macro",
         password_env="RIG_FTP_PASSWORD",
         root_dir="/ae-workbench-demo",
@@ -315,6 +335,9 @@ def _demo_config() -> FtpSpoolConfig:
             SlaveInfo(
                 node_id="rig-pc-04",
                 alias="PC04",
+                asset_id="PC-ASSET-004",
+                windows_name="AE-RIG-PC04",
+                physical_location="Mobile AE Lab / Rack 04",
                 host="10.20.30.44",
                 notes="SK Commander 4CH",
                 channels=channels,
@@ -322,9 +345,25 @@ def _demo_config() -> FtpSpoolConfig:
             SlaveInfo(
                 node_id="rig-pc-07",
                 alias="PC07",
+                asset_id="PC-ASSET-007",
+                windows_name="AE-RIG-PC07",
+                physical_location="Mobile AE Lab / Rack 07",
                 host="10.20.30.47",
                 notes="Qualcomm download station",
-                channels=(replace(channels[0], channel_id="QC-DL", slot_id="DL1"),),
+                channels=(
+                    replace(
+                        channels[0],
+                        channel_id="QC-DL",
+                        slot_id="DL1",
+                        fixture_id="RIG-PC07-QCDL",
+                        fixture_serial="AE-RIG-0701",
+                        physical_location="Mobile AE Lab / Rack 07 / Download Bay",
+                        com_port="COM5",
+                        console_identity="VID_0403&PID_6001\\AE-RIG-0701",
+                        usb_location="Rack07 Hub-A / Port 1",
+                        adb_serial="AE-PC07-QCDL",
+                    ),
+                ),
             ),
         ),
     )
@@ -579,6 +618,14 @@ def _status_rows() -> list[dict[str, object]]:
             {
                 "channel_id": f"CH{number}",
                 "slot_id": f"S{number}",
+                "fixture_id": f"RIG-PC04-{number}",
+                "fixture_model": "SK-RIG-QC" if number < 11 else "SK-RIG-MTK",
+                "fixture_serial": f"AE-RIG-{number:04d}",
+                "physical_location": f"Mobile AE Lab / Rack 04 / Bay {number - 8}",
+                "com_port": f"COM{number + 2}",
+                "baud_rate": 115200,
+                "console_identity": f"VID_0403&PID_6001\\AE-RIG-{number:04d}",
+                "usb_location": f"Rack04 Hub-A / Port {number - 8}",
                 "soc_vendor": "Qualcomm" if number < 11 else "MediaTek",
                 "soc_model": "SM8850" if number < 11 else "MTK 25D",
                 "binary_name": "AE_2026W28",
@@ -605,20 +652,38 @@ def _status_rows() -> list[dict[str, object]]:
     return [
         {
             "node_id": "rig-pc-04",
+            "alias": "PC04",
+            "asset_id": "PC-ASSET-004",
+            "windows_name": "AE-RIG-PC04",
+            "physical_location": "Mobile AE Lab / Rack 04",
             "state": "running",
             "health": "running",
             "current_job": "AE-RH-20260712",
             "updated_at": "2026-07-12 09:42:18",
             "message": "CH10 GRID_08 실행 중",
+            "current_origin": {
+                "controller_id": "MASTER-AE-01",
+                "alias": "AE Control 01",
+                "windows_name": "AE-MASTER-01",
+                "physical_location": "Mobile AE Lab / Control Desk 1",
+            },
             "channels": channels,
         },
         {
             "node_id": "rig-pc-07",
+            "alias": "PC07",
+            "asset_id": "PC-ASSET-007",
+            "windows_name": "AE-RIG-PC07",
+            "physical_location": "Mobile AE Lab / Rack 07",
             "state": "online",
             "health": "online",
             "current_job": "-",
             "updated_at": "2026-07-12 09:42:15",
             "message": "다운로드 대기",
+            "last_origin": {
+                "controller_id": "MASTER-AE-01",
+                "alias": "AE Control 01",
+            },
             "channels": [],
         },
     ]
@@ -789,9 +854,11 @@ def _exercise_minimum_layout(app: object) -> None:
     _assert_visible_controls_inside(app, "Binary update")
     app._show_rig_setup()
     app.rig_setup_notebook.select(0)
-    app.settings_workspace.select(1)
-    _assert_visible_controls_inside(app, "Rig inventory")
+    app.settings_workspace.select(0)
+    _assert_visible_controls_inside(app, "Physical topology")
     app.settings_workspace.select(2)
+    _assert_visible_controls_inside(app, "Rig inventory")
+    app.settings_workspace.select(3)
     _assert_visible_controls_inside(app, "Device tools")
     app.rig_setup_notebook.select(1)
     _assert_visible_controls_inside(app, "Agent")
@@ -962,21 +1029,47 @@ def capture(output_dir: Path) -> None:
 
             app._show_rig_setup()
             app.rig_setup_notebook.select(0)
-            app.settings_workspace.select(1)
+            app.settings_workspace.select(2)
             app.update()
             _capture(app, output_dir / "06-rig-setup.png")
 
-            app.settings_workspace.select(0)
+            app.settings_workspace.select(1)
             app.update()
             _capture(app, output_dir / "10-master-connection.png")
 
-            app.settings_workspace.select(2)
+            app.settings_workspace.select(3)
             app.update()
             _capture(app, output_dir / "14-device-tools.png")
+
+            app.settings_workspace.select(0)
+            app.update()
+            _capture(app, output_dir / "15-physical-topology.png")
 
             app.rig_setup_notebook.select(1)
             app.update()
             _capture(app, output_dir / "11-slave-agent.png")
+
+            app.rig_setup_notebook.select(0)
+            app.settings_workspace.select(2)
+            app.settings_slave_tree.selection_set("0")
+
+            def capture_fixture_inventory() -> None:
+                dialogs = [
+                    child
+                    for child in app.winfo_children()
+                    if isinstance(child, tk.Toplevel)
+                    and child.title().startswith("실장기 / 자재 / Binary")
+                ]
+                if not dialogs:
+                    raise RuntimeError("Fixture inventory dialog did not open.")
+                dialog = dialogs[0]
+                dialog.geometry("1180x600+35+70")
+                dialog.update()
+                _capture(dialog, output_dir / "16-fixture-inventory.png")
+                dialog.destroy()
+
+            app.after(150, capture_fixture_inventory)
+            app._manage_settings_channels()
 
             app._show_today_work()
             app._toggle_run_advanced_tools()

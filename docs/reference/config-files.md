@@ -33,8 +33,16 @@
 
 ```json
 {
+  "master": {
+    "controller_id": "MASTER-AE-01",
+    "alias": "AE Control 01",
+    "windows_name": "AE-MASTER-01",
+    "physical_location": "Mobile AE Lab / Control Desk 1"
+  },
   "ftp": {
     "host": "192.168.0.10",
+    "alias": "AE Automation FTP",
+    "physical_location": "Internal DC / Storage Zone A",
     "port": 21,
     "username": "macro_user",
     "password": "change-me",
@@ -81,6 +89,9 @@
       "alias": "PC04",
       "host": "192.168.0.104",
       "port": 0,
+      "asset_id": "PC-ASSET-004",
+      "windows_name": "AE-RIG-PC04",
+      "physical_location": "Mobile AE Lab / Rack 04",
       "notes": "Line A channel 4",
       "variables": {
         "channel": "CH4"
@@ -90,8 +101,14 @@
           "channel_id": "CH11",
           "name": "SK Commander 3",
           "slot_id": "S3",
+          "fixture_id": "RIG-PC04-11",
+          "fixture_model": "SK-RIG-MTK",
+          "fixture_serial": "AE-RIG-0011",
+          "physical_location": "Mobile AE Lab / Rack 04 / Bay 3",
           "com_port": "COM7",
           "baud_rate": 115200,
+          "console_identity": "VID_0403&PID_6001\\AE-RIG-0011",
+          "usb_location": "Rack04 Hub-A / Port 3",
           "firmware_port": "COM7",
           "soc_vendor": "mediatek",
           "soc_model": "MTK25D",
@@ -148,7 +165,9 @@
 
 | 필드 | 설명 |
 | --- | --- |
+| `master.*` | 명령을 만든 Master PC ID·별명·Windows 이름·실제 위치 |
 | `ftp.host` | FTP 서버 주소 |
+| `ftp.alias`, `ftp.physical_location` | 사람이 구별하는 FTP 별명과 실제 위치 |
 | `ftp.root_dir` | macro spool root |
 | `runtime.node_id` | 현재 PC 식별자 |
 | `runtime.poll_interval_seconds` | slave polling 주기 |
@@ -158,7 +177,9 @@
 | `variables` | job 실행 시 기본 변수 |
 | `device_tools` | 실제 CLI와 결과 규칙을 확인한 외부 MTK/QC Downloader |
 | `slaves` | master에서 보는 slave roster |
-| `slaves[].channels` | 자유 CH, COM/baud/ADB/전원, SoC, binary provenance, 자재와 SEQ |
+| `slaves[].asset_id`, `windows_name`, `physical_location` | 실장기 연결 PC의 물리 자산·OS 이름·랙 위치 |
+| `slaves[].channels` | 물리 실장기 ID/Serial/위치, 자유 CH, COM/baud/ADB/전원, SoC, Binary, 자재와 SEQ |
+| `channels[].console_identity`, `usb_location` | COM 번호 변경·오연결을 검출하는 HWID와 Hub/케이블 위치 |
 | `run_profiles` | Master의 PC별 매크로 실행표 |
 
 `run_profiles[].variables.sequence_backend`은 `serial`(화면의 `직접 COM`) 또는
@@ -192,6 +213,12 @@
           "id": "CH11",
           "port": "COM7",
           "baud": 115200,
+          "fixture_id": "RIG-PC04-11",
+          "fixture_model": "SK-RIG-MTK",
+          "fixture_serial": "AE-RIG-0011",
+          "physical_location": "Mobile AE Lab / Rack 04 / Bay 3",
+          "console_identity": "VID_0403&PID_6001\\AE-RIG-0011",
+          "usb_location": "Rack04 Hub-A / Port 3",
           "soc_vendor": "mediatek",
           "soc_model": "MTK25D",
           "firmware_tool_id": "mtk-downloader",
@@ -207,6 +234,11 @@
 `execution_enabled`는 실제 도구 버전의 CLI, 성공/실패 문구를 확인한 뒤 GUI에서만 켭니다.
 
 CH 이름은 `CH1` 형식을 강제하지 않습니다. `CH9`, `CH10`, `PC04-RIG2`를 사용할 수 있고 CH가 없는 단일 창은 `channel_id`를 비우고 `name`을 `Main`처럼 입력합니다. 각 항목에는 `channel_id`, `slot_id`, `name` 중 하나가 반드시 있어야 합니다.
+
+`fixture_id`와 `fixture_serial`은 물리 실장기를 따라가는 안정 식별자입니다. `com_port`는
+Windows USB 재열거로 달라질 수 있으므로 `console_identity`와 `usb_location`을 함께
+저장합니다. 자세한 변경 절차는 [PC · 실장기 · COM 연결 구조](../fixture-topology.md)를
+따릅니다.
 
 Heartbeat와 잘못된 동적 CH 누적을 제한하기 위해 Slave PC 한 대에는 최대 64개 CH/slot 항목을 등록할 수 있습니다.
 

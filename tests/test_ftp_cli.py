@@ -34,6 +34,12 @@ def test_ftp_cli_init_submit_slave_status_with_local_backend(tmp_path, capsys) -
         )
         == 0
     )
+    pending = json.loads(
+        (spool_root / "commands" / "rig-pc-01" / "pending" / "cli-job.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert pending["origin"]["controller_id"] == "ae-master-01"
     assert ftp_cli.main(["-c", str(config_path), "--local-root", str(spool_root), "slave", "--once"]) == 0
     assert ftp_cli.main(["-c", str(config_path), "--local-root", str(spool_root), "status"]) == 0
 

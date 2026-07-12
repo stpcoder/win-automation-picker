@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import platform
 import re
 import threading
 import time
@@ -24,6 +25,7 @@ from .serial_console import (
     parse_serial_sequence,
     validate_ascii_text,
 )
+from .topology import PortObservation, match_configured_ports
 
 
 RIG_DEVICE_CONFIG = "rig-commander.config.json"
@@ -59,7 +61,7 @@ class DeviceWorkspaceMixin:
         target = ttk.Frame(parent, padding=(12, 9), style="Panel.TFrame")
         target.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         target.columnconfigure(1, weight=1)
-        ttk.Label(target, text="실장기 PC", style="Panel.TLabel").grid(row=0, column=0, padx=(0, 7))
+        ttk.Label(target, text="COM 소유 PC", style="Panel.TLabel").grid(row=0, column=0, padx=(0, 7))
         self.device_target_var = tk.StringVar(value="")
         self.device_target_combo = ttk.Combobox(
             target,
@@ -73,7 +75,7 @@ class DeviceWorkspaceMixin:
         ttk.Label(target, textvariable=self.device_local_hint_var, style="Muted.TLabel").grid(
             row=1, column=0, columnspan=5, sticky="w", pady=(7, 0)
         )
-        ttk.Button(target, text="COM 검색", command=self._scan_local_com_ports).grid(
+        ttk.Button(target, text="COM 대조", command=self._scan_local_com_ports).grid(
             row=0, column=3, padx=(0, 6)
         )
         ttk.Button(target, text="설정 다시 읽기", command=self._refresh_device_inventory).grid(row=0, column=4)
@@ -361,21 +363,170 @@ class DeviceWorkspaceMixin:
             self._refresh_device_tool_tree()
 
     def _scan_local_com_ports(self) -> None:
+        slave = self._device_selected_slave(self.device_target_var.get())
+        if slave is None:
+            self._show_error(FtpSpoolError("COM을 대조할 실장기 연결 PC를 선택하세요."))
+            return
+        try:
+            slave_index = self._settings_slaves.index(slave)
+        except ValueError:
+            self._show_error(FtpSpoolError("선택 PC를 설정 목록에서 찾을 수 없습니다."))
+            return
+        self._scan_ports_for_slave_index(slave_index)
+
+    def _scan_ports_for_slave_index(self, slave_index: int) -> None:
+        if not 0 <= slave_index < len(self._settings_slaves):
+            self._show_error(FtpSpoolError("COM을 대조할 실장기 연결 PC가 없습니다."))
+            return
+        slave = self._settings_slaves[slave_index]
+        selected_node = str(slave.get("node_id") or "")
+        selected_windows = str(slave.get("windows_name") or "").casefold()
+        local_node = self.node_id_var.get().strip() if hasattr(self, "node_id_var") else ""
+        local_windows = platform.node().casefold()
+        node_matches = bool(local_node and selected_node.casefold() == local_node.casefold())
+        windows_matches = bool(selected_windows and selected_windows == local_windows)
+        owns_com = windows_matches and (not local_node or node_matches) if selected_windows else node_matches
+        if not owns_com:
+            self._show_error(
+                FtpSpoolError(
+                    f"{selected_node}의 COM은 그 PC에서만 대조할 수 있습니다. "
+                    f"등록 Windows는 {slave.get('windows_name') or '미설정'}, 현재 Windows는 "
+                    f"{platform.node() or '확인 불가'}입니다. 원격 상태는 Binary 탭의 통신 점검을 사용하세요."
+                )
+            )
+            return
         try:
             import serial.tools.list_ports
 
-            ports = list(serial.tools.list_ports.comports())
+            observations = tuple(
+                PortObservation.from_port(port)
+                for port in serial.tools.list_ports.comports()
+            )
         except BaseException as exc:
             self._show_error(exc)
             return
-        if not ports:
-            messagebox.showinfo("COM 검색", "Windows에서 감지된 COM 포트가 없습니다.")
-            return
-        lines = [
-            f"{port.device}  |  {port.description or '-'}  |  {port.hwid or '-'}"
-            for port in ports
-        ]
-        messagebox.showinfo("COM 검색", "\n".join(lines))
+        raw_channels = [row for row in (slave.get("channels") or []) if isinstance(row, dict)]
+        channels = tuple(ChannelInfo.from_mapping(row) for row in raw_channels)
+        matches = match_configured_ports(channels, observations)
+
+        dialog = tk.Toplevel(self)
+        dialog.title(f"COM 대조 - {slave.get('alias') or selected_node}")
+        dialog.transient(self)
+        dialog.geometry("1040x520")
+        dialog.minsize(820, 420)
+        dialog.columnconfigure(0, weight=1)
+        dialog.rowconfigure(1, weight=1)
+        summary = tk.StringVar()
+        verified = sum(match.status == "verified" for match in matches)
+        moved = sum(match.status == "moved" for match in matches)
+        unverified = sum(match.status == "present" for match in matches)
+        blocked = sum(match.status in {"missing", "mismatch", "ambiguous", "unconfigured"} for match in matches)
+        summary.set(
+            f"{slave.get('physical_location') or '위치 미설정'}  |  "
+            f"일치 {verified} · 이동 제안 {moved} · 미검증 {unverified} · 차단 {blocked} · "
+            f"감지 COM {len(observations)}"
+        )
+        ttk.Label(dialog, textvariable=summary, style="PanelTitle.TLabel").grid(
+            row=0, column=0, sticky="w", padx=12, pady=(12, 7)
+        )
+        columns = ("fixture", "channel", "configured", "observed", "state", "detail")
+        tree = ttk.Treeview(dialog, columns=columns, show="headings", height=12)
+        labels = {
+            "fixture": "실장기 ID",
+            "channel": "CH",
+            "configured": "설정 COM",
+            "observed": "감지 COM",
+            "state": "판정",
+            "detail": "근거 / 조치",
+        }
+        widths = {"fixture": 120, "channel": 75, "configured": 80, "observed": 80, "state": 100, "detail": 500}
+        for column in columns:
+            tree.heading(column, text=labels[column])
+            tree.column(column, width=widths[column], anchor="w")
+        for tag, background, foreground in (
+            ("verified", "#f0fdf4", "#166534"),
+            ("present", "#fffbeb", "#92400e"),
+            ("moved", "#eff6ff", "#1d4ed8"),
+            ("blocked", "#fef2f2", "#b91c1c"),
+        ):
+            tree.tag_configure(tag, background=background, foreground=foreground)
+        for index, match in enumerate(matches):
+            tag = match.status if match.status in {"verified", "present", "moved"} else "blocked"
+            status_label = {
+                "verified": "일치",
+                "moved": "이동 제안",
+                "present": "미검증",
+                "missing": "누락",
+                "mismatch": "불일치",
+                "ambiguous": "불명확",
+                "unconfigured": "미설정",
+            }.get(match.status, match.status)
+            tree.insert(
+                "",
+                "end",
+                iid=str(index),
+                values=(
+                    match.fixture_id,
+                    match.channel,
+                    match.configured_port,
+                    match.observed_port or match.suggested_port,
+                    status_label,
+                    match.detail,
+                ),
+                tags=(tag,),
+            )
+        assigned = {
+            value.casefold()
+            for match in matches
+            for value in (match.observed_port, match.suggested_port)
+            if value
+        }
+        for index, observation in enumerate(observations, start=len(matches)):
+            if observation.device.casefold() in assigned:
+                continue
+            tree.insert(
+                "",
+                "end",
+                iid=f"unused:{index}",
+                values=("-", "미배정", "-", observation.device, "미배정", f"{observation.description} | {observation.hwid}"),
+                tags=("present",),
+            )
+        tree.grid(row=1, column=0, sticky="nsew", padx=(12, 0))
+        scroll = ttk.Scrollbar(dialog, orient="vertical", command=tree.yview)
+        scroll.grid(row=1, column=1, sticky="ns")
+        tree.configure(yscrollcommand=scroll.set)
+
+        def apply_safe_moves() -> None:
+            suggestions = {
+                match.channel: match.suggested_port
+                for match in matches
+                if match.status == "moved" and match.suggested_port
+            }
+            if not suggestions:
+                return
+            for row in raw_channels:
+                label = str(row.get("channel_id") or row.get("name") or row.get("slot_id") or "")
+                if label in suggestions:
+                    row["com_port"] = suggestions[label]
+            slave["channels"] = raw_channels
+            self._settings_slaves[slave_index] = slave
+            self._refresh_settings_slaves()
+            dialog.destroy()
+
+        controls = ttk.Frame(dialog, padding=12)
+        controls.grid(row=2, column=0, columnspan=2, sticky="e")
+        move_button = ttk.Button(
+            controls,
+            text="안전한 COM 변경 적용",
+            command=apply_safe_moves,
+            state="normal" if moved else "disabled",
+            style="Primary.TButton",
+        )
+        move_button.pack(side="right")
+        ttk.Button(controls, text="닫기", command=dialog.destroy).pack(side="right", padx=(0, 6))
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
+        dialog.grab_set()
+        self.wait_window(dialog)
 
     def _device_target_changed(self) -> None:
         self._disconnect_device_channels()
@@ -392,10 +543,13 @@ class DeviceWorkspaceMixin:
         selected_node = str((slave or {}).get("node_id") or "")
         if selected_node and local_node and selected_node != local_node:
             self.device_local_hint_var.set(
-                f"{selected_node}는 원격 PC입니다. 콘솔은 해당 PC의 AE Workbench에서 연결하세요."
+                f"{selected_node}는 원격 PC이며 Master는 그 COM을 소유하지 않습니다. 해당 PC의 Agent/콘솔을 사용하세요."
             )
         else:
-            self.device_local_hint_var.set("이 PC의 COM을 지속 연결합니다. 원격 명령은 Binary 탭에서 보냅니다.")
+            location = str((slave or {}).get("physical_location") or "위치 미설정")
+            self.device_local_hint_var.set(
+                f"이 PC가 COM을 직접 소유합니다. 위치: {location} · 원격 요청은 FTP를 통해 Agent가 실행합니다."
+            )
         for column, row in enumerate(channels):
             channel = ChannelInfo.from_mapping(row)
             channel_id = channel.label()
@@ -403,7 +557,7 @@ class DeviceWorkspaceMixin:
             panel = ttk.Frame(self.device_console_grid, padding=(8, 7), style="Panel.TFrame")
             panel.grid(row=0, column=column, sticky="nsew", padx=(0 if column == 0 else 4, 0))
             panel.columnconfigure(0, weight=1)
-            panel.rowconfigure(2, weight=1)
+            panel.rowconfigure(3, weight=1)
             selected = tk.BooleanVar(value=True)
             self._device_console_selected[channel_id] = selected
             header = ttk.Frame(panel, style="Panel.TFrame")
@@ -416,9 +570,21 @@ class DeviceWorkspaceMixin:
             ttk.Label(header, textvariable=state, style="Muted.TLabel").grid(row=0, column=2, sticky="e")
             ttk.Label(
                 panel,
-                text=f"{channel.com_port or 'COM 미설정'} @ {channel.baud_rate}  |  {channel.soc_vendor.upper()} {channel.soc_model}".rstrip(),
+                text=" · ".join(
+                    value
+                    for value in (
+                        channel.fixture_id or "실장기 ID 미설정",
+                        channel.physical_location or "위치 미설정",
+                    )
+                    if value
+                ),
                 style="Muted.TLabel",
             ).grid(row=1, column=0, sticky="w", pady=(3, 6))
+            ttk.Label(
+                panel,
+                text=f"{channel.com_port or 'COM 미설정'} @ {channel.baud_rate}  |  {channel.soc_vendor.upper()} {channel.soc_model}".rstrip(),
+                style="Muted.TLabel",
+            ).grid(row=2, column=0, sticky="w", pady=(0, 6))
             console = tk.Text(
                 panel,
                 wrap="none",
@@ -433,7 +599,7 @@ class DeviceWorkspaceMixin:
                 pady=7,
                 font=("Consolas", 9),
             )
-            console.grid(row=2, column=0, sticky="nsew")
+            console.grid(row=3, column=0, sticky="nsew")
             self._device_console_widgets[channel_id] = console
         if not channels:
             ttk.Label(
@@ -479,6 +645,12 @@ class DeviceWorkspaceMixin:
                 "id": channel.label(),
                 "port": channel.com_port,
                 "baud": channel.baud_rate,
+                "fixture_id": channel.fixture_id,
+                "fixture_model": channel.fixture_model,
+                "fixture_serial": channel.fixture_serial,
+                "physical_location": channel.physical_location,
+                "console_identity": channel.console_identity,
+                "usb_location": channel.usb_location,
                 "commands": commands,
                 "soc_vendor": channel.soc_vendor,
                 "soc_model": channel.soc_model,
@@ -491,10 +663,28 @@ class DeviceWorkspaceMixin:
             self._show_error(FtpSpoolError("실장기 PC를 먼저 선택하세요."))
             return
         local_node = self.node_id_var.get().strip()
-        if local_node and str(slave.get("node_id") or "") != local_node:
-            self._show_error(FtpSpoolError("실시간 콘솔은 COM이 연결된 해당 Slave PC에서만 열 수 있습니다."))
+        selected_node = str(slave.get("node_id") or "")
+        selected_windows = str(slave.get("windows_name") or "").strip().casefold()
+        local_windows = platform.node().strip().casefold()
+        node_matches = bool(local_node and selected_node.casefold() == local_node.casefold())
+        windows_matches = bool(selected_windows and selected_windows == local_windows)
+        owns_com = windows_matches and (not local_node or node_matches) if selected_windows else node_matches
+        if not owns_com:
+            self._show_error(
+                FtpSpoolError(
+                    "실시간 콘솔은 COM을 물리적으로 소유한 실장기 연결 PC에서만 열 수 있습니다. "
+                    "이 PC의 Agent Node ID 또는 Windows 이름을 연결 구조와 일치시키세요."
+                )
+            )
             return
         try:
+            config = self._config_from_fields()
+            self._require_topology_ready(
+                config,
+                node_id=selected_node,
+                include_transport=False,
+                require_fixture=True,
+            )
             for channel_id in self._selected_device_channel_ids():
                 existing = self._serial_console_manager.sessions.get(channel_id)
                 if existing and existing.connected:
@@ -821,6 +1011,12 @@ class DeviceWorkspaceMixin:
     def _device_base_rig_args(self) -> tuple[str, str, list[str]]:
         slave, channel = self._selected_binary_channel()
         node = str(slave.get("node_id") or "")
+        config = self._config_from_fields()
+        self._require_topology_ready(
+            config,
+            node_id=node,
+            require_fixture=True,
+        )
         target = f"{node}:{channel.label()}"
         return node, target, ["-c", RIG_DEVICE_CONFIG, "device"]
 
@@ -838,6 +1034,12 @@ class DeviceWorkspaceMixin:
             if slave is None:
                 raise FtpSpoolError("환경을 점검할 PC를 선택하세요.")
             node = str(slave.get("node_id") or "")
+            config = self._config_from_fields()
+            self._require_topology_ready(
+                config,
+                node_id=node,
+                require_fixture=False,
+            )
             self._submit_device_job(
                 node,
                 ["device", "system-check"],
@@ -923,6 +1125,7 @@ class DeviceWorkspaceMixin:
             job = SpoolJob.create(
                 kind="rig",
                 payload={"args": args, "timeout_seconds": timeout},
+                origin=self._job_origin(),
             )
             submit_job(backend, job, [node])
             self._queue.put(("device_job", f"{label} 요청 완료: {node} / {job.job_id}"))

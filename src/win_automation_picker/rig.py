@@ -47,6 +47,12 @@ class SerialPortConfig:
     id: str
     port: str
     baud: int = 115200
+    fixture_id: str = ""
+    fixture_model: str = ""
+    fixture_serial: str = ""
+    physical_location: str = ""
+    console_identity: str = ""
+    usb_location: str = ""
     newline: str = "\r\n"
     read_timeout_ms: int = 1000
     write_timeout_ms: int = 1000
@@ -80,6 +86,12 @@ class SerialPortConfig:
             id=port_id,
             port=port_name,
             baud=baud,
+            fixture_id=_clean(data.get("fixture_id") or data.get("asset_id")),
+            fixture_model=_clean(data.get("fixture_model")),
+            fixture_serial=_clean(data.get("fixture_serial") or data.get("serial_number")),
+            physical_location=_clean(data.get("physical_location") or data.get("location")),
+            console_identity=_clean(data.get("console_identity") or data.get("console_hwid")),
+            usb_location=_clean(data.get("usb_location") or data.get("hub_port")),
             newline=_decode_newline(str(data.get("newline", "\r\n"))),
             read_timeout_ms=int(data.get("read_timeout_ms", 1000)),
             write_timeout_ms=int(data.get("write_timeout_ms", 1000)),
@@ -926,6 +938,17 @@ def build_device_probe_script(
         "if ($ports -notcontains $expectedPort) { throw \"Configured COM port is not present: $expectedPort\" }",
         "Write-Output \"CHECK COM OK $expectedPort\"",
     ]
+    if target.port.console_identity:
+        lines.extend(
+            [
+                f"$consoleIdentity = {_ps_quote(target.port.console_identity)}",
+                "$serialDevice = Get-CimInstance Win32_SerialPort | Where-Object { $_.DeviceID -eq $expectedPort } | Select-Object -First 1",
+                "if (-not $serialDevice) { throw \"Cannot read hardware identity for configured COM: $expectedPort\" }",
+                "$consoleText = \"$($serialDevice.Name) $($serialDevice.Description) $($serialDevice.PNPDeviceID)\"",
+                "if ($consoleText.IndexOf($consoleIdentity, [StringComparison]::OrdinalIgnoreCase) -lt 0) { throw \"Console identity mismatch on $expectedPort. Expected: $consoleIdentity / Actual: $consoleText\" }",
+                "Write-Output \"CHECK CONSOLE_IDENTITY OK $consoleIdentity\"",
+            ]
+        )
     if phase == "download":
         if tool is None:
             lines.append("throw 'No downloader tool profile is configured.'")
@@ -1230,9 +1253,24 @@ def wait_for_ready(
 
 
 def build_serial_command_script(port: SerialPortConfig, command: str) -> str:
-    return "\n".join(
+    lines = [
+        "$ErrorActionPreference = 'Stop'",
+        f"$expectedPort = {_ps_quote(port.port)}",
+        "$ports = [System.IO.Ports.SerialPort]::GetPortNames()",
+        "if ($ports -notcontains $expectedPort) { throw \"Configured COM port is not present: $expectedPort\" }",
+    ]
+    if port.console_identity:
+        lines.extend(
+            [
+                f"$consoleIdentity = {_ps_quote(port.console_identity)}",
+                "$serialDevice = Get-CimInstance Win32_SerialPort | Where-Object { $_.DeviceID -eq $expectedPort } | Select-Object -First 1",
+                "if (-not $serialDevice) { throw \"Cannot read hardware identity for configured COM: $expectedPort\" }",
+                "$consoleText = \"$($serialDevice.Name) $($serialDevice.Description) $($serialDevice.PNPDeviceID)\"",
+                "if ($consoleText.IndexOf($consoleIdentity, [StringComparison]::OrdinalIgnoreCase) -lt 0) { throw \"Console identity mismatch on $expectedPort. Expected: $consoleIdentity / Actual: $consoleText\" }",
+            ]
+        )
+    lines.extend(
         [
-            "$ErrorActionPreference = 'Stop'",
             "$serial = New-Object System.IO.Ports.SerialPort",
             f"$serial.PortName = {_ps_quote(port.port)}",
             f"$serial.BaudRate = {int(port.baud)}",
@@ -1253,6 +1291,7 @@ def build_serial_command_script(port: SerialPortConfig, command: str) -> str:
             "",
         ]
     )
+    return "\n".join(lines)
 
 
 def build_firmware_flash_script(
