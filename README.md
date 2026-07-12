@@ -20,8 +20,10 @@ The executables are not code-signed, so Windows SmartScreen may show a warning.
 
 ## Highlights
 
-![AE Workbench with validated SEQ and Scratch artifacts](docs/assets/screenshots/01-ae-workbench.png)
+![Daily workspace centered on automation selection and the PC/CH run table](docs/assets/screenshots/01-today-work.png)
 
+- Separates daily execution, one-time automation preparation, and Rig setup into three task-frequency tabs.
+- Keeps raw package upload and single-node arguments behind progressive disclosure in the daily view.
 - Keeps the active SEQ recipe/package, Scratch source/Python export, and named macro buttons in one `*.aework.json` project.
 - Opens Test Sequence Generator on the active recipe and calls `SeqTool.exe` in the background for validation and Rig-package builds.
 - Treats temperature as a user-selected SEQ target rendered into `@TF set/run`, not as automatic measured-temperature collection.
@@ -31,6 +33,7 @@ The executables are not code-signed, so Windows SmartScreen may show a warning.
 - Continuously records external-app clicks, grouped text input, and common keys between explicit Start/Stop actions.
 - Reads the final UIA field value so IME composition and paste become one input block; password values are never stored.
 - Drags click, type, key, wait, repeat, if, and monitor blocks from a palette into the workspace.
+- Defaults to a compact Scratch layout with 46 px blocks and a 2 px connected-stack gap.
 - Moves blocks between top-level order and nested C-shaped repeat/condition containers.
 - Selects, renames, duplicates, moves, and deletes nested children independently.
 - Supports undo, redo, duplicate, and Delete keyboard editing.
@@ -55,7 +58,7 @@ The executables are not code-signed, so Windows SmartScreen may show a warning.
 
 For the complete flow, use the [AE Workbench guide](https://stpcoder.github.io/win-automation-picker/ae-workbench/). For macro-only work:
 
-1. Start `AEWorkbench.exe` and click `새 매크로`, or start `WinAutomationPicker.exe` directly.
+1. Open `AEWorkbench.exe > 2 자동화 준비 > Scratch 더보기 > 새 매크로 만들기`, or start `WinAutomationPicker.exe` directly.
 2. Keep `입력값을 PC별 변수로` enabled and click `연속 녹화 시작`.
 3. Use the target application normally: click fields, type values, and click buttons.
 4. Return to the Picker and click `녹화 정지`; the stop click itself is excluded.
@@ -85,11 +88,11 @@ Equipment labels are free-form. `CH9`, `CH11`, and `PC04-RIG2` work without a fi
 The FTP tools use a configured root directory as a shared spool when inbound ports cannot be opened.
 
 1. Start `RigFtpCommander.exe` on the master PC.
-2. Enter the FTP connection and root directory under `연결 설정`, then run `연결 확인`.
-3. Initialize the dedicated folders.
+2. Enter the FTP connection and server root under `3 Rig 설정 > Master · 원격 PC > Master 연결`, then run `연결 확인`.
+3. Open `원격 PC · CH` and run `서버 폴더 준비` for the dedicated folders.
 4. Export one `.info` file per slave and place it next to the executable on that PC.
 5. Start `이 PC Agent` on each slave.
-6. Load configured PCs into the PC/slot/CH run matrix, assign each macro or SEQ, and submit the table.
+6. Open `1 오늘 작업 > 실행`, load the Rig targets, assign each macro or SEQ, and click `실행 시작`.
 
 Connections are opened only for transfers. Poll jitter, screenshot rate limits, retention limits, stale-heartbeat classification, and agent reconnect backoff reduce server load and false status. The tool stays under its configured FTP root and does not touch unrelated folders.
 

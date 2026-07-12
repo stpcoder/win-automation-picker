@@ -38,6 +38,7 @@ markdown_extensions:
 nav:
   - 시작하기:
       - 개요: index.md
+      - Mobile DRAM AE 업무 흐름: daily-workflow.md
       - AE Workbench 통합 흐름: ae-workbench.md
       - 설치와 실행: getting-started.md
       - 화면 구성: interface.md

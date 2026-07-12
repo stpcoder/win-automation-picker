@@ -130,7 +130,7 @@
 | `slaves[].channels` | 자유 이름 CH/slot과 SoC, binary provenance, 자재, test, SEQ 초기값 |
 | `run_profiles` | Master의 PC별 매크로 실행표 |
 
-`저장`은 현재 실행표도 `run_profiles`에 저장합니다. `Slave .info 내보내기`로 생성되는 slave용 파일에서는 다른 PC의 실행표를 제거합니다. 실행표 변수는 일반 문자열로 저장되므로 비밀번호나 token은 저장하지 말고 실행 직전에 입력하십시오.
+`저장`은 현재 실행표도 `run_profiles`에 저장합니다. `Slave 설정 내보내기`로 생성되는 slave용 파일에서는 다른 PC의 실행표를 제거합니다. 실행표 변수는 일반 문자열로 저장되므로 비밀번호나 token은 저장하지 말고 실행 직전에 입력하십시오.
 
 CH 이름은 `CH1` 형식을 강제하지 않습니다. `CH9`, `CH10`, `PC04-RIG2`를 사용할 수 있고 CH가 없는 단일 창은 `channel_id`를 비우고 `name`을 `Main`처럼 입력합니다. 각 항목에는 `channel_id`, `slot_id`, `name` 중 하나가 반드시 있어야 합니다.
 

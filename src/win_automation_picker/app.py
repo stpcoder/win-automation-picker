@@ -272,6 +272,20 @@ class PickerApp(tk.Toplevel):
         )
         return widget
 
+    @staticmethod
+    def _style_listbox(widget: tk.Listbox) -> tk.Listbox:
+        widget.configure(
+            background="#ffffff",
+            foreground="#111827",
+            selectbackground="#2563eb",
+            selectforeground="#ffffff",
+            highlightthickness=1,
+            highlightbackground="#cbd5e1",
+            highlightcolor="#2563eb",
+            relief="flat",
+        )
+        return widget
+
     def _build_ui(self) -> None:
         self.columnconfigure(0, weight=1)
         self.rowconfigure(2, weight=1)
@@ -736,6 +750,7 @@ class PickerApp(tk.Toplevel):
         steps_frame.rowconfigure(0, weight=1)
         steps_frame.columnconfigure(0, weight=1)
         self.steps_list = tk.Listbox(steps_frame, activestyle="dotbox", selectmode="extended")
+        self._style_listbox(self.steps_list)
         self.steps_list.grid(row=0, column=0, sticky="nsew")
         self.steps_list.bind("<<ListboxSelect>>", self._load_selected_step_metadata)
         self.steps_list.bind("<Delete>", self._delete_selected_step_event)
@@ -762,6 +777,7 @@ class PickerApp(tk.Toplevel):
         elements_frame.rowconfigure(0, weight=1)
         elements_frame.columnconfigure(0, weight=1)
         self.elements_list = tk.Listbox(elements_frame, activestyle="dotbox")
+        self._style_listbox(self.elements_list)
         self.elements_list.grid(row=0, column=0, sticky="nsew")
         elements_scroll = ttk.Scrollbar(elements_frame, orient="vertical", command=self.elements_list.yview)
         elements_scroll.grid(row=0, column=1, sticky="ns")
@@ -787,6 +803,7 @@ class PickerApp(tk.Toplevel):
             row=6, column=0, columnspan=2, sticky="ew", pady=(6, 6)
         )
         self.monitor_list = tk.Listbox(monitor_frame, activestyle="dotbox")
+        self._style_listbox(self.monitor_list)
         self.monitor_list.grid(row=7, column=0, columnspan=2, sticky="nsew")
         monitor_scroll = ttk.Scrollbar(monitor_frame, orient="vertical", command=self.monitor_list.yview)
         monitor_scroll.grid(row=7, column=2, sticky="ns")
@@ -836,7 +853,21 @@ class PickerApp(tk.Toplevel):
         )
         ttk.Button(studio_bar, text="되돌리기", command=self._undo_recipe).grid(row=0, column=2, padx=(0, 6))
         ttk.Button(studio_bar, text="다시 실행", command=self._redo_recipe).grid(row=0, column=3, padx=(0, 12))
-        ttk.Label(studio_bar, text="색상 기준", style="Panel.TLabel").grid(row=0, column=4, padx=(0, 6))
+        ttk.Label(studio_bar, text="보기", style="Panel.TLabel").grid(row=0, column=4, padx=(0, 6))
+        self.block_density_var = tk.StringVar(value="작게")
+        density_combo = ttk.Combobox(
+            studio_bar,
+            textvariable=self.block_density_var,
+            values=("작게", "보통"),
+            width=6,
+            state="readonly",
+        )
+        density_combo.grid(row=0, column=5, padx=(0, 10))
+        density_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self.block_workspace.set_density(self.block_density_var.get()),
+        )
+        ttk.Label(studio_bar, text="색상 기준", style="Panel.TLabel").grid(row=0, column=6, padx=(0, 6))
         self.block_color_mode_var = tk.StringVar(value="event")
         ttk.Combobox(
             studio_bar,
@@ -844,7 +875,7 @@ class PickerApp(tk.Toplevel):
             values=("event", "window"),
             width=8,
             state="readonly",
-        ).grid(row=0, column=5)
+        ).grid(row=0, column=7)
         self.block_color_mode_var.trace_add("write", lambda *_: self._refresh_block_canvas())
         if self._on_create_shortcut is not None:
             ttk.Button(
@@ -852,7 +883,7 @@ class PickerApp(tk.Toplevel):
                 text="Rig 버튼으로 등록",
                 command=self._request_workbench_shortcut,
                 style="Success.TButton",
-            ).grid(row=0, column=6, padx=(10, 0))
+            ).grid(row=0, column=8, padx=(10, 0))
 
         body = ttk.PanedWindow(parent, orient=tk.HORIZONTAL)
         body.grid(row=1, column=0, sticky="nsew")
@@ -1168,7 +1199,7 @@ class PickerApp(tk.Toplevel):
                 on_activate=self._activate_palette_block,
                 on_drop=self._drop_palette_block,
             )
-            item.grid(row=row, column=0, sticky="ew", pady=(0, 7))
+            item.grid(row=row, column=0, sticky="ew", pady=(0, 3))
             self.scratch_palette_items[kind] = item
             self._attach_tooltip(item, tooltip)
             rows[palette_parent] = row + 1
@@ -1295,6 +1326,7 @@ class PickerApp(tk.Toplevel):
         )
 
         self.ftp_package_list = tk.Listbox(parent, activestyle="dotbox")
+        self._style_listbox(self.ftp_package_list)
         self.ftp_package_list.grid(row=2, column=0, sticky="nsew", padx=(0, 8), pady=(0, 8))
         self.ftp_package_list.bind("<<ListboxSelect>>", self._ftp_show_selected_package)
         package_scroll = ttk.Scrollbar(parent, orient="vertical", command=self.ftp_package_list.yview)

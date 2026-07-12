@@ -1,84 +1,72 @@
 # Master 세팅
 
-## 1. 연결 설정 입력
+Master 설정은 Rig를 처음 구성하거나 PC/CH가 바뀔 때만 사용합니다. 일일 시험은
+`1 오늘 작업`에서 수행합니다.
 
-`RigFtpCommander.exe`를 실행하고 `연결 설정` 탭을 엽니다.
+## 1. FTP 연결
 
-![공통 변수와 PC/CH inventory를 함께 편집하는 연결 설정](../assets/screenshots/06-connection-settings.png)
+![Master FTP 연결 설정](../assets/screenshots/10-master-connection.png)
+
+`3 Rig 설정 > Master · 원격 PC > Master 연결`을 엽니다.
 
 | 필드 | 예시 | 설명 |
 | --- | --- | --- |
-| `FTP 주소` | `192.168.0.10` | FTP 서버 주소 |
-| `포트` | `21` | FTP 포트 |
-| `아이디` | `macro_user` | FTP 계정 |
-| `비밀번호` | `******` | FTP 비밀번호 |
-| `비밀번호 환경 변수` | `RIG_FTP_PASSWORD` | 평문 저장 대신 읽을 환경 변수 이름 |
-| `서버 폴더` | `/win_automation_macros` | spool root |
-| `이 PC Node ID` | `master-pc` | master 자신의 식별값 |
-| `조회 간격(초)` | `5` | slave polling 기본값 |
-| `작업 폴더` | `rig-ftp-work` | slave 작업 폴더 |
+| 설정 파일 | `rig-ftp.info` | Master와 실행표 저장 파일 |
+| FTP 주소·포트 | `192.168.0.10`, `21` | 사내 FTP endpoint |
+| 아이디 | `macro_user` | 전용 계정 권장 |
+| 비밀번호 환경 변수 | `RIG_FTP_PASSWORD` | 평문 비밀번호 대신 사용 |
+| 서버 폴더 | `/win_automation_macros` | Rig 전용 spool root |
+| FTPS / Passive | 사내 서버 정책 | 다른 서비스와 동일한 정책 사용 |
+| 로컬 시험 폴더 | 비움 | FTP 대신 로컬 backend를 시험할 때만 사용 |
 
-입력 후 상단 `연결 확인`을 누릅니다. 전용 root 아래에 임시 확인 파일을 만들고 읽고 삭제해 권한까지 검사합니다. 성공 메시지를 확인한 다음 `저장`을 누르면 `rig-ftp.info`가 저장됩니다.
+`연결 확인`은 전용 root 아래 임시 파일을 쓰고 다시 읽은 뒤 삭제합니다. 성공한 다음
+설정 파일 영역의 `저장`을 누릅니다.
 
-`비밀번호 환경 변수`가 입력되어 있으면 실제 비밀번호는 `.info`에 저장하지 않습니다. 해당 환경 변수는 master와 각 slave PC에서 각각 설정되어 있어야 합니다.
+## 2. 공통 변수와 원격 PC
 
-## 2. slave 목록 입력
+![공통 변수와 원격 PC·CH inventory](../assets/screenshots/06-rig-setup.png)
 
-1. `Slave PC 목록 > PC 추가`를 누릅니다.
-2. `Node ID`, 별명, IP를 입력합니다.
-3. PC별 값은 `channel=CH11; line=A`처럼 세미콜론으로 구분합니다.
-4. PC를 선택하고 `CH 관리`를 누릅니다.
-5. CH/이름, Slot, COM, SoC, binary, 자재, 현재 Test와 SEQ를 입력합니다.
+`원격 PC · CH`에서 다음 순서로 등록합니다.
 
-CH가 없는 PC는 CH를 비우고 표시 이름을 `Main`처럼 지정합니다. `CH9`, `CH10`, `CH11`, `CH12`처럼 번호가 연속되지 않아도 됩니다.
+1. 공통 변수에는 `line`, `operator`처럼 전체 PC가 공유하는 기본값을 추가합니다.
+2. `PC 추가`에서 별명, Node ID, IP와 PC별 값을 입력합니다.
+3. PC를 선택하고 `CH 관리`를 누릅니다.
+4. CH/이름, Slot, COM, SoC, Binary, DRAM 자재, 현재 Test/SEQ를 입력합니다.
+5. PC 수정·삭제는 `PC 편집` 메뉴를 사용합니다.
 
-Test Sequence Generator에서 `.rigbinary.json`을 만든 경우 CH 행을 선택하고 `Binary 정보 불러오기`를 누릅니다. SoC, XML 이름, version, 원본 폴더, 최신 수정 시각이 적용됩니다. binary 파일 자체는 복사되지 않습니다.
+별명은 `PC04`, Node ID는 `rig-pc-04`처럼 PC마다 고유하게 정합니다. CH는 연속 숫자가
+아니어도 되며 `CH9`, `CH11`, `QC-DL`, `Main`을 함께 사용할 수 있습니다.
 
-별명은 `PC04`처럼 사람이 보는 이름이고 대상 입력에도 사용할 수 있습니다. Node ID는 PC마다 고유해야 합니다.
+Test Sequence Generator의 `.rigbinary.json`이 있으면 `CH 관리 > Binary 정보 불러오기`로
+SoC, XML, version, 원본 폴더와 수정 시각을 적용할 수 있습니다.
 
-## 3. FTP 폴더 초기화
+## 3. 서버 폴더와 Slave 설정
 
-1. `모니터 및 실행 > 실행 및 배포`를 엽니다.
-2. `대상 PC`에 별명 또는 Node ID를 입력합니다. 예: `PC04 PC05 PC06`.
-3. `서버 폴더 초기화`를 누릅니다.
+1. `서버 대상`에는 등록한 별명 또는 Node ID가 자동으로 표시됩니다.
+2. `서버 폴더 준비`를 눌러 전용 spool 하위 폴더를 만듭니다.
+3. `Slave 설정 내보내기`를 누르고 출력 폴더를 선택합니다.
+4. 생성된 PC별 폴더의 `rig-ftp.info`를 해당 원격 PC에 배치합니다.
 
-## 4. slave .info 만들기
+Master가 지정한 root 밖의 다른 FTP 폴더는 만들거나 정리하지 않습니다.
 
-1. `서버 초기 설정 > 더보기`를 엽니다.
-2. `Slave .info 내보내기`를 누릅니다.
-3. 출력 폴더를 선택합니다.
-4. 생성된 각 폴더의 `rig-ftp.info`를 해당 slave PC에 복사합니다.
+## 4. 고급 정책
 
-## 5. 자동화 / SEQ 업로드
+`고급 정책`에는 일상적으로 바꾸지 않는 값만 있습니다.
 
-이미 export한 Python macro가 있다면:
+| 필드 | 기본값 | 의미 |
+| --- | ---: | --- |
+| 조회 간격 | 5초 | Agent polling 간격 |
+| 조회 분산 | 3초 | 여러 PC 동시 접속 분산 |
+| 화면 요청 최소 | 30초 | screenshot 연속 요청 제한 |
+| 결과/로그 보관 | 200 | Node별 최근 파일 수 |
+| 작업 보관 | 500 | 처리된 job archive 수 |
+| 화면 보관 | 20 | Node별 screenshot 수 |
 
-1. `자동화 / SEQ 업로드 > 파일`에서 `.py` 파일을 선택합니다.
-2. 파일명, 제목, 설명을 입력합니다.
-3. `파일 업로드`를 누릅니다.
-4. `자동화 / SEQ 목록`에 표시되는지 확인합니다.
+외부 Python은 일반 Python script를 실행할 때만 필요합니다. Picker FLOW와 Rig SEQ는
+Agent 내장 엔진을 사용합니다.
 
-선택 매크로 정보의 Runner가 `내장 워크플로 엔진`이면 slave에 Python을 설치할 필요가 없습니다. `외부 Python`으로 표시되는 일반 스크립트는 고급 실행 환경이 필요합니다.
+## 5. 일일 실행표
 
-Win Automation Picker에서 현재 블록 workflow를 바로 업로드하려면 `WinAutomationPicker.exe > Deploy` 탭을 사용합니다.
-
-Test Sequence Generator의 `.rigseq.zip`도 같은 영역에서 업로드합니다. `[SEQ]` 항목은 단독 실행하지 않고 빠른 실행의 `SK Commander 런처` 또는 실행표의 같은 열에 `[FLOW]` workflow를 지정해야 합니다.
-
-## 6. PC별 macro와 입력값 실행
-
-1. `매크로 목록`에서 macro를 선택합니다.
-2. `PC / 슬롯 / CH별 실행표 > 설정 PC 불러오기`를 누릅니다. 등록된 CH마다 한 행이 생성됩니다.
-3. package metadata에 저장된 입력 변수 열이 자동으로 생겼는지 확인합니다.
-4. 각 행을 더블클릭해 PC별 매크로와 값을 바꿉니다. 예: `PC01 = Seq 1`, `PC02 = Seq 2`.
-5. 실행하지 않을 PC는 첫 `실행` 셀을 클릭해 체크를 끕니다.
-6. `실행표 전송`을 누릅니다. Master는 PC마다 별도 job과 variables를 생성합니다.
-
-![PC04의 CH9~CH12에 각 실행값을 지정한 표](../assets/screenshots/03-pc-channel-run-table.png)
-
-상단 `저장`을 누르면 실행표도 master의 `rig-ftp.info`에 저장되고 다음 실행 때 복원됩니다. 비밀번호나 token처럼 파일에 남기면 안 되는 값은 저장 전에 비워 두고 실행 직전에 입력하십시오.
-
-한 PC에 SK Commander가 4개라면 먼저 `연결 설정 > CH 관리`에서 네 항목을 등록합니다. 실행표 불러오기 시 네 행과 SoC/binary/자재 변수가 자동 생성됩니다. 임시로 등록하지 않은 CH를 추가할 때만 `행 복제`를 사용합니다. 자세한 예시는 [SEQ Generator와 SK Commander 연동](seq-integration.md)을 확인합니다.
-
-한 PC만 빠르게 실행할 때는 `빠른 실행`의 `대상 PC`, `입력값`, `선택 매크로 전송`을 사용합니다. 입력값 형식은 `channel=CH11 sequence="Seq 2"`입니다.
-
-Win Automation Picker의 `배포 > PC별 실행표`에서도 같은 흐름을 사용할 수 있습니다. 연속 녹화 직후에는 현재 workflow의 변수 열과 녹화 기본값이 이미 준비되어 있습니다.
+Master 설정이 끝나면 [Mobile DRAM AE 업무 흐름](../daily-workflow.md)의 `매일 시험 시작`을
+따릅니다. 실행표는 package가 선언한 변수 열을 만들고, 같은 PC의 각 CH를 별도 행으로
+관리합니다. 값 수정은 셀 더블클릭, 실행 제외는 첫 열 체크로 처리합니다.

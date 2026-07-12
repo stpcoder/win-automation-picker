@@ -13,6 +13,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import tkinter as tk
+from tkinter import ttk
 from types import SimpleNamespace
 
 from win_automation_picker.exporter import generate_python_script
@@ -34,6 +36,64 @@ from win_automation_picker.workbench import (
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = ROOT / "docs" / "assets" / "screenshots"
 SEQUENCE_ROOT = ROOT.parent / "test-sequence-generator"
+WINDOW_CAPTURE_SWIFT = r"""
+import AppKit
+import Foundation
+import ImageIO
+import ScreenCaptureKit
+import UniformTypeIdentifiers
+
+let targetPID = Int32(CommandLine.arguments[1])!
+let targetTitle = CommandLine.arguments[2]
+let outputPath = CommandLine.arguments[3]
+_ = NSApplication.shared
+
+Task { @MainActor in
+    do {
+        let content = try await SCShareableContent.excludingDesktopWindows(
+            true,
+            onScreenWindowsOnly: true
+        )
+        guard let window = content.windows.first(where: {
+            $0.owningApplication?.processID == targetPID && $0.title == targetTitle
+        }) else {
+            throw NSError(domain: "AEManualCapture", code: 1)
+        }
+        let filter = SCContentFilter(desktopIndependentWindow: window)
+        let config = SCStreamConfiguration()
+        config.width = Int(window.frame.width * 2)
+        config.height = Int(window.frame.height * 2)
+        config.showsCursor = false
+        config.ignoreShadowsSingleWindow = true
+        config.shouldBeOpaque = true
+        config.captureResolution = .best
+        let image = try await SCScreenshotManager.captureImage(
+            contentFilter: filter,
+            configuration: config
+        )
+        let url = URL(fileURLWithPath: outputPath)
+        try? FileManager.default.removeItem(at: url)
+        guard let destination = CGImageDestinationCreateWithURL(
+            url as CFURL,
+            UTType.png.identifier as CFString,
+            1,
+            nil
+        ) else {
+            throw NSError(domain: "AEManualCapture", code: 2)
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else {
+            throw NSError(domain: "AEManualCapture", code: 3)
+        }
+        print("\(config.width)|\(config.height)")
+        exit(0)
+    } catch {
+        fputs("\(error)\n", stderr)
+        exit(1)
+    }
+}
+RunLoop.main.run()
+"""
 
 
 def _selector(control_type: str, name: str, automation_id: str) -> UISelector:
@@ -193,6 +253,9 @@ def _demo_config() -> FtpSpoolConfig:
         for number in range(9, 13)
     )
     return FtpSpoolConfig(
+        host="10.20.30.10",
+        username="ae_macro",
+        password_env="RIG_FTP_PASSWORD",
         root_dir="/ae-workbench-demo",
         node_id="rig-pc-04",
         poll_interval_seconds=15,
@@ -317,21 +380,38 @@ def _build_demo_files(workspace: Path) -> dict[str, Path]:
 
 
 def _capture(widget: object, path: Path) -> None:
+    widget.attributes("-topmost", True)
     widget.update_idletasks()
     widget.lift()
+    widget.focus_force()
     widget.update()
     time.sleep(0.25)
     widget.update()
-    x = int(widget.winfo_rootx())
-    y = int(widget.winfo_rooty())
-    width = int(widget.winfo_width())
-    height = int(widget.winfo_height())
-    subprocess.run(
-        ["screencapture", "-x", f"-R{x},{y},{width},{height}", str(path)],
-        check=True,
-    )
+    dimensions = subprocess.check_output(
+        [
+            "swift",
+            "-e",
+            WINDOW_CAPTURE_SWIFT,
+            str(os.getpid()),
+            str(widget.title()),
+            str(path),
+        ],
+        text=True,
+    ).strip()
+    parts = dimensions.split("|")
+    if len(parts) != 2:
+        raise RuntimeError(f"Could not capture the macOS window: {widget.title()}")
+    width, height = parts
     if not path.is_file() or path.stat().st_size < 10_000:
         raise RuntimeError(f"Screenshot capture failed: {path}")
+    image = tk.PhotoImage(file=str(path))
+    expected_width = int(width)
+    expected_height = int(height)
+    if abs(image.width() - expected_width) > 12 or abs(image.height() - expected_height) > 80:
+        raise RuntimeError(
+            f"Captured window dimensions do not match {widget.title()}: "
+            f"{image.width()}x{image.height()} vs {expected_width}x{expected_height}"
+        )
 
 
 def _demo_packages(paths: dict[str, Path]) -> list[PackageInfo]:
@@ -359,6 +439,7 @@ def _demo_packages(paths: dict[str, Path]) -> list[PackageInfo]:
             name="sk-launcher.py",
             path="packages/sk-launcher.py",
             title="SK Commander 4CH Launcher",
+            notes="CH 표식을 확인하고 PC/CH별 SEQ를 Load한 뒤 시험을 시작합니다.",
             runner="workflow",
             variables={key: value for key, value in variables.items() if key != "launcher_package"},
         ),
@@ -505,6 +586,48 @@ def _exercise_scratch_drag(editor: object) -> None:
     if len(editor._recipe.steps[2].children) != 2:
         raise RuntimeError("Scratch move/delete/undo/redo audit produced an invalid tree.")
 
+    _exercise_internal_workspace_drag(editor)
+
+
+def _exercise_internal_workspace_drag(editor: object) -> None:
+    workspace = editor.block_workspace
+    workspace.yview_moveto(0)
+    editor.update()
+    before = [step.block_title() for step in editor._recipe.steps]
+    if len(before) < 2:
+        raise RuntimeError("Internal Scratch drag audit requires at least two top-level blocks.")
+
+    source_path = (1,)
+    bounds = workspace.bbox(workspace._path_tag(source_path))
+    if bounds is None:
+        raise RuntimeError("Could not locate the source block for internal Scratch drag.")
+    destination = next(
+        zone for zone in workspace._drop_zones if zone.parent_path == () and zone.index == 0
+    )
+    source_canvas_x = min(bounds[2] - 18, bounds[0] + 120)
+    source_canvas_y = min(bounds[3] - 10, bounds[1] + 20)
+    source_x = int(source_canvas_x - workspace.canvasx(0))
+    source_y = int(source_canvas_y - workspace.canvasy(0))
+    target_x = int(destination.x1 + 100 - workspace.canvasx(0))
+    target_y = int(destination.y - workspace.canvasy(0))
+
+    workspace.event_generate("<Motion>", x=source_x, y=source_y)
+    workspace.update()
+    workspace.event_generate("<ButtonPress-1>", x=source_x, y=source_y)
+    workspace.event_generate("<B1-Motion>", x=source_x + 12, y=source_y - 8)
+    workspace.event_generate("<B1-Motion>", x=target_x, y=target_y)
+    workspace.update()
+    workspace.event_generate("<ButtonRelease-1>", x=target_x, y=target_y)
+    editor.update()
+
+    after = [step.block_title() for step in editor._recipe.steps]
+    if after == before or after[0] != before[1]:
+        raise RuntimeError(f"Internal Scratch drag did not reorder the block: {before} -> {after}")
+    editor._undo_recipe()
+    editor.update()
+    if [step.block_title() for step in editor._recipe.steps] != before:
+        raise RuntimeError("Undo did not restore the internal Scratch drag.")
+
 
 def _exercise_run_stop(master: object) -> None:
     from win_automation_picker.app import PickerApp
@@ -529,9 +652,58 @@ def _exercise_run_stop(master: object) -> None:
     runner.destroy()
 
 
+def _walk_widgets(widget: object) -> list[object]:
+    widgets: list[object] = []
+    for child in widget.winfo_children():
+        widgets.append(child)
+        widgets.extend(_walk_widgets(child))
+    return widgets
+
+
+def _assert_visible_controls_inside(app: object, label: str) -> None:
+    app.update_idletasks()
+    app.update()
+    left = app.winfo_rootx()
+    top = app.winfo_rooty()
+    right = left + app.winfo_width()
+    bottom = top + app.winfo_height()
+    offenders: list[str] = []
+    control_types = (ttk.Button, ttk.Menubutton, ttk.Entry, ttk.Combobox)
+    for widget in _walk_widgets(app):
+        if not isinstance(widget, control_types) or not widget.winfo_ismapped():
+            continue
+        x1 = widget.winfo_rootx()
+        y1 = widget.winfo_rooty()
+        x2 = x1 + widget.winfo_width()
+        y2 = y1 + widget.winfo_height()
+        if x1 < left - 2 or y1 < top - 2 or x2 > right + 2 or y2 > bottom + 2:
+            text = str(widget.cget("text")) if "text" in widget.keys() else widget.winfo_class()
+            offenders.append(f"{text}@{x1-left},{y1-top},{x2-left},{y2-top}")
+    if offenders:
+        raise RuntimeError(f"{label} controls overflow 1080x720: {', '.join(offenders)}")
+
+
+def _exercise_minimum_layout(app: object) -> None:
+    app.geometry("1080x720+20+50")
+    app._show_today_work()
+    _assert_visible_controls_inside(app, "Today")
+    app._show_monitoring(1)
+    _assert_visible_controls_inside(app, "Campaign")
+    app._show_monitoring(2)
+    _assert_visible_controls_inside(app, "Monitoring")
+    app._show_preparation()
+    _assert_visible_controls_inside(app, "Preparation")
+    app._show_rig_setup()
+    app.rig_setup_notebook.select(0)
+    app.settings_workspace.select(1)
+    _assert_visible_controls_inside(app, "Rig inventory")
+    app.rig_setup_notebook.select(1)
+    _assert_visible_controls_inside(app, "Agent")
+
+
 def capture(output_dir: Path) -> None:
     if sys.platform != "darwin":
-        raise SystemExit("This screenshot audit uses the macOS screencapture command.")
+        raise SystemExit("This screenshot audit uses macOS ScreenCaptureKit.")
     output_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="ae-manual-") as directory:
         workspace = Path(directory)
@@ -572,7 +744,6 @@ def capture(output_dir: Path) -> None:
                 ),
             )
             app._refresh_workbench_state()
-            _capture(app, output_dir / "01-ae-workbench.png")
 
             app._open_workbench_macro_editor()
             editor = app._macro_editor
@@ -613,6 +784,7 @@ def capture(output_dir: Path) -> None:
             editor.recording_hint_var.set("입력 1개를 PC별 변수로 변환했습니다.")
             editor._refresh_recording_tree()
             editor.scratch_palette_notebook.select(1)
+            editor.block_workspace.yview_moveto(0)
             editor.update()
             _capture(editor, output_dir / "02-scratch-block-editor.png")
             editor.destroy()
@@ -622,10 +794,13 @@ def capture(output_dir: Path) -> None:
             app._set_packages(packages)
             app._run_profiles = _run_profiles(paths["package"].name)
             app._refresh_run_profile_columns()
-            app.main_notebook.select(1)
-            app.master_workspace.select(1)
+            app._show_today_work()
             app.update()
-            _capture(app, output_dir / "03-pc-channel-run-table.png")
+            _capture(app, output_dir / "01-today-work.png")
+
+            app._show_preparation()
+            app.update()
+            _capture(app, output_dir / "03-automation-preparation.png")
 
             app._set_status_rows(_status_rows())
             app._set_result_rows(
@@ -653,20 +828,43 @@ def capture(output_dir: Path) -> None:
                 ],
                 node="rig-pc-04",
             )
-            app.master_workspace.select(0)
+            app._show_monitoring(1)
             app.update()
-            _capture(app, output_dir / "04-ae-campaign-board.png")
+            _capture(app, output_dir / "04-campaign-monitoring.png")
 
-            app.master_workspace.select(2)
+            app._show_monitoring(2)
             app.status_views_notebook.select(0)
             app.update()
-            _capture(app, output_dir / "05-status-monitor.png")
+            _capture(app, output_dir / "05-pc-channel-monitoring.png")
 
-            app.main_notebook.select(3)
+            app._show_rig_setup()
+            app.rig_setup_notebook.select(0)
+            app.settings_workspace.select(1)
             app.update()
-            _capture(app, output_dir / "06-connection-settings.png")
+            _capture(app, output_dir / "06-rig-setup.png")
+
+            app.settings_workspace.select(0)
+            app.update()
+            _capture(app, output_dir / "10-master-connection.png")
+
+            app.rig_setup_notebook.select(1)
+            app.update()
+            _capture(app, output_dir / "11-slave-agent.png")
+
+            app._show_today_work()
+            app._toggle_run_advanced_tools()
+            if not app._run_advanced_visible:
+                raise RuntimeError("Advanced operating tools did not open.")
+            app._toggle_run_advanced_tools()
+            app._show_preparation()
+            app._toggle_workbench_details()
+            app._toggle_workbench_details()
+            app._show_rig_setup()
+            app.rig_setup_notebook.select(1)
+            app.update()
 
             _exercise_run_stop(app)
+            _exercise_minimum_layout(app)
         finally:
             if app is not None:
                 try:
@@ -684,6 +882,8 @@ def main() -> int:
     print(f"Captured AE Workbench manual screenshots: {args.output_dir.resolve()}")
     print("Scratch audit: drag/drop, rename, move, nest, unnest, duplicate, delete, undo/redo PASS")
     print("Execution audit: start/stop PASS")
+    print("Workflow audit: today, monitoring, preparation, Rig setup, progressive disclosure PASS")
+    print("Minimum layout audit: all primary controls fit within 1080x720 PASS")
     return 0
 
 

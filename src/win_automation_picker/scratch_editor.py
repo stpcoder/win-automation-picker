@@ -22,6 +22,57 @@ class DropZone:
     depth: int
 
 
+@dataclass(frozen=True)
+class ScratchLayout:
+    block_height: float
+    header_height: float
+    footer_height: float
+    stack_gap: float
+    child_padding: float
+    body_min_height: float
+    start_height: float
+    empty_slot_height: float
+    child_indent: float
+    child_right_gap: float
+    max_stack_width: float
+    title_font: int
+    subtitle_font: int
+
+
+def layout_for_density(value: str) -> ScratchLayout:
+    if str(value).strip().casefold() in {"comfortable", "normal", "보통"}:
+        return ScratchLayout(
+            block_height=58.0,
+            header_height=54.0,
+            footer_height=24.0,
+            stack_gap=5.0,
+            child_padding=6.0,
+            body_min_height=48.0,
+            start_height=54.0,
+            empty_slot_height=40.0,
+            child_indent=28.0,
+            child_right_gap=10.0,
+            max_stack_width=820.0,
+            title_font=10,
+            subtitle_font=9,
+        )
+    return ScratchLayout(
+        block_height=46.0,
+        header_height=46.0,
+        footer_height=18.0,
+        stack_gap=2.0,
+        child_padding=3.0,
+        body_min_height=36.0,
+        start_height=44.0,
+        empty_slot_height=32.0,
+        child_indent=24.0,
+        child_right_gap=8.0,
+        max_stack_width=700.0,
+        title_font=9,
+        subtitle_font=8,
+    )
+
+
 def choose_drop_zone(zones: list[DropZone], x: float, y: float) -> DropZone | None:
     if not zones:
         return None
@@ -71,6 +122,8 @@ class ScratchWorkspace(tk.Canvas):
         self._dragging = False
         self._active_drop: DropZone | None = None
         self._render_pending: str | None = None
+        self._density = "compact"
+        self._layout = layout_for_density(self._density)
 
         self.bind("<ButtonPress-1>", self._on_press)
         self.bind("<B1-Motion>", self._on_motion)
@@ -83,6 +136,15 @@ class ScratchWorkspace(tk.Canvas):
         self.bind("<Button-4>", lambda _event: self.yview_scroll(-3, "units"))
         self.bind("<Button-5>", lambda _event: self.yview_scroll(3, "units"))
 
+    def set_density(self, value: str) -> None:
+        normalized = str(value).strip().casefold()
+        density = "comfortable" if normalized in {"comfortable", "normal", "보통"} else "compact"
+        if density == self._density:
+            return
+        self._density = density
+        self._layout = layout_for_density(density)
+        self.render(self._recipe, self._selected_path)
+
     def render(self, recipe: AutomationRecipe, selected_path: BlockPath | None = None) -> None:
         self._recipe = recipe
         self._selected_path = selected_path
@@ -90,10 +152,11 @@ class ScratchWorkspace(tk.Canvas):
         self._drop_zones = []
         width = max(480, self.winfo_width() - 34)
         self._draw_background(width)
-        y = 24.0
-        self._draw_start_hat(22, y, width - 22)
-        y += 68
-        y = self._draw_list(recipe.steps, (), x=22, y=y, width=width - 22, depth=0)
+        stack_width = min(width - 22, self._layout.max_stack_width)
+        y = 16.0
+        self._draw_start_hat(22, y, stack_width)
+        y += self._layout.start_height + self._layout.stack_gap
+        y = self._draw_list(recipe.steps, (), x=22, y=y, width=stack_width, depth=0)
         if not recipe.steps:
             self.create_text(
                 54,
@@ -164,57 +227,61 @@ class ScratchWorkspace(tk.Canvas):
                 self.create_oval(x, y, x + 2, y + 2, fill="#dbe4ee", outline="")
 
     def _draw_start_hat(self, x: float, y: float, width: float) -> None:
+        height = self._layout.start_height
+        connector_depth = 5.0 if self._density == "compact" else 7.0
         points = [
             x,
-            y + 18,
+            y + 14,
             x + 8,
-            y + 5,
-            x + 26,
+            y + 4,
+            x + 24,
             y,
-            x + width - 12,
+            x + width - 10,
             y,
             x + width,
-            y + 12,
+            y + 10,
             x + width,
-            y + 48,
-            x + 76,
-            y + 48,
-            x + 68,
-            y + 56,
-            x + 50,
-            y + 56,
-            x + 42,
-            y + 48,
-            x + 12,
-            y + 48,
+            y + height - connector_depth,
+            x + 66,
+            y + height - connector_depth,
+            x + 60,
+            y + height,
+            x + 46,
+            y + height,
+            x + 40,
+            y + height - connector_depth,
+            x + 10,
+            y + height - connector_depth,
             x,
-            y + 36,
+            y + height - 15,
         ]
         self.create_polygon(points, fill="#0f766e", outline="#0b5f59", width=1)
-        self.create_oval(x + 18, y + 15, x + 34, y + 31, fill="#ccfbf1", outline="")
+        self.create_oval(x + 14, y + 12, x + 28, y + 26, fill="#ccfbf1", outline="")
         self.create_polygon(
-            [x + 24, y + 19, x + 24, y + 27, x + 30, y + 23],
+            [x + 19, y + 15, x + 19, y + 23, x + 25, y + 19],
             fill="#0f766e",
             outline="",
         )
         self.create_text(
-            x + 44,
-            y + 23,
+            x + 36,
+            y + height / 2 - 2,
             anchor="w",
             text="매크로를 실행하면",
             fill="#ffffff",
-            font=("TkDefaultFont", 11, "bold"),
+            font=("TkDefaultFont", self._layout.title_font, "bold"),
         )
 
     def _measure_step(self, step: AutomationStep, width: float, depth: int) -> float:
         if step.kind not in CONTAINER_KINDS:
-            return 66.0
+            return self._layout.block_height
         _child_indent, child_width = self._child_geometry(width)
-        child_height = 0.0
-        for child in step.children:
-            child_height += self._measure_step(child, child_width, depth + 1) + 10.0
-        body_height = max(64.0, child_height + 14.0)
-        return 62.0 + body_height + 28.0
+        child_height = sum(self._measure_step(child, child_width, depth + 1) for child in step.children)
+        child_height += max(0, len(step.children) - 1) * self._layout.stack_gap
+        body_height = max(
+            self._layout.body_min_height,
+            child_height + self._layout.child_padding * 2,
+        )
+        return self._layout.header_height + body_height + self._layout.footer_height
 
     def _draw_list(
         self,
@@ -226,24 +293,30 @@ class ScratchWorkspace(tk.Canvas):
         width: float,
         depth: int,
     ) -> float:
-        self._drop_zones.append(DropZone(parent_path, 0, x, x + width, y - 7, depth))
+        self._drop_zones.append(
+            DropZone(parent_path, 0, x, x + width, y - self._layout.stack_gap / 2, depth)
+        )
         if not steps:
             self._draw_empty_slot(x, y, width, parent_path)
-            return y + 54
+            return y + self._layout.empty_slot_height + self._layout.stack_gap
         for index, step in enumerate(steps):
             path = (*parent_path, index)
             height = self._measure_step(step, width, depth)
             self._draw_step(path, step, x=x, y=y, width=width, height=height, depth=depth)
-            y += height + 10
-            self._drop_zones.append(DropZone(parent_path, index + 1, x, x + width, y - 6, depth))
+            y += height
+            self._drop_zones.append(
+                DropZone(parent_path, index + 1, x, x + width, y + self._layout.stack_gap / 2, depth)
+            )
+            y += self._layout.stack_gap
         return y
 
     def _draw_empty_slot(self, x: float, y: float, width: float, parent_path: BlockPath) -> None:
+        height = self._layout.empty_slot_height
         self.create_rectangle(
-            x + 14,
+            x + 8,
             y,
-            x + width - 14,
-            y + 38,
+            x + width - 8,
+            y + height,
             fill="#ffffff",
             outline="#94a3b8",
             dash=(4, 4),
@@ -251,7 +324,7 @@ class ScratchWorkspace(tk.Canvas):
         )
         self.create_text(
             x + width / 2,
-            y + 19,
+            y + height / 2,
             text="여기에 블록 놓기" if parent_path else "첫 블록 놓기",
             fill="#64748b",
             font=("TkDefaultFont", 9, "bold"),
@@ -276,16 +349,16 @@ class ScratchWorkspace(tk.Canvas):
         outline_width = 4 if selected else 1
 
         if step.kind in CONTAINER_KINDS:
-            header_height = 62.0
-            footer_height = 28.0
+            header_height = self._layout.header_height
+            footer_height = self._layout.footer_height
             body_top = y + header_height
             body_bottom = y + height - footer_height
             self._create_stack_shape(x, y, width, header_height, color, outline, outline_width, tags)
             self.create_rectangle(
                 x,
-                y + header_height - 10,
-                x + 18,
-                body_bottom + 7,
+                y + header_height - 6,
+                x + (12 if self._density == "compact" else 16),
+                body_bottom + 4,
                 fill=color,
                 outline=outline,
                 width=outline_width,
@@ -309,7 +382,7 @@ class ScratchWorkspace(tk.Canvas):
                 step.children,
                 path,
                 x=child_x,
-                y=body_top + 8,
+                y=body_top + self._layout.child_padding,
                 width=child_width,
                 depth=depth + 1,
             )
@@ -319,10 +392,10 @@ class ScratchWorkspace(tk.Canvas):
         self._draw_block_text(path, step, x=x, y=y, width=width, tags=tags)
 
     def _child_geometry(self, width: float) -> tuple[float, float]:
-        if width > 360:
-            indent, right_gap = 30.0, 12.0
-        elif width > 260:
-            indent, right_gap = 18.0, 10.0
+        if width > 340:
+            indent, right_gap = self._layout.child_indent, self._layout.child_right_gap
+        elif width > 250:
+            indent, right_gap = 16.0, 8.0
         else:
             indent, right_gap = 0.0, 0.0
         return indent, max(180.0, width - indent - right_gap)
@@ -338,33 +411,47 @@ class ScratchWorkspace(tk.Canvas):
         tags: tuple[str, str],
     ) -> None:
         number = ".".join(str(index + 1) for index in path)
-        self.create_oval(x + 15, y + 16, x + 40, y + 41, fill="#ffffff", outline="", tags=tags)
+        badge_size = 20.0 if self._density == "compact" else 24.0
+        badge_x = x + 11
+        badge_y = y + (self._layout.header_height - badge_size) / 2
+        self.create_oval(
+            badge_x,
+            badge_y,
+            badge_x + badge_size,
+            badge_y + badge_size,
+            fill="#ffffff",
+            outline="",
+            tags=tags,
+        )
         self.create_text(
-            x + 27.5,
-            y + 28.5,
+            badge_x + badge_size / 2,
+            badge_y + badge_size / 2,
             text=number,
             fill=self._color_for_step(step),
-            font=("TkDefaultFont", 8, "bold"),
+            font=("TkDefaultFont", 7 if self._density == "compact" else 8, "bold"),
             tags=tags,
         )
+        text_x = badge_x + badge_size + 8
+        title_y = y + (5 if self._density == "compact" else 7)
+        subtitle_y = y + (24 if self._density == "compact" else 31)
         self.create_text(
-            x + 52,
-            y + 13,
+            text_x,
+            title_y,
             anchor="nw",
             text=self._ellipsize(step.block_title(), 44),
-            width=max(140, width - 70),
+            width=max(140, width - (text_x - x) - 12),
             fill="#ffffff",
-            font=("TkDefaultFont", 11, "bold"),
+            font=("TkDefaultFont", self._layout.title_font, "bold"),
             tags=tags,
         )
         self.create_text(
-            x + 52,
-            y + 38,
+            text_x,
+            subtitle_y,
             anchor="nw",
             text=self._ellipsize(self._subtitle_for_step(step), 58),
-            width=max(140, width - 70),
+            width=max(140, width - (text_x - x) - 12),
             fill="#f8fafc",
-            font=("TkDefaultFont", 9),
+            font=("TkDefaultFont", self._layout.subtitle_font),
             tags=tags,
         )
 
@@ -383,7 +470,7 @@ class ScratchWorkspace(tk.Canvas):
     ) -> None:
         points = self._shape_points(x, y, width, height, notch=notch)
         self.create_polygon(
-            self._shape_points(x + 3, y + 4, width, height, notch=notch),
+            self._shape_points(x + 1.5, y + 2, width, height, notch=notch),
             fill="#c5d0dc",
             outline="",
             tags=tags,
@@ -393,28 +480,32 @@ class ScratchWorkspace(tk.Canvas):
     def _shape_points(self, x: float, y: float, width: float, height: float, *, notch: bool) -> list[float]:
         if not notch:
             return [x, y, x + width, y, x + width, y + height, x, y + height]
+        connector_start = 30.0 if self._density == "compact" else 38.0
+        connector_depth = 5.0 if self._density == "compact" else 7.0
+        connector_width = 28.0 if self._density == "compact" else 34.0
+        shoulder = 6.0
         return [
             x,
             y,
-            x + 40,
+            x + connector_start,
             y,
-            x + 48,
-            y + 8,
-            x + 68,
-            y + 8,
-            x + 76,
+            x + connector_start + shoulder,
+            y + connector_depth,
+            x + connector_start + connector_width - shoulder,
+            y + connector_depth,
+            x + connector_start + connector_width,
             y,
             x + width,
             y,
             x + width,
             y + height,
-            x + 76,
+            x + connector_start + connector_width,
             y + height,
-            x + 68,
-            y + height - 8,
-            x + 48,
-            y + height - 8,
-            x + 40,
+            x + connector_start + connector_width - shoulder,
+            y + height - connector_depth,
+            x + connector_start + shoulder,
+            y + height - connector_depth,
+            x + connector_start,
             y + height,
             x,
             y + height,
@@ -455,12 +546,11 @@ class ScratchWorkspace(tk.Canvas):
             if distance < 7:
                 return
             self._dragging = True
+            self.configure(cursor="fleur")
         self._autoscroll_root_point(event.x_root, event.y_root)
         x = self.canvasx(event.x)
         y = self.canvasy(event.y)
-        zone = choose_drop_zone(self._drop_zones, x, y)
-        if zone and zone.parent_path[: len(self._drag_source)] == self._drag_source:
-            zone = None
+        zone = self._eligible_drop_zone(x, y, self._drag_source)
         self._show_drop_indicator(zone)
         self.delete("drag_ghost")
         try:
@@ -469,10 +559,10 @@ class ScratchWorkspace(tk.Canvas):
         except Exception:
             title = "블록 이동"
         self.create_rectangle(
-            x + 14,
-            y + 14,
-            x + 230,
-            y + 48,
+            x + 12,
+            y + 10,
+            x + 206,
+            y + 38,
             fill="#0f172a",
             outline="#ffffff",
             width=1,
@@ -481,7 +571,7 @@ class ScratchWorkspace(tk.Canvas):
         )
         self.create_text(
             x + 26,
-            y + 31,
+            y + 24,
             anchor="w",
             text=title,
             fill="#ffffff",
@@ -489,13 +579,31 @@ class ScratchWorkspace(tk.Canvas):
             tags="drag_ghost",
         )
 
-    def _on_release(self, _event: tk.Event[tk.Misc]) -> None:
+    def _eligible_drop_zone(
+        self,
+        x: float,
+        y: float,
+        source: BlockPath | None,
+    ) -> DropZone | None:
+        zone = choose_drop_zone(self._drop_zones, x, y)
+        if source is not None and zone and zone.parent_path[: len(source)] == source:
+            return None
+        return zone
+
+    def _on_release(self, event: tk.Event[tk.Misc]) -> None:
         source = self._drag_source
-        destination = self._active_drop
         dragging = self._dragging
+        destination = None
+        if dragging and 0 <= event.x <= self.winfo_width() and 0 <= event.y <= self.winfo_height():
+            destination = self._eligible_drop_zone(
+                self.canvasx(event.x),
+                self.canvasy(event.y),
+                source,
+            )
         self._drag_source = None
         self._drag_start = None
         self._dragging = False
+        self.configure(cursor="")
         self.delete("drag_ghost")
         self.clear_drop_indicator()
         if dragging and source is not None and destination is not None:
@@ -526,6 +634,15 @@ class ScratchWorkspace(tk.Canvas):
         self._active_drop = zone
         if zone is None:
             return
+        self.create_rectangle(
+            zone.x1 + 2,
+            zone.y - 7,
+            zone.x2 - 2,
+            zone.y + 7,
+            fill="#e0f2fe",
+            outline="",
+            tags="drop_indicator",
+        )
         self.create_line(
             zone.x1 + 4,
             zone.y,
@@ -576,7 +693,7 @@ class ScratchPaletteItem(tk.Canvas):
     ) -> None:
         super().__init__(
             master,
-            height=48,
+            height=40,
             background="#ffffff",
             highlightthickness=0,
             borderwidth=0,
@@ -600,17 +717,42 @@ class ScratchPaletteItem(tk.Canvas):
     def _draw(self, _event: tk.Event[tk.Misc] | None = None) -> None:
         self.delete("all")
         width = max(140, self.winfo_width() - 4)
-        points = [2, 4, 34, 4, 42, 12, 60, 12, 68, 4, width, 4, width, 44, 68, 44, 60, 36, 42, 36, 34, 44, 2, 44]
+        points = [
+            2,
+            3,
+            28,
+            3,
+            34,
+            9,
+            50,
+            9,
+            56,
+            3,
+            width,
+            3,
+            width,
+            37,
+            56,
+            37,
+            50,
+            31,
+            34,
+            31,
+            28,
+            37,
+            2,
+            37,
+        ]
         self.create_polygon(points, fill=self.color, outline="")
         self.create_text(
-            16,
-            24,
+            13,
+            20,
             anchor="w",
             text=self.label,
             fill="#ffffff",
-            font=("TkDefaultFont", 10, "bold"),
+            font=("TkDefaultFont", 9, "bold"),
         )
-        self.create_text(width - 18, 24, text="⋮⋮", fill="#ffffff", font=("TkDefaultFont", 10, "bold"))
+        self.create_text(width - 16, 20, text="⋮⋮", fill="#ffffff", font=("TkDefaultFont", 9, "bold"))
 
     def _press(self, event: tk.Event[tk.Misc]) -> None:
         self._start = (event.x_root, event.y_root)
@@ -651,9 +793,9 @@ class ScratchPaletteItem(tk.Canvas):
                 text=self.label,
                 background=self.color,
                 foreground="#ffffff",
-                padx=18,
-                pady=9,
-                font=("TkDefaultFont", 10, "bold"),
+                padx=14,
+                pady=6,
+                font=("TkDefaultFont", 9, "bold"),
             )
             label.pack()
             self._ghost = ghost

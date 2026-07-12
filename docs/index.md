@@ -1,33 +1,32 @@
 # AE Workbench 사용 매뉴얼
 
-AE Workbench는 SEQ Generator, Win Automation Picker와 FTP Rig 운영을 연결합니다. Windows 프로그램의 버튼, 입력칸, 상태 component를 Scratch 매크로로 만들고 검증된 SEQ와 함께 여러 PC/CH에 배포할 수 있습니다.
+AE Workbench는 Mobile DRAM AE가 프로그램별 자동화를 미리 준비하고, 여러 원격 Rig PC에
+PC/CH별 시험값을 배정한 뒤 한 Master 화면에서 실행·모니터링하는 도구입니다.
 
-이 문서는 GitBook처럼 좌측 목차와 검색을 기준으로 읽도록 구성되어 있습니다.
-
-## 전체 작업 흐름
+## 업무 주기
 
 <div class="workflow-grid">
   <div class="workflow-card">
-    <strong>1. SEQ 준비</strong>
-    <span>목표 Temp/VDD와 Grid를 설정하고 오류 검사 후 Rig package를 빌드합니다.</span>
+    <strong>1. 자동화 준비</strong>
+    <span>프로그램이나 시험 절차가 바뀔 때 SEQ와 Scratch 매크로를 한 번 작성합니다.</span>
   </div>
   <div class="workflow-card">
-    <strong>2. 매크로 녹화</strong>
-    <span><code>연속 녹화 시작</code> 후 SK Commander의 클릭, 입력, 키를 기록합니다.</span>
+    <strong>2. Rig 설정</strong>
+    <span>PC를 추가할 때 FTP, Node, 자유 CH, Slave Agent를 한 번 설정합니다.</span>
   </div>
   <div class="workflow-card">
-    <strong>3. Scratch 설계</strong>
-    <span>블록을 끌어 반복, 조건, 모니터링 흐름을 만들고 이름 붙인 Rig 버튼으로 등록합니다.</span>
+    <strong>3. 오늘 실행</strong>
+    <span>저장된 자동화를 선택하고 PC/CH별 변수만 확인해 일괄 실행합니다.</span>
   </div>
   <div class="workflow-card">
-    <strong>4. 검증과 업로드</strong>
-    <span>SEQ/source와 Scratch/Python hash를 확인하고 두 파일을 FTP에 함께 올립니다.</span>
-  </div>
-  <div class="workflow-card">
-    <strong>5. 실행과 모니터링</strong>
-    <span>PC/slot/CH별 값을 배정해 전송하고 Grid 진행, 결과, screenshot을 확인합니다.</span>
+    <strong>4. 모니터링·반복</strong>
+    <span>Grid, PASS/FAIL, 화면과 로그를 확인하고 실패 행만 다시 실행합니다.</span>
   </div>
 </div>
+
+가장 먼저 [Mobile DRAM AE 업무 흐름](daily-workflow.md)을 읽습니다. 화면별 모든 기능을
+외우는 대신 본인이 지금 `준비`, `Rig 설정`, `일일 실행`, `모니터링` 중 어디에 있는지만
+판단하면 됩니다.
 
 ## 어떤 프로그램을 쓰면 되나
 
@@ -41,10 +40,11 @@ AE Workbench는 SEQ Generator, Win Automation Picker와 FTP Rig 운영을 연결
 
 ## 추천 순서
 
-1. 처음에는 [AE Workbench 통합 흐름](ae-workbench.md)을 따라 한 작업을 끝까지 만듭니다.
-2. 세부 녹화 방식은 [기본 매크로 만들기](macro-builder/basic-flow.md)를 확인합니다.
-3. 반복/조건/모니터링은 [블록 디자인](macro-builder/block-designer.md)을 확인합니다.
-4. 여러 PC 운영은 [FTP master/slave 개요](rig-ftp/overview.md)를 확인합니다.
+1. [업무 흐름](daily-workflow.md)에서 최초 설정과 일일 업무를 구분합니다.
+2. 프로그램 자동화 담당자는 [기본 매크로 만들기](macro-builder/basic-flow.md)와
+   [블록 디자인](macro-builder/block-designer.md)을 확인합니다.
+3. Rig 담당자는 [FTP master/slave 개요](rig-ftp/overview.md)를 확인합니다.
+4. 일일 운영자는 `오늘 작업`과 [상태 모니터링](rig-ftp/monitoring.md)만 사용합니다.
 5. 문제가 생기면 [문제 해결](troubleshooting.md)을 확인합니다.
 
 현재 구현 범위와 남은 기능은 [UX 완성도와 지원 범위](ux-readiness.md)에서 확인할 수 있습니다.

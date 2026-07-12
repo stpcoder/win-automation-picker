@@ -121,6 +121,13 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
             foreground="#111827",
             font=(font[0], 11, "bold"),
         )
+        style.configure(
+            "AppTitle.TLabel",
+            background="#ffffff",
+            foreground="#111827",
+            font=(font[0], 15, "bold"),
+        )
+        style.configure("HeaderMeta.TLabel", background="#ffffff", foreground="#475569")
         style.configure("TButton", padding=(9, 5))
         style.configure("Primary.TButton", padding=(10, 6), background="#2563eb", foreground="#ffffff")
         style.configure("Danger.TButton", padding=(10, 6), background="#dc2626", foreground="#ffffff")
@@ -156,6 +163,20 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         )
         return widget
 
+    @staticmethod
+    def _style_listbox(widget: tk.Listbox) -> tk.Listbox:
+        widget.configure(
+            background="#ffffff",
+            foreground="#111827",
+            selectbackground="#2563eb",
+            selectforeground="#ffffff",
+            highlightthickness=1,
+            highlightbackground="#cbd5e1",
+            highlightcolor="#2563eb",
+            relief="flat",
+        )
+        return widget
+
     def _set_app_icon(self) -> None:
         for base in self._asset_search_paths():
             icon_path = base / "rig_commander.png"
@@ -180,51 +201,79 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
 
-        top = ttk.Labelframe(self, text="연결 프로필", padding=(10, 8))
-        top.grid(row=0, column=0, sticky="ew")
-        top.columnconfigure(1, weight=1)
-        top.columnconfigure(3, weight=1)
-
-        ttk.Label(top, text="설정 파일").grid(row=0, column=0, sticky="w", padx=(0, 6))
         self.config_path_var = tk.StringVar(value=str(self._default_config_path()))
-        ttk.Entry(top, textvariable=self.config_path_var).grid(row=0, column=1, sticky="ew", padx=(0, 8))
-        ttk.Button(top, text="찾기", command=self._browse_config).grid(row=0, column=2, padx=(0, 8))
-        ttk.Button(top, text="불러오기", command=self._load_config).grid(row=0, column=3, sticky="w", padx=(0, 8))
-        ttk.Button(top, text="저장", command=self._save_config).grid(row=0, column=4, padx=(0, 8))
-        ttk.Button(top, text="연결 확인", command=self._test_connection).grid(row=0, column=5, padx=(0, 8))
         self.local_root_var = tk.StringVar(value="")
-        profile_more_button = ttk.Menubutton(top, text="더보기")
-        profile_more_button.grid(row=0, column=6)
-        profile_more = tk.Menu(profile_more_button, tearoff=False)
-        profile_more.add_command(label="예제 설정 만들기", command=self._create_example_config)
-        profile_more.add_command(label="로컬 시험 폴더 선택", command=self._browse_local_root)
-        profile_more_button["menu"] = profile_more
         self.connection_state_var = tk.StringVar(value="연결 상태: 확인 전")
-        ttk.Label(top, textvariable=self.connection_state_var).grid(
-            row=1,
-            column=1,
-            columnspan=6,
-            sticky="w",
-            pady=(6, 0),
+        self.config_summary_var = tk.StringVar()
+        self.init_nodes_var = tk.StringVar(value="")
+
+        top = ttk.Frame(self, padding=(16, 11), style="Panel.TFrame")
+        top.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 8))
+        top.columnconfigure(1, weight=1)
+        ttk.Label(top, text="Mobile DRAM AE", style="AppTitle.TLabel").grid(
+            row=0, column=0, rowspan=2, sticky="w", padx=(0, 20)
         )
+        ttk.Label(top, textvariable=self.config_summary_var, style="HeaderMeta.TLabel").grid(
+            row=0, column=1, sticky="w"
+        )
+        ttk.Label(top, textvariable=self.connection_state_var, style="HeaderMeta.TLabel").grid(
+            row=1, column=1, sticky="w", pady=(3, 0)
+        )
+        ttk.Button(top, text="연결 확인", command=self._test_connection).grid(
+            row=0, column=2, rowspan=2, padx=(10, 6)
+        )
+        ttk.Button(top, text="Rig 설정", command=self._show_rig_setup).grid(
+            row=0, column=3, rowspan=2
+        )
+        self.config_path_var.trace_add("write", lambda *_args: self._refresh_config_summary())
+        self._refresh_config_summary()
 
         notebook = ttk.Notebook(self)
         self.main_notebook = notebook
         notebook.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
 
-        workbench = ttk.Frame(notebook, padding=10)
-        settings = ttk.Frame(notebook, padding=10)
-        master = ttk.Frame(notebook, padding=10)
-        slave = ttk.Frame(notebook, padding=10)
-        notebook.add(workbench, text="AE 작업대")
-        notebook.add(master, text="배포 · 모니터")
-        notebook.add(slave, text="이 PC Agent")
-        notebook.add(settings, text="연결 설정")
+        today = ttk.Frame(notebook, padding=10)
+        preparation = ttk.Frame(notebook, padding=10)
+        rig_setup = ttk.Frame(notebook, padding=10)
+        notebook.add(today, text="1  오늘 작업")
+        notebook.add(preparation, text="2  자동화 준비")
+        notebook.add(rig_setup, text="3  Rig 설정")
+        self.today_tab = today
+        self.preparation_tab = preparation
+        self.rig_setup_tab = rig_setup
 
-        self._build_workbench_tab(workbench)
+        rig_setup.columnconfigure(0, weight=1)
+        rig_setup.rowconfigure(0, weight=1)
+        rig_workspace = ttk.Notebook(rig_setup)
+        self.rig_setup_notebook = rig_workspace
+        rig_workspace.grid(row=0, column=0, sticky="nsew")
+        settings = ttk.Frame(rig_workspace, padding=10)
+        slave = ttk.Frame(rig_workspace, padding=10)
+        rig_workspace.add(settings, text="Master · 원격 PC")
+        rig_workspace.add(slave, text="이 PC Agent")
+
         self._build_settings_tab(settings)
-        self._build_master_tab(master)
         self._build_slave_tab(slave)
+        self._build_master_tab(today)
+        self._build_workbench_tab(preparation)
+
+    def _refresh_config_summary(self) -> None:
+        path = Path(self.config_path_var.get().strip() or DEFAULT_CONFIG)
+        self.config_summary_var.set(f"설정 · {path.name}")
+
+    def _show_today_work(self) -> None:
+        self.main_notebook.select(self.today_tab)
+        self.master_workspace.select(0)
+
+    def _show_monitoring(self, page: int = 1) -> None:
+        self.main_notebook.select(self.today_tab)
+        self.master_workspace.select(page)
+
+    def _show_preparation(self) -> None:
+        self.main_notebook.select(self.preparation_tab)
+
+    def _show_rig_setup(self) -> None:
+        self.main_notebook.select(self.rig_setup_tab)
 
     def _build_workbench_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -233,28 +282,28 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         header = ttk.Frame(parent, padding=(12, 10), style="Panel.TFrame")
         header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         header.columnconfigure(1, weight=1)
-        header.columnconfigure(5, weight=1)
-        ttk.Label(header, text="작업 파일", style="Panel.TLabel").grid(row=0, column=0, padx=(0, 6))
+        header.columnconfigure(4, weight=1)
+        ttk.Label(header, text="자동화 세트", style="Panel.TLabel").grid(row=0, column=0, padx=(0, 6))
         self.workbench_path_var = tk.StringVar(value=str(self._default_workbench_path()))
         ttk.Entry(header, textvariable=self.workbench_path_var).grid(
             row=0, column=1, sticky="ew", padx=(0, 6)
         )
-        ttk.Button(header, text="열기", command=self._browse_workbench_project).grid(
-            row=0, column=2, padx=(0, 5)
-        )
-        ttk.Button(header, text="저장", command=self._save_workbench_project).grid(
-            row=0, column=3, padx=(0, 12)
-        )
-        ttk.Label(header, text="작업 이름", style="Panel.TLabel").grid(row=0, column=4, padx=(0, 6))
+        workbench_file_button = ttk.Menubutton(header, text="파일")
+        workbench_file_button.grid(row=0, column=2, padx=(0, 12))
+        workbench_file_menu = tk.Menu(workbench_file_button, tearoff=False)
+        workbench_file_menu.add_command(label="자동화 세트 열기", command=self._browse_workbench_project)
+        workbench_file_menu.add_command(label="현재 세트 저장", command=self._save_workbench_project)
+        workbench_file_button["menu"] = workbench_file_menu
+        ttk.Label(header, text="이름", style="Panel.TLabel").grid(row=0, column=3, padx=(0, 6))
         self.workbench_name_var = tk.StringVar(value=self._workbench_project.name)
-        ttk.Entry(header, textvariable=self.workbench_name_var).grid(row=0, column=5, sticky="ew")
+        ttk.Entry(header, textvariable=self.workbench_name_var).grid(row=0, column=4, sticky="ew")
 
         flow = ttk.Frame(parent, padding=(12, 8), style="Panel.TFrame")
         flow.grid(row=1, column=0, sticky="ew", pady=(0, 8))
-        for column in range(9):
+        for column in range(7):
             flow.columnconfigure(column, weight=1 if column % 2 == 0 else 0)
         self.wb_stage_labels: list[tk.Label] = []
-        stage_labels = ("1  SEQ", "2  매크로", "3  검증", "4  업로드", "5  실행 · 모니터")
+        stage_labels = ("1  SEQ 템플릿", "2  프로그램 매크로", "3  사전 점검", "4  라이브러리 등록")
         for index, label in enumerate(stage_labels):
             badge = tk.Label(
                 flow,
@@ -267,7 +316,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
             )
             badge.grid(row=0, column=index * 2, sticky="ew")
             self.wb_stage_labels.append(badge)
-            if index < 4:
+            if index < len(stage_labels) - 1:
                 ttk.Label(flow, text=">", style="Panel.TLabel").grid(
                     row=0, column=index * 2 + 1, padx=6
                 )
@@ -310,18 +359,23 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         seq_actions.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(8, 8))
         for column in range(3):
             seq_actions.columnconfigure(column, weight=1)
-        ttk.Button(seq_actions, text="생성기 열기", command=self._open_sequence_generator).grid(
+        ttk.Button(seq_actions, text="SEQ 편집", command=self._open_sequence_generator).grid(
             row=0, column=0, sticky="ew", padx=(0, 4)
-        )
-        ttk.Button(seq_actions, text="오류 검사", command=self._validate_sequence_recipe).grid(
-            row=0, column=1, sticky="ew", padx=4
         )
         ttk.Button(
             seq_actions,
-            text="Rig 패키지 빌드",
+            text="검사 · 패키지 준비",
             command=self._build_sequence_package,
             style="Primary.TButton",
-        ).grid(row=0, column=2, sticky="ew", padx=(4, 0))
+        ).grid(row=0, column=1, sticky="ew", padx=4)
+        seq_more_button = ttk.Menubutton(seq_actions, text="더보기")
+        seq_more_button.grid(row=0, column=2, sticky="ew", padx=(4, 0))
+        seq_more = tk.Menu(seq_more_button, tearoff=False)
+        seq_more.add_command(label="오류 검사만 실행", command=self._validate_sequence_recipe)
+        seq_more.add_command(label="Recipe 선택", command=self._browse_workbench_seq_recipe)
+        seq_more.add_command(label="기존 Rig Package 선택", command=self._browse_workbench_seq_package)
+        seq_more.add_command(label="SEQ 도구 폴더 선택", command=self._browse_workbench_seq_tool)
+        seq_more_button["menu"] = seq_more
         self.wb_seq_status_var = tk.StringVar(value="Recipe와 Rig 패키지를 선택하세요.")
         self.wb_seq_badge = tk.Label(
             sequence,
@@ -374,23 +428,24 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
 
         macro_actions = ttk.Frame(macro, style="Panel.TFrame")
         macro_actions.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(7, 5))
-        for column in range(4):
+        for column in range(3):
             macro_actions.columnconfigure(column, weight=1)
-        ttk.Button(macro_actions, text="새 매크로", command=self._new_workbench_macro).grid(
-            row=0, column=0, sticky="ew", padx=(0, 4)
-        )
         ttk.Button(
             macro_actions,
             text="Scratch 편집",
             command=self._open_workbench_macro_editor,
             style="Primary.TButton",
-        ).grid(row=0, column=1, sticky="ew", padx=4)
-        ttk.Button(macro_actions, text="구성 검사", command=self._validate_workbench_macro).grid(
-            row=0, column=2, sticky="ew", padx=4
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(macro_actions, text="검사 · Python 준비", command=self._export_workbench_macro).grid(
+            row=0, column=1, sticky="ew", padx=4
         )
-        ttk.Button(macro_actions, text="Python 내보내기", command=self._export_workbench_macro).grid(
-            row=0, column=3, sticky="ew", padx=(4, 0)
-        )
+        macro_more_button = ttk.Menubutton(macro_actions, text="더보기")
+        macro_more_button.grid(row=0, column=2, sticky="ew", padx=(4, 0))
+        macro_more = tk.Menu(macro_more_button, tearoff=False)
+        macro_more.add_command(label="새 매크로 만들기", command=self._new_workbench_macro)
+        macro_more.add_command(label="구성 검사만 실행", command=self._validate_workbench_macro)
+        macro_more.add_command(label="다른 매크로 선택", command=self._browse_workbench_macro)
+        macro_more_button["menu"] = macro_more
 
         ttk.Label(macro, text="시험 변수", style="Panel.TLabel").grid(
             row=3, column=0, sticky="w", padx=(0, 6), pady=(4, 0)
@@ -469,30 +524,30 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         )
         self.wb_macro_report_text.grid(row=6, column=0, columnspan=3, sticky="nsew", pady=(8, 0))
         body.add(macro, weight=1)
+        self._workbench_detail_widgets = (self.wb_seq_report_text, self.wb_macro_report_text)
+        self._workbench_detail_frames = (sequence, macro)
+        self._workbench_details_visible = False
+        for widget in self._workbench_detail_widgets:
+            widget.grid_remove()
 
         shortcuts = ttk.Frame(parent, padding=(12, 9), style="Panel.TFrame")
         shortcuts.grid(row=3, column=0, sticky="ew", pady=(0, 8))
         shortcuts.columnconfigure(1, weight=1)
-        ttk.Label(shortcuts, text="매크로 버튼", style="PanelTitle.TLabel").grid(
+        ttk.Label(shortcuts, text="프로그램 매크로", style="PanelTitle.TLabel").grid(
             row=0, column=0, sticky="w", padx=(0, 12)
         )
         self.wb_shortcut_frame = ttk.Frame(shortcuts, style="Panel.TFrame")
         self.wb_shortcut_frame.grid(row=0, column=1, sticky="ew")
-        ttk.Button(shortcuts, text="버튼 추가", command=self._add_workbench_shortcut).grid(
-            row=0, column=2, padx=(8, 5)
-        )
-        ttk.Button(shortcuts, text="이름 / 메모", command=self._edit_workbench_shortcut).grid(
-            row=0, column=3, padx=(0, 5)
-        )
-        ttk.Button(shortcuts, text="위치 <", command=lambda: self._move_workbench_shortcut(-1)).grid(
-            row=0, column=4, padx=(0, 5)
-        )
-        ttk.Button(shortcuts, text="위치 >", command=lambda: self._move_workbench_shortcut(1)).grid(
-            row=0, column=5, padx=(0, 5)
-        )
-        ttk.Button(shortcuts, text="삭제", command=self._remove_workbench_shortcut).grid(
-            row=0, column=6
-        )
+        shortcut_manage = ttk.Menubutton(shortcuts, text="버튼 관리")
+        shortcut_manage.grid(row=0, column=2, padx=(8, 0))
+        shortcut_menu = tk.Menu(shortcut_manage, tearoff=False)
+        shortcut_menu.add_command(label="현재 매크로 등록", command=self._add_workbench_shortcut)
+        shortcut_menu.add_command(label="이름 / 메모 수정", command=self._edit_workbench_shortcut)
+        shortcut_menu.add_separator()
+        shortcut_menu.add_command(label="왼쪽으로 이동", command=lambda: self._move_workbench_shortcut(-1))
+        shortcut_menu.add_command(label="오른쪽으로 이동", command=lambda: self._move_workbench_shortcut(1))
+        shortcut_menu.add_command(label="선택 버튼 삭제", command=self._remove_workbench_shortcut)
+        shortcut_manage["menu"] = shortcut_menu
         ttk.Label(shortcuts, text="선택 메모", style="Panel.TLabel").grid(
             row=1, column=0, sticky="w", padx=(0, 12), pady=(5, 0)
         )
@@ -502,7 +557,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
             textvariable=self.wb_shortcut_notes_var,
             style="Muted.TLabel",
             anchor="w",
-        ).grid(row=1, column=1, columnspan=6, sticky="ew", pady=(5, 0))
+        ).grid(row=1, column=1, columnspan=2, sticky="ew", pady=(5, 0))
 
         footer = ttk.Frame(parent, padding=(12, 9), style="Panel.TFrame")
         footer.grid(row=4, column=0, sticky="ew")
@@ -521,24 +576,41 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         ttk.Label(footer, textvariable=self.wb_ready_var, style="Panel.TLabel").grid(
             row=0, column=1, sticky="ew"
         )
-        ttk.Button(footer, text="전체 사전 점검", command=self._refresh_workbench_state).grid(
-            row=0, column=2, padx=(8, 5)
+        self.workbench_detail_button = ttk.Button(
+            footer,
+            text="검사 상세 보기",
+            command=self._toggle_workbench_details,
+        )
+        self.workbench_detail_button.grid(row=0, column=2, padx=(8, 5))
+        ttk.Button(footer, text="준비 상태 확인", command=self._refresh_workbench_state).grid(
+            row=0, column=3, padx=(0, 5)
         )
         self.wb_upload_button = ttk.Button(
             footer,
-            text="SEQ + 매크로 업로드",
+            text="서버 라이브러리 등록",
             command=self._upload_workbench_artifacts,
             state="disabled",
             style="Primary.TButton",
         )
-        self.wb_upload_button.grid(row=0, column=3, padx=(0, 5))
-        ttk.Button(footer, text="실행표 열기", command=self._open_workbench_run_table).grid(row=0, column=4)
+        self.wb_upload_button.grid(row=0, column=4, padx=(0, 5))
+        ttk.Button(footer, text="오늘 작업 열기", command=self._open_workbench_run_table).grid(
+            row=0, column=5
+        )
+
+    def _toggle_workbench_details(self) -> None:
+        visible = not self._workbench_details_visible
+        self._workbench_details_visible = visible
+        for frame, widget in zip(self._workbench_detail_frames, self._workbench_detail_widgets):
+            frame.rowconfigure(6, weight=1 if visible else 0)
+            if visible:
+                widget.grid()
+            else:
+                widget.grid_remove()
+        self.workbench_detail_button.configure(
+            text="검사 상세 닫기" if visible else "검사 상세 보기"
+        )
 
     def _build_settings_tab(self, parent: ttk.Frame) -> None:
-        for column in (1, 3):
-            parent.columnconfigure(column, weight=1)
-        parent.rowconfigure(11, weight=1)
-
         self.host_var = tk.StringVar(value="")
         self.port_var = tk.StringVar(value="21")
         self.username_var = tk.StringVar(value="")
@@ -560,55 +632,73 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         self.max_archive_var = tk.StringVar(value="500")
         self.max_screens_var = tk.StringVar(value="20")
 
-        self._entry_row(parent, 0, "FTP 주소", self.host_var, "포트", self.port_var)
-        self._entry_row(parent, 1, "아이디", self.username_var, "비밀번호", self.password_var, show_password=True)
-        self._entry_row(parent, 2, "서버 폴더", self.root_dir_var, "연결 제한(초)", self.timeout_var)
-        ttk.Checkbutton(parent, text="FTPS 사용", variable=self.tls_var).grid(row=3, column=1, sticky="w", pady=4)
-        ttk.Checkbutton(parent, text="Passive 모드", variable=self.passive_var).grid(
-            row=3,
-            column=3,
-            sticky="w",
-            pady=4,
-        )
-        self._entry_row(parent, 4, "이 PC Node ID", self.node_id_var, "조회 간격(초)", self.poll_var)
-        self._entry_row(parent, 5, "작업 폴더", self.work_dir_var, "외부 Python (고급)", self.python_var)
-        self._entry_row(
-            parent,
-            6,
-            "조회 분산(초)",
-            self.poll_jitter_var,
-            "화면 요청 최소(초)",
-            self.screenshot_min_interval_var,
-        )
-        ttk.Checkbutton(parent, text="오류 발생 시 전체 화면 저장", variable=self.capture_error_var).grid(
-            row=7,
-            column=1,
-            sticky="w",
-            pady=4,
-        )
-        ttk.Label(parent, text="비밀번호 환경 변수").grid(row=7, column=2, sticky="w", padx=(0, 6), pady=4)
-        ttk.Entry(parent, textvariable=self.password_env_var).grid(row=7, column=3, sticky="ew", pady=4)
-        self._entry_row(parent, 8, "결과 보관 개수", self.max_results_var, "로그 보관 개수", self.max_logs_var)
-        self._entry_row(parent, 9, "작업 보관 개수", self.max_archive_var, "화면 보관 개수", self.max_screens_var)
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(0, weight=1)
+        settings_workspace = ttk.Notebook(parent)
+        self.settings_workspace = settings_workspace
+        settings_workspace.grid(row=0, column=0, sticky="nsew")
+        connection_page = ttk.Frame(settings_workspace, padding=12)
+        inventory_page = ttk.Frame(settings_workspace, padding=12)
+        advanced_page = ttk.Frame(settings_workspace, padding=12)
+        settings_workspace.add(connection_page, text="Master 연결")
+        settings_workspace.add(inventory_page, text="원격 PC · CH")
+        settings_workspace.add(advanced_page, text="고급 정책")
 
-        ttk.Label(parent, text="로컬 시험 폴더").grid(row=10, column=0, sticky="w", padx=(0, 6), pady=(8, 0))
-        ttk.Entry(parent, textvariable=self.local_root_var).grid(
-            row=10,
-            column=1,
-            columnspan=2,
-            sticky="ew",
-            pady=(8, 0),
-            padx=(0, 8),
+        connection_page.columnconfigure(0, weight=1)
+        profile = ttk.Labelframe(connection_page, text="설정 파일", padding=10)
+        profile.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        profile.columnconfigure(0, weight=1)
+        ttk.Entry(profile, textvariable=self.config_path_var).grid(
+            row=0, column=0, sticky="ew", padx=(0, 6)
         )
-        ttk.Button(parent, text="폴더", command=self._browse_local_root).grid(
-            row=10,
-            column=3,
-            sticky="ew",
-            pady=(8, 0),
+        file_button = ttk.Menubutton(profile, text="파일")
+        file_button.grid(row=0, column=1, padx=(0, 6))
+        file_menu = tk.Menu(file_button, tearoff=False)
+        file_menu.add_command(label="다른 설정 파일 선택", command=self._browse_config)
+        file_menu.add_command(label="설정 불러오기", command=self._load_config)
+        file_menu.add_separator()
+        file_menu.add_command(label="예제 설정 만들기", command=self._create_example_config)
+        file_button["menu"] = file_menu
+        ttk.Button(profile, text="저장", command=self._save_config).grid(row=0, column=2)
+
+        ftp = ttk.Labelframe(connection_page, text="FTP 연결", padding=12)
+        ftp.grid(row=1, column=0, sticky="ew")
+        for column in (1, 3):
+            ftp.columnconfigure(column, weight=1)
+        self._entry_row(ftp, 0, "FTP 주소", self.host_var, "포트", self.port_var)
+        self._entry_row(ftp, 1, "아이디", self.username_var, "비밀번호", self.password_var, show_password=True)
+        self._entry_row(ftp, 2, "서버 폴더", self.root_dir_var, "비밀번호 환경 변수", self.password_env_var)
+        self._entry_row(ftp, 3, "연결 제한(초)", self.timeout_var, "로컬 시험 폴더", self.local_root_var)
+        ttk.Checkbutton(ftp, text="FTPS", variable=self.tls_var).grid(row=4, column=1, sticky="w", pady=(8, 0))
+        ttk.Checkbutton(ftp, text="Passive", variable=self.passive_var).grid(
+            row=4, column=3, sticky="w", pady=(8, 0)
+        )
+        ftp_actions = ttk.Frame(ftp)
+        ftp_actions.grid(row=5, column=0, columnspan=4, sticky="e", pady=(12, 0))
+        ttk.Button(ftp_actions, text="로컬 폴더", command=self._browse_local_root).pack(side="left", padx=(0, 6))
+        ttk.Button(ftp_actions, text="연결 확인", command=self._test_connection, style="Primary.TButton").pack(
+            side="left"
         )
 
-        variables_frame = ttk.Labelframe(parent, text="공통 변수", padding=8)
-        variables_frame.grid(row=11, column=0, columnspan=2, sticky="nsew", padx=(0, 7), pady=(10, 0))
+        inventory_page.columnconfigure(0, weight=1)
+        inventory_page.columnconfigure(1, weight=2)
+        inventory_page.rowconfigure(1, weight=1)
+        inventory_actions = ttk.Frame(inventory_page)
+        inventory_actions.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        inventory_actions.columnconfigure(1, weight=1)
+        ttk.Label(inventory_actions, text="서버 대상").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        ttk.Entry(inventory_actions, textvariable=self.init_nodes_var).grid(
+            row=0, column=1, sticky="ew", padx=(0, 8)
+        )
+        ttk.Button(inventory_actions, text="서버 폴더 준비", command=self._init_server).grid(
+            row=0, column=2, padx=(0, 6)
+        )
+        ttk.Button(inventory_actions, text="Slave 설정 내보내기", command=self._export_slave_infos).grid(
+            row=0, column=3
+        )
+
+        variables_frame = ttk.Labelframe(inventory_page, text="공통 변수", padding=8)
+        variables_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 7))
         variables_frame.columnconfigure(0, weight=1)
         variables_frame.rowconfigure(0, weight=1)
         self.settings_variable_tree = ttk.Treeview(
@@ -633,15 +723,15 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         ttk.Button(variables_frame, text="추가", command=self._add_settings_variable).grid(
             row=1, column=0, sticky="w", pady=(6, 0)
         )
-        ttk.Button(variables_frame, text="수정", command=self._edit_settings_variable).grid(
-            row=1, column=1, sticky="w", padx=(5, 0), pady=(6, 0)
-        )
-        ttk.Button(variables_frame, text="삭제", command=self._delete_settings_variable).grid(
-            row=1, column=2, sticky="e", pady=(6, 0)
-        )
+        variable_edit = ttk.Menubutton(variables_frame, text="편집")
+        variable_edit.grid(row=1, column=2, sticky="e", pady=(6, 0))
+        variable_menu = tk.Menu(variable_edit, tearoff=False)
+        variable_menu.add_command(label="선택 변수 수정", command=self._edit_settings_variable)
+        variable_menu.add_command(label="선택 변수 삭제", command=self._delete_settings_variable)
+        variable_edit["menu"] = variable_menu
 
-        slaves_frame = ttk.Labelframe(parent, text="Slave PC 목록", padding=8)
-        slaves_frame.grid(row=11, column=2, columnspan=2, sticky="nsew", padx=(7, 0), pady=(10, 0))
+        slaves_frame = ttk.Labelframe(inventory_page, text="Slave PC와 CH", padding=8)
+        slaves_frame.grid(row=1, column=1, sticky="nsew", padx=(7, 0))
         slaves_frame.columnconfigure(0, weight=1)
         slaves_frame.rowconfigure(0, weight=1)
         self.settings_slave_tree = ttk.Treeview(
@@ -669,15 +759,49 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         ttk.Button(slaves_frame, text="PC 추가", command=self._add_settings_slave).grid(
             row=1, column=0, sticky="w", pady=(6, 0)
         )
-        ttk.Button(slaves_frame, text="수정", command=self._edit_settings_slave).grid(
+        ttk.Button(slaves_frame, text="CH 관리", command=self._manage_settings_channels).grid(
             row=1, column=1, sticky="w", padx=(5, 0), pady=(6, 0)
         )
-        ttk.Button(slaves_frame, text="CH 관리", command=self._manage_settings_channels).grid(
-            row=1, column=2, sticky="w", padx=(5, 0), pady=(6, 0)
+        slave_edit = ttk.Menubutton(slaves_frame, text="PC 편집")
+        slave_edit.grid(row=1, column=3, sticky="e", pady=(6, 0))
+        slave_menu = tk.Menu(slave_edit, tearoff=False)
+        slave_menu.add_command(label="선택 PC 수정", command=self._edit_settings_slave)
+        slave_menu.add_command(label="선택 PC 삭제", command=self._delete_settings_slave)
+        slave_edit["menu"] = slave_menu
+
+        for column in (1, 3):
+            advanced_page.columnconfigure(column, weight=1)
+        self._entry_row(advanced_page, 0, "이 PC Node ID", self.node_id_var, "조회 간격(초)", self.poll_var)
+        self._entry_row(advanced_page, 1, "작업 폴더", self.work_dir_var, "외부 Python", self.python_var)
+        self._entry_row(
+            advanced_page,
+            2,
+            "조회 분산(초)",
+            self.poll_jitter_var,
+            "화면 요청 최소(초)",
+            self.screenshot_min_interval_var,
         )
-        ttk.Button(slaves_frame, text="삭제", command=self._delete_settings_slave).grid(
-            row=1, column=3, sticky="e", pady=(6, 0)
+        self._entry_row(
+            advanced_page,
+            3,
+            "결과 보관 개수",
+            self.max_results_var,
+            "로그 보관 개수",
+            self.max_logs_var,
         )
+        self._entry_row(
+            advanced_page,
+            4,
+            "작업 보관 개수",
+            self.max_archive_var,
+            "화면 보관 개수",
+            self.max_screens_var,
+        )
+        ttk.Checkbutton(
+            advanced_page,
+            text="오류 발생 시 전체 화면 저장",
+            variable=self.capture_error_var,
+        ).grid(row=5, column=1, sticky="w", pady=(8, 0))
 
     def _entry_row(
         self,
@@ -1180,9 +1304,9 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         campaign_page = ttk.Frame(workspace, padding=8)
         run_page = ttk.Frame(workspace, padding=8)
         monitor_page = ttk.Frame(workspace, padding=8)
-        workspace.add(campaign_page, text="AE 캠페인")
-        workspace.add(run_page, text="실행 및 배포")
-        workspace.add(monitor_page, text="상태 모니터링")
+        workspace.add(run_page, text="실행")
+        workspace.add(campaign_page, text="캠페인")
+        workspace.add(monitor_page, text="PC · CH 상태")
 
         self._build_campaign_page(campaign_page)
         run_page.columnconfigure(0, weight=1)
@@ -1192,25 +1316,33 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         monitor_page.rowconfigure(0, weight=3)
         monitor_page.rowconfigure(1, weight=1)
 
-        server = ttk.Labelframe(run_page, text="서버 초기 설정", padding=10)
+        server = ttk.Frame(run_page, padding=(12, 9), style="Panel.TFrame")
         server.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        server.columnconfigure(1, weight=1)
-        ttk.Label(server, text="대상 PC").grid(row=0, column=0, sticky="w", padx=(0, 6))
-        self.init_nodes_var = tk.StringVar(value="")
-        ttk.Entry(server, textvariable=self.init_nodes_var).grid(row=0, column=1, sticky="ew", padx=(0, 8))
-        ttk.Button(server, text="서버 폴더 초기화", command=self._init_server, style="Primary.TButton").grid(
-            row=0,
-            column=2,
-            padx=(0, 8),
+        for column in range(4):
+            server.columnconfigure(column, weight=1)
+        for column, label in enumerate(("1  자동화 선택", "2  대상 · 값 확인", "3  실행", "4  모니터링")):
+            ttk.Label(server, text=label, style="Panel.TLabel", anchor="center").grid(
+                row=0, column=column, sticky="ew", padx=4
+            )
+        today_actions = ttk.Frame(server, style="Panel.TFrame")
+        today_actions.grid(row=1, column=0, columnspan=4, sticky="e", pady=(8, 0))
+        ttk.Button(today_actions, text="자동화 새로고침", command=self._refresh_packages).pack(
+            side="left", padx=(0, 6)
         )
-        server_more_button = ttk.Menubutton(server, text="더보기")
-        server_more_button.grid(row=0, column=3)
-        server_more = tk.Menu(server_more_button, tearoff=False)
-        server_more.add_command(label="Slave .info 내보내기", command=self._export_slave_infos)
-        server_more.add_command(label="상태 새로고침", command=self._refresh_status)
-        server_more_button["menu"] = server_more
+        ttk.Button(today_actions, text="모니터링", command=lambda: self._show_monitoring(2)).pack(
+            side="left", padx=(0, 6)
+        )
+        ttk.Button(today_actions, text="긴급 중단", command=self._request_stop, style="Danger.TButton").pack(
+            side="left", padx=(0, 6)
+        )
+        self.run_advanced_toggle_button = ttk.Button(
+            today_actions,
+            text="운영 도구 열기",
+            command=self._toggle_run_advanced_tools,
+        )
+        self.run_advanced_toggle_button.pack(side="left")
 
-        package = ttk.Labelframe(run_page, text="자동화 / SEQ 업로드", padding=10)
+        package = ttk.Labelframe(run_page, text="패키지 등록 (고급)", padding=10)
         package.grid(row=1, column=0, sticky="nsew", padx=(0, 8), pady=(0, 8))
         package.columnconfigure(1, weight=1)
         ttk.Label(package, text="파일").grid(row=0, column=0, sticky="w", padx=(0, 6), pady=3)
@@ -1253,7 +1385,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
             pady=(8, 0),
         )
 
-        jobs = ttk.Labelframe(run_page, text="빠른 실행", padding=10)
+        jobs = ttk.Labelframe(run_page, text="단일 실행 (고급)", padding=10)
         jobs.grid(row=1, column=1, sticky="nsew", pady=(0, 8))
         jobs.columnconfigure(1, weight=1)
         ttk.Label(jobs, text="대상 PC").grid(row=0, column=0, sticky="w", padx=(0, 6), pady=3)
@@ -1283,13 +1415,6 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
             pady=(8, 0),
             padx=(0, 6),
         )
-        ttk.Button(jobs, text="긴급 중단", command=self._request_stop, style="Danger.TButton").grid(
-            row=6,
-            column=0,
-            sticky="ew",
-            pady=(6, 0),
-            padx=(0, 6),
-        )
         ttk.Button(jobs, text="상태 규칙 1회", command=self._submit_selected_monitor).grid(
             row=6,
             column=1,
@@ -1303,36 +1428,38 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         job_more.add_command(label="중단 신호 해제", command=self._clear_stop)
         job_more_button["menu"] = job_more
         self.monitor_interval_var = tk.StringVar(value="30")
+        self._run_advanced_frames = (package, jobs)
+        package.grid_remove()
+        jobs.grid_remove()
 
         profiles = ttk.Labelframe(run_page, text="PC / 슬롯 / CH별 실행표", padding=10)
-        profiles.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        profiles.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
         profiles.columnconfigure(0, weight=1)
+        profiles.rowconfigure(1, weight=1)
         profile_toolbar = ttk.Frame(profiles)
         profile_toolbar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
         profile_toolbar.columnconfigure(0, weight=1)
-        ttk.Label(profile_toolbar, text="같은 PC도 슬롯/CH마다 한 행씩 추가해 SEQ와 런처를 배정합니다.").grid(
+        ttk.Label(profile_toolbar, text="실행 대상").grid(
             row=0, column=0, sticky="w"
         )
-        ttk.Button(profile_toolbar, text="설정 PC 불러오기", command=self._load_run_profiles_from_config).grid(
+        ttk.Button(profile_toolbar, text="Rig 대상 불러오기", command=self._load_run_profiles_from_config).grid(
             row=0, column=1, padx=(8, 5)
         )
-        ttk.Button(profile_toolbar, text="대상 추가", command=self._add_run_profile_target).grid(
-            row=0, column=2, padx=(0, 5)
-        )
-        ttk.Button(profile_toolbar, text="행 복제", command=self._duplicate_run_profiles).grid(
-            row=0, column=3, padx=(0, 5)
-        )
-        ttk.Button(profile_toolbar, text="선택 삭제", command=self._delete_run_profiles).grid(
-            row=0, column=4, padx=(0, 5)
-        )
+        row_edit_button = ttk.Menubutton(profile_toolbar, text="행 편집")
+        row_edit_button.grid(row=0, column=2, padx=(0, 5))
+        row_edit_menu = tk.Menu(row_edit_button, tearoff=False)
+        row_edit_menu.add_command(label="대상 추가", command=self._add_run_profile_target)
+        row_edit_menu.add_command(label="선택 행 복제", command=self._duplicate_run_profiles)
+        row_edit_menu.add_command(label="선택 행 삭제", command=self._delete_run_profiles)
+        row_edit_button["menu"] = row_edit_menu
         ttk.Button(
             profile_toolbar,
-            text="실행표 전송",
+            text="실행 시작",
             command=self._submit_run_profiles,
             style="Primary.TButton",
-        ).grid(row=0, column=5)
-        self.run_profile_tree = ttk.Treeview(profiles, show="headings", height=5, selectmode="extended")
-        self.run_profile_tree.grid(row=1, column=0, sticky="ew")
+        ).grid(row=0, column=3)
+        self.run_profile_tree = ttk.Treeview(profiles, show="headings", height=8, selectmode="extended")
+        self.run_profile_tree.grid(row=1, column=0, sticky="nsew")
         run_profile_scroll = ttk.Scrollbar(profiles, orient="vertical", command=self.run_profile_tree.yview)
         run_profile_scroll.grid(row=1, column=1, sticky="ns")
         run_profile_scroll_x = ttk.Scrollbar(profiles, orient="horizontal", command=self.run_profile_tree.xview)
@@ -1345,19 +1472,20 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         self.run_profile_tree.bind("<Button-1>", self._toggle_run_profile, add="+")
         self._refresh_run_profile_columns()
 
-        packages_frame = ttk.Labelframe(run_page, text="자동화 / SEQ 목록", padding=10)
-        packages_frame.grid(row=3, column=0, sticky="nsew", padx=(0, 8), pady=(0, 8))
+        packages_frame = ttk.Labelframe(run_page, text="자동화 라이브러리", padding=10)
+        packages_frame.grid(row=2, column=0, sticky="nsew", padx=(0, 8), pady=(0, 8))
         packages_frame.rowconfigure(0, weight=1)
         packages_frame.columnconfigure(0, weight=1)
         self.package_list = tk.Listbox(packages_frame, activestyle="dotbox")
+        self._style_listbox(self.package_list)
         self.package_list.grid(row=0, column=0, sticky="nsew")
         self.package_list.bind("<<ListboxSelect>>", self._show_selected_package)
         package_scroll = ttk.Scrollbar(packages_frame, orient="vertical", command=self.package_list.yview)
         package_scroll.grid(row=0, column=1, sticky="ns")
         self.package_list.configure(yscrollcommand=package_scroll.set)
 
-        detail_frame = ttk.Labelframe(run_page, text="선택 파일 정보", padding=10)
-        detail_frame.grid(row=3, column=1, sticky="nsew", pady=(0, 8))
+        detail_frame = ttk.Labelframe(run_page, text="선택 자동화", padding=10)
+        detail_frame.grid(row=2, column=1, sticky="nsew", pady=(0, 8))
         detail_frame.rowconfigure(0, weight=1)
         detail_frame.columnconfigure(0, weight=1)
         self.package_detail_text = tk.Text(detail_frame, height=8, wrap="word")
@@ -1365,7 +1493,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         self.package_detail_text.grid(row=0, column=0, sticky="nsew")
         ttk.Button(
             detail_frame,
-            text="선택 FLOW를 Scratch에서 수정",
+            text="Scratch 수정",
             command=self._edit_selected_remote_macro,
         ).grid(row=1, column=0, sticky="e", pady=(6, 0))
 
@@ -1377,21 +1505,25 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         ttk.Label(monitor, text="결과 조회 PC").grid(row=0, column=0, sticky="w", padx=(0, 6))
         self.result_node_var = tk.StringVar(value="")
         ttk.Entry(monitor, textvariable=self.result_node_var, width=20).grid(row=0, column=1, sticky="w", padx=(0, 8))
-        ttk.Button(monitor, text="상태 새로고침", command=self._refresh_status).grid(row=0, column=2, padx=(0, 8))
-        ttk.Button(monitor, text="결과 새로고침", command=self._refresh_results).grid(row=0, column=3, padx=(0, 8))
+        ttk.Button(monitor, text="새로고침", command=self._refresh_monitoring, style="Primary.TButton").grid(
+            row=0, column=2, padx=(0, 8)
+        )
         ttk.Button(monitor, text="전체 화면 보기", command=self._request_selected_screenshot).grid(
             row=0,
-            column=4,
+            column=3,
             padx=(0, 8),
         )
         ttk.Button(monitor, text="모니터 보드", command=self._show_remote_monitor_board).grid(
             row=0,
-            column=5,
+            column=4,
             padx=(0, 8),
         )
         monitor_more_button = ttk.Menubutton(monitor, text="더보기")
-        monitor_more_button.grid(row=0, column=6, sticky="w")
+        monitor_more_button.grid(row=0, column=5, sticky="w")
         monitor_more = tk.Menu(monitor_more_button, tearoff=False)
+        monitor_more.add_command(label="상태만 새로고침", command=self._refresh_status)
+        monitor_more.add_command(label="결과만 새로고침", command=self._refresh_results)
+        monitor_more.add_separator()
         monitor_more.add_command(label="선택 작업 긴급 중단", command=self._stop_selected_job)
         monitor_more.add_command(label="선택 결과 분류", command=self._triage_selected_result)
         monitor_more.add_command(label="Excel 내보내기", command=self._export_state_excel)
@@ -1402,7 +1534,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
 
         status_views = ttk.Notebook(monitor)
         self.status_views_notebook = status_views
-        status_views.grid(row=1, column=0, columnspan=7, sticky="nsew", pady=(8, 0))
+        status_views.grid(row=1, column=0, columnspan=6, sticky="nsew", pady=(8, 0))
         pc_status_page = ttk.Frame(status_views)
         channel_status_page = ttk.Frame(status_views)
         status_views.add(pc_status_page, text="PC 상태")
@@ -1595,15 +1727,29 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         log_scroll.grid(row=0, column=1, sticky="ns")
         self.master_log_text.configure(yscrollcommand=log_scroll.set)
 
+    def _toggle_run_advanced_tools(self) -> None:
+        visible = not getattr(self, "_run_advanced_visible", False)
+        self._run_advanced_visible = visible
+        for frame in self._run_advanced_frames:
+            if visible:
+                frame.grid()
+            else:
+                frame.grid_remove()
+        self.run_advanced_toggle_button.configure(
+            text="운영 도구 닫기" if visible else "운영 도구 열기"
+        )
+
+    def _refresh_monitoring(self) -> None:
+        self._refresh_status()
+        self._refresh_results()
+
     def _build_campaign_page(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(2, weight=1)
 
         flow = ttk.Frame(parent, style="Panel.TFrame", padding=(10, 8))
         flow.grid(row=0, column=0, sticky="ew", pady=(0, 8))
-        for column, label in enumerate(
-            ("1 계획", "2 준비", "3 사전 점검", "4 실행", "5 분석", "6 완료")
-        ):
+        for column, label in enumerate(("1  계획", "2  준비", "3  실행", "4  판정")):
             flow.columnconfigure(column, weight=1)
             ttk.Label(flow, text=label, style="Panel.TLabel", anchor="center").grid(
                 row=0, column=column, sticky="ew", padx=4
@@ -1625,7 +1771,7 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
         ttk.Button(header, text="상태 새로고침", command=self._refresh_status).grid(
             row=0, column=2, padx=(0, 6)
         )
-        ttk.Button(header, text="실행표 열기", command=lambda: self.master_workspace.select(1)).grid(
+        ttk.Button(header, text="실행 준비", command=self._show_today_work).grid(
             row=0, column=3, padx=(0, 8)
         )
         self.campaign_board_loaded_var = tk.StringVar(value="마지막 상태 조회: -")
@@ -1733,25 +1879,20 @@ class RigFtpApp(AEWorkbenchMixin, tk.Tk):
             pady=(0, 8),
         )
 
-        ttk.Button(control, text="Agent 시작", command=self._start_slave_loop, style="Primary.TButton").grid(
-            row=1,
-            column=0,
-            sticky="ew",
-            padx=(0, 8),
+        agent_actions = ttk.Frame(control)
+        agent_actions.grid(row=1, column=0, columnspan=3, sticky="w")
+        ttk.Button(agent_actions, text="Agent 시작", command=self._start_slave_loop, style="Primary.TButton").pack(
+            side="left", padx=(0, 6)
         )
-        ttk.Button(control, text="한 번 확인", command=self._poll_slave_once).grid(row=1, column=1, sticky="w")
-        ttk.Button(control, text="Agent 중지", command=self._stop_slave_loop, style="Danger.TButton").grid(
-            row=1,
-            column=2,
-            sticky="ew",
-            padx=(8, 0),
+        ttk.Button(agent_actions, text="Agent 중지", command=self._stop_slave_loop, style="Danger.TButton").pack(
+            side="left", padx=(0, 6)
         )
-        ttk.Button(control, text="중단 신호 해제", command=self._clear_my_stop).grid(
-            row=1,
-            column=3,
-            sticky="ew",
-            padx=(8, 0),
-        )
+        agent_more_button = ttk.Menubutton(agent_actions, text="더보기")
+        agent_more_button.pack(side="left")
+        agent_more = tk.Menu(agent_more_button, tearoff=False)
+        agent_more.add_command(label="한 번 확인", command=self._poll_slave_once)
+        agent_more.add_command(label="중단 신호 해제", command=self._clear_my_stop)
+        agent_more_button["menu"] = agent_more
 
         log_frame = ttk.Labelframe(parent, text="Agent 로그", padding=10)
         log_frame.grid(row=1, column=0, sticky="nsew")

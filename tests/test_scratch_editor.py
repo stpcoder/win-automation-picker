@@ -1,4 +1,15 @@
-from win_automation_picker.scratch_editor import DropZone, choose_drop_zone
+from win_automation_picker.scratch_editor import DropZone, choose_drop_zone, layout_for_density
+
+
+def test_compact_scratch_layout_keeps_blocks_visually_connected() -> None:
+    compact = layout_for_density("작게")
+    normal = layout_for_density("보통")
+
+    assert compact.block_height == 46
+    assert compact.stack_gap <= 2
+    assert compact.max_stack_width == 700
+    assert compact.block_height < normal.block_height
+    assert compact.stack_gap < normal.stack_gap
 
 
 def test_choose_drop_zone_prefers_deeper_nested_slot() -> None:

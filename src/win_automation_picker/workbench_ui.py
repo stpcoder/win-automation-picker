@@ -818,7 +818,7 @@ class AEWorkbenchMixin:
             self._set_badge(self.wb_macro_badge, "확인 필요", "#b45309")
 
         if readiness.ready_to_upload:
-            self._set_badge(self.wb_ready_badge, "업로드 가능", "#15803d")
+            self._set_badge(self.wb_ready_badge, "등록 가능", "#15803d")
             self.wb_ready_var.set("SEQ와 매크로 source/export hash가 일치합니다.")
             self.wb_upload_button.configure(state="normal")
         else:
@@ -831,13 +831,10 @@ class AEWorkbenchMixin:
             readiness.macro_ready,
             readiness.ready_to_upload,
             bool(getattr(self, "_workbench_uploaded", False)),
-            False,
         ]
         for index, badge in enumerate(self.wb_stage_labels):
             if stage_ready[index]:
                 badge.configure(background="#dcfce7", foreground="#166534")
-            elif index == 4 and getattr(self, "_workbench_uploaded", False):
-                badge.configure(background="#dbeafe", foreground="#1d4ed8")
             else:
                 badge.configure(background="#e2e8f0", foreground="#334155")
         return readiness
@@ -845,7 +842,7 @@ class AEWorkbenchMixin:
     def _upload_workbench_artifacts(self) -> None:
         readiness = self._refresh_workbench_state()
         if not readiness.ready_to_upload:
-            self._show_error(ValueError("전체 사전 점검을 통과한 뒤 업로드하세요."))
+            self._show_error(ValueError("준비 상태 확인을 통과한 뒤 서버 라이브러리에 등록하세요."))
             return
         try:
             project = self._workbench_from_fields()
@@ -868,6 +865,18 @@ class AEWorkbenchMixin:
             macro = inspect_automation_project(macro_source)
             sequence = inspect_sequence_artifact(sequence_path, recipe_path=sequence_recipe)
             _config, backend, _local_root = self._snapshot_backend()
+            active_shortcut = next(
+                (
+                    shortcut
+                    for shortcut in project.shortcuts
+                    if resolve_workbench_path(
+                        shortcut.project_path,
+                        self.workbench_path_var.get().strip() or None,
+                    ).resolve()
+                    == macro_source.resolve()
+                ),
+                None,
+            )
         except BaseException as exc:
             self._show_error(exc)
             return
@@ -876,8 +885,12 @@ class AEWorkbenchMixin:
             macro_remote = deploy_package(
                 backend,
                 macro_path,
-                title=Path(project.macro_project_path).stem,
-                notes=f"AE Workbench launcher | {project.name}",
+                title=active_shortcut.name if active_shortcut else Path(project.macro_project_path).stem,
+                notes=(
+                    active_shortcut.notes
+                    if active_shortcut and active_shortcut.notes
+                    else f"AE Workbench launcher | {project.name}"
+                ),
                 variables=macro.project.recipe.variables,
             )
             sequence_remote = deploy_package(
@@ -901,8 +914,7 @@ class AEWorkbenchMixin:
         self._start_worker("SEQ와 매크로 업로드", worker)
 
     def _open_workbench_run_table(self) -> None:
-        self.main_notebook.select(1)
-        self.master_workspace.select(1)
+        self._show_today_work()
 
     def _edit_selected_remote_macro(self) -> None:
         package = self._selected_package()
@@ -940,7 +952,7 @@ class AEWorkbenchMixin:
             self._workbench_from_fields(),
             macro_export_source_sha256=automation_project_sha256(project),
         )
-        self.main_notebook.select(0)
+        self._show_preparation()
         self._save_workbench_project(silent=True)
         self._open_workbench_macro_editor()
 

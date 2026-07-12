@@ -32,8 +32,9 @@ https://github.com/stpcoder/win-automation-picker/releases/latest/download/RigCo
 ## 권장 통합 실행
 
 1. `AEWorkbench.exe`를 실행합니다.
-2. `AE 작업대`에서 SEQ recipe와 Scratch macro를 준비합니다.
-3. 자세한 순서는 [AE Workbench 통합 흐름](ae-workbench.md)을 따릅니다.
+2. 처음 구축할 때는 `3 Rig 설정`, 프로그램을 만들 때는 `2 자동화 준비`를 사용합니다.
+3. 평소에는 첫 화면 `1 오늘 작업`에서 자동화와 PC/CH 값만 확인합니다.
+4. 자세한 순서는 [Mobile DRAM AE 업무 흐름](daily-workflow.md)을 따릅니다.
 
 SEQ를 Workbench에서 편집·검증·빌드하려면 Test Sequence Generator release의
 `TestSeqGenerator.exe`와 `SeqTool.exe`가 서로 같은 폴더에 있어야 합니다. 그 폴더를
@@ -50,8 +51,8 @@ SEQ를 Workbench에서 편집·검증·빌드하려면 Test Sequence Generator r
 ## FTP 운영 프로그램 실행
 
 1. master PC에서 `RigFtpCommander.exe`를 실행합니다.
-2. `연결 설정` 탭에 FTP 서버 정보를 입력하고 `연결 확인`을 누릅니다.
-3. `저장`을 눌러 `rig-ftp.info`를 저장합니다.
+2. `3 Rig 설정 > Master · 원격 PC > Master 연결`에 FTP 정보를 입력합니다.
+3. `연결 확인` 후 설정 파일 영역의 `저장`을 눌러 `rig-ftp.info`를 저장합니다.
 4. slave PC에는 `RigFtpCommander.exe`와 해당 PC용 `rig-ftp.info`를 같은 폴더에 둡니다.
 
 ## 로컬 개발 환경에서 실행

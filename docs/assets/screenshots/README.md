@@ -1,8 +1,10 @@
 # Manual screenshot provenance
 
 These PNG files are captures of the real Tk or Qt application widgets on macOS. They are not
-drawn mockups. All PC names, IP addresses, DRAM parts, binaries, campaigns, jobs, and timestamps
-shown in them are generated demo values and contain no FTP credentials.
+drawn mockups. The Tk capture script uses macOS ScreenCaptureKit to resolve the exact independent
+window by process and title, so unrelated desktop windows cannot enter the image. All PC names, IP addresses,
+DRAM parts, binaries, campaigns, jobs, and timestamps are generated demo values. No password is
+stored; the example uses the placeholder environment variable `RIG_FTP_PASSWORD`.
 
 Regenerate the Workbench, Scratch, Rig, and monitoring views:
 
