@@ -926,6 +926,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../execution-routes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SK Commander와 직접 COM 운용
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../seq-integration/" class="md-nav__link">
         
   
@@ -1332,6 +1360,10 @@ Slave PC
 <td>stdout/stderr log</td>
 </tr>
 <tr>
+<td><code>artifacts/{node}/</code></td>
+<td>직접 COM 종료 시 CH별 manifest/Grid/console 증거 ZIP</td>
+</tr>
+<tr>
 <td><code>screenshots/{node}/</code></td>
 <td>화면 캡처 PNG</td>
 </tr>
@@ -1358,6 +1390,7 @@ Slave PC
 확인합니다. <code>직접 COM</code>에서는 같은 PC의 최대 4개 CH를 병렬 실행하고 Grid/console 결과를
 분리 저장합니다. <code>SK Commander</code>에서는 로컬에 SEQ를 저장한 뒤 Picker 런처 workflow에
 <code>${seq_path}</code>, <code>${channel}</code>, <code>${slot_id}</code>를 전달합니다. 전체 절차는
+<a href="../execution-routes/">SK Commander 연동과 직접 COM 운용</a>과
 <a href="../seq-integration/">SEQ Generator와 실장기 실행 연동</a>을 따릅니다.</p>
 <p><code>.rigbinary.json</code>은 FTP package가 아니라 Master 설정용 metadata 교환 파일입니다. <code>실장기 관리</code>에서 읽은 뒤 <code>.info</code>와 heartbeat에 필요한 provenance만 저장하며 실제 binary payload는 FTP spool로 올리지 않습니다.</p>
 

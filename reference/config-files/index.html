@@ -846,6 +846,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../rig-ftp/execution-routes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SK Commander와 직접 COM 운용
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../rig-ftp/seq-integration/" class="md-nav__link">
         
   
@@ -1501,6 +1529,22 @@
 <tr>
 <td><code>runtime.python_executable</code></td>
 <td>일반 Python package 전용 실행기. export workflow에는 사용하지 않음</td>
+</tr>
+<tr>
+<td><code>runtime.max_run_log_bytes</code></td>
+<td>CH별 직접 COM console 파일 상한. 기본 8 MB</td>
+</tr>
+<tr>
+<td><code>runtime.max_artifact_upload_bytes</code></td>
+<td>실행 종료 시 FTP 증거 ZIP 상한. 기본 16 MB</td>
+</tr>
+<tr>
+<td><code>runtime.max_local_run_files</code></td>
+<td>Slave의 직접 COM 실행 폴더 보관 개수. 기본 40</td>
+</tr>
+<tr>
+<td><code>runtime.max_artifact_files</code></td>
+<td>PC별 FTP 증거 ZIP 보관 개수. 기본 40, <code>0</code>이면 증거 ZIP 업로드 끔</td>
 </tr>
 <tr>
 <td><code>runtime.max_*</code></td>

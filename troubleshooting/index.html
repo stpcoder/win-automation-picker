@@ -844,6 +844,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../rig-ftp/execution-routes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SK Commander와 직접 COM 운용
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../rig-ftp/seq-integration/" class="md-nav__link">
         
   
@@ -1309,6 +1337,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#master" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        현장 실행이 Master 보드에 보이지 않음
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="현장 실행이 Master 보드에 보이지 않음">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#com_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        직접 COM
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sk-commander" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SK Commander
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#zip" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        결과 증거 ZIP이 없음
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#binary-blocked" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1538,6 +1616,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#master" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        현장 실행이 Master 보드에 보이지 않음
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="현장 실행이 Master 보드에 보이지 않음">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#com_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        직접 COM
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sk-commander" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SK Commander
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#zip" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        결과 증거 ZIP이 없음
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#binary-blocked" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1699,6 +1827,29 @@ Manager에서 실제 중복 프로세스를 확인하고 하나만 남깁니다.
 <h2 id="com">직접 COM 실행표가 제출되지 않음</h2>
 <ul>
 <li><code>직접 COM 실행에는 COM 포트가 필요</code>이면 해당 CH의 Console COM을 저장합니다.</li>
+</ul>
+<h2 id="master">현장 실행이 Master 보드에 보이지 않음</h2>
+<h3 id="com_1">직접 COM</h3>
+<ol>
+<li>실장기 PC 4채널 콘솔의 <code>Master 상태 공유</code>가 켜졌는지 확인합니다.</li>
+<li><code>이 PC Node ID</code>와 선택한 COM 소유 PC의 Node ID가 같은지 확인합니다.</li>
+<li>FTP 연결 확인 후 <code>Agent 시작</code>을 누릅니다.</li>
+<li><code>work_dir/local-runs/{node}/channels</code>에 CH 상태 JSON이 생겼는지 확인합니다.</li>
+</ol>
+<h3 id="sk-commander">SK Commander</h3>
+<ol>
+<li>클릭/입력이 없는 monitor workflow를 서버 라이브러리에 등록합니다.</li>
+<li><code>3 Rig 설정 &gt; 이 PC Agent &gt; 현장 SK 감시</code>에서 해당 workflow를 선택합니다.</li>
+<li><code>감시 시작</code> 후 Agent 로그에서 규칙 통과 수를 확인합니다.</li>
+<li>monitor block의 <code>monitor_channel</code>이 설정 CH와 같은지 확인합니다.</li>
+</ol>
+<h2 id="zip">결과 증거 ZIP이 없음</h2>
+<ul>
+<li>새 직접 COM 실행만 Grid/console 증거 ZIP을 생성합니다. 이전 버전 결과에는 없습니다.</li>
+<li>결과 상세의 <code>artifact_error</code>를 확인합니다.</li>
+<li>FTP 업로드가 실패해도 Slave의 <code>work_dir/serial-results/{job_id}</code> 원본은 유지됩니다.</li>
+<li>ZIP 상한보다 큰 경우 <code>고급 정책 &gt; 증거 ZIP 상한(MB)</code>을 검토하되 FTP 정책보다 크게 올리지 않습니다.</li>
+<li>SK Commander 경로의 raw Grid log는 SK Commander 자체 저장 경로에서 확인합니다.</li>
 <li><code>same COM twice</code>이면 같은 PC의 두 CH가 같은 COM을 가리키므로 Device Manager와 설정을 바로잡습니다.</li>
 <li>같은 PC/Campaign/attempt에 5행 이상이면 최대 네 CH씩 attempt 또는 실행 체크를 나눕니다.</li>
 <li><code>whitespace after ';'</code>이면 <code>cmd1;cmd2;</code>처럼 세미콜론 뒤 공백을 제거합니다.</li>

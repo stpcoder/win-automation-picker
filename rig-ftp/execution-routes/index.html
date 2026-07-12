@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://stpcoder.github.io/win-automation-picker/reference/buttons/">
+        <link rel="canonical" href="https://stpcoder.github.io/win-automation-picker/rig-ftp/execution-routes/">
       
       
-        <link rel="prev" href="../../rig-ftp/monitoring/">
+        <link rel="prev" href="../ae-campaign/">
       
       
-        <link rel="next" href="../config-files/">
+        <link rel="next" href="../seq-integration/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>버튼/메뉴 사전 - AE Workbench Manual</title>
+        <title>SK Commander와 직접 COM 운용 - AE Workbench Manual</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#_1" class="md-skip">
+        <a href="#sk-commander-com" class="md-skip">
           콘텐츠로 이동
         </a>
       
@@ -116,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              버튼/메뉴 사전
+              SK Commander와 직접 COM 운용
             
           </span>
         </div>
@@ -733,8 +733,10 @@
       
   
   
+    
   
   
+  
     
     
     
@@ -745,13 +747,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
           <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
@@ -772,7 +772,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -790,7 +790,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../rig-ftp/overview/" class="md-nav__link">
+      <a href="../overview/" class="md-nav__link">
         
   
   
@@ -818,7 +818,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../rig-ftp/ae-campaign/" class="md-nav__link">
+      <a href="../ae-campaign/" class="md-nav__link">
         
   
   
@@ -843,10 +843,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../rig-ftp/execution-routes/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SK Commander와 직접 COM 운용
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -862,6 +889,148 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="목차">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      목차
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        공통 상태 계약
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-sk-commander" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        경로 A: 기존 SK Commander 사용
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="경로 A: 기존 SK Commander 사용">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        런처 만들기
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        장시간 상태 감시
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#b-sk-commander-com" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        경로 B: SK Commander 없이 직접 COM
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="경로 B: SK Commander 없이 직접 COM">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#master" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Master에서 시작
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        실장기 PC에서 직접 시작
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#com" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        직접 COM 결과 폴더
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        경로 전환 전 확인
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        현장 승인 체크
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -874,7 +1043,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../rig-ftp/seq-integration/" class="md-nav__link">
+      <a href="../seq-integration/" class="md-nav__link">
         
   
   
@@ -902,7 +1071,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../rig-ftp/master-setup/" class="md-nav__link">
+      <a href="../master-setup/" class="md-nav__link">
         
   
   
@@ -930,7 +1099,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../rig-ftp/slave-setup/" class="md-nav__link">
+      <a href="../slave-setup/" class="md-nav__link">
         
   
   
@@ -958,7 +1127,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../rig-ftp/monitoring/" class="md-nav__link">
+      <a href="../monitoring/" class="md-nav__link">
         
   
   
@@ -990,8 +1159,6 @@
       
   
   
-    
-  
   
   
     
@@ -1004,11 +1171,13 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
         
           
           <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
@@ -1029,7 +1198,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1044,37 +1213,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    버튼/메뉴 사전
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../reference/buttons/" class="md-nav__link">
         
   
   
@@ -1090,120 +1232,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="목차">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      목차
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#ae-workbench" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        AE Workbench 상단
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#_2" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        오늘 작업
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#_3" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        자동화 준비
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="자동화 준비">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#binary" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        실장기 제어 · Binary
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#scratch" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Scratch 상단과 녹화
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#scratch_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Scratch 블록 작업실
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#rig" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Rig 설정
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#_4" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        모니터링
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1216,7 +1244,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../config-files/" class="md-nav__link">
+      <a href="../../reference/config-files/" class="md-nav__link">
         
   
   
@@ -1299,10 +1327,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#ae-workbench" class="md-nav__link">
+  <a href="#_1" class="md-nav__link">
     <span class="md-ellipsis">
       
-        AE Workbench 상단
+        공통 상태 계약
       
     </span>
   </a>
@@ -1310,33 +1338,33 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#_2" class="md-nav__link">
+  <a href="#a-sk-commander" class="md-nav__link">
     <span class="md-ellipsis">
       
-        오늘 작업
+        경로 A: 기존 SK Commander 사용
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#_3" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        자동화 준비
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="자동화 준비">
+    <nav class="md-nav" aria-label="경로 A: 기존 SK Commander 사용">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#binary" class="md-nav__link">
+  <a href="#_2" class="md-nav__link">
     <span class="md-ellipsis">
       
-        실장기 제어 · Binary
+        런처 만들기
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        장시간 상태 감시
       
     </span>
   </a>
@@ -1349,35 +1377,52 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#scratch" class="md-nav__link">
+  <a href="#b-sk-commander-com" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Scratch 상단과 녹화
+        경로 B: SK Commander 없이 직접 COM
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="경로 B: SK Commander 없이 직접 COM">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#master" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Master에서 시작
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#scratch_1" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#pc" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Scratch 블록 작업실
+        실장기 PC에서 직접 시작
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#rig" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#com" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Rig 설정
+        직접 COM 결과 폴더
       
     </span>
   </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1385,7 +1430,18 @@
   <a href="#_4" class="md-nav__link">
     <span class="md-ellipsis">
       
-        모니터링
+        경로 전환 전 확인
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        현장 승인 체크
       
     </span>
   </a>
@@ -1412,458 +1468,254 @@
   
 
 
-<h1 id="_1">버튼/메뉴 사전</h1>
-<h2 id="ae-workbench">AE Workbench 상단</h2>
+<h1 id="sk-commander-com">SK Commander 연동과 직접 COM 운용</h1>
+<p>AE Workbench는 같은 SEQ 패키지를 두 실행 경로로 운용합니다. 실행표의 각 CH마다 방식을
+다르게 선택할 수 있으며, Master에서 시작했는지 실장기 연결 PC에서 직접 시작했는지도
+별도로 기록합니다.</p>
+<p><img alt="직접 COM과 SK Commander를 CH별로 선택하는 실행표" src="../../assets/screenshots/01-today-work.png" /></p>
+<h2 id="_1">공통 상태 계약</h2>
+<p>두 경로 모두 <code>PC / CH 실행 보드</code>에 다음 값을 올립니다.</p>
 <table>
 <thead>
 <tr>
-<th>버튼</th>
-<th>설명</th>
+<th>값</th>
+<th>예</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>연결 확인</code></td>
-<td>FTP 전용 root의 로그인·쓰기·읽기·삭제 권한 확인</td>
+<td>운용 방식</td>
+<td><code>직접 COM</code>, <code>SK Commander</code></td>
 </tr>
 <tr>
-<td><code>Rig 설정</code></td>
-<td>Master 연결 설정 화면으로 이동</td>
+<td>시작 위치</td>
+<td><code>Master</code>, <code>현장 PC</code></td>
 </tr>
 <tr>
-<td><code>1 오늘 작업</code></td>
-<td>일일 실행, 캠페인, PC·CH 상태</td>
+<td>실행 단계</td>
+<td>준비, 실행 중, 외부 실행 중, 완료, 정지, 실패, 감시 중</td>
 </tr>
 <tr>
-<td><code>2 자동화 준비</code></td>
-<td>SEQ와 프로그램 매크로 제작·등록</td>
+<td>시험 식별</td>
+<td>Campaign, Test, SEQ, attempt, 자재</td>
 </tr>
 <tr>
-<td><code>3 Rig 설정</code></td>
-<td>Master, 원격 PC/CH, Agent와 고급 정책</td>
+<td>진행</td>
+<td>현재 Grid, 완료 Grid/전체 Grid</td>
+</tr>
+<tr>
+<td>판정</td>
+<td>pending, pass, fail, stopped</td>
+</tr>
+<tr>
+<td>증거</td>
+<td>결과 JSON, Grid/console ZIP 또는 monitor 결과</td>
 </tr>
 </tbody>
 </table>
-<h2 id="_2">오늘 작업</h2>
+<p><img alt="운용 방식과 시작 위치를 함께 표시하는 캠페인 보드" src="../../assets/screenshots/04-campaign-monitoring.png" /></p>
+<p><code>직접 COM · Master</code>, <code>SK Commander · 현장 PC</code>처럼 표시되므로 같은 CH가 수동으로
+시작됐는지 원격으로 시작됐는지를 구별할 수 있습니다. 이 필드는 Excel의 <code>CH Inventory</code>
+시트에도 <code>Execution Route</code>, <code>Execution Origin</code>, <code>Execution Phase</code>로 저장됩니다.</p>
+<h2 id="a-sk-commander">경로 A: 기존 SK Commander 사용</h2>
+<p>SK Commander가 COM, Grid 실행과 자체 로그 저장을 담당합니다. AE Workbench는 녹화한
+Windows UI workflow로 SEQ 경로를 넣고 Load/Start를 누르며, 별도 monitor workflow로
+화면 상태를 읽습니다.</p>
+<h3 id="_2">런처 만들기</h3>
+<p>Picker의 <code>유형 / 역할</code>에서 다음 역할을 지정합니다.</p>
 <table>
 <thead>
 <tr>
-<th>버튼/메뉴</th>
-<th>설명</th>
+<th>역할</th>
+<th>필수</th>
+<th>대상</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>자동화 새로고침</code></td>
-<td>서버의 FLOW와 SEQ 라이브러리 다시 읽기</td>
+<td><code>sk_seq_path</code></td>
+<td>예</td>
+<td><code>${seq_path}</code>를 입력하는 SEQ 경로 칸</td>
 </tr>
 <tr>
-<td><code>SEQ 방식</code></td>
-<td>선택 행 또는 전체 실행표를 <code>직접 COM</code>/<code>SK Commander</code>로 전환</td>
+<td><code>sk_load</code></td>
+<td>예</td>
+<td>SEQ Load/Open 버튼</td>
 </tr>
 <tr>
-<td><code>Rig 대상 불러오기</code></td>
-<td>설정한 PC/CH를 실행표 행으로 생성</td>
+<td><code>sk_start</code></td>
+<td>예</td>
+<td>시험 Start 버튼</td>
 </tr>
 <tr>
-<td><code>행 편집</code></td>
-<td>대상 추가, 행 복제, 선택 행 삭제</td>
+<td><code>sk_stop</code></td>
+<td>선택</td>
+<td>SK Commander Stop 버튼</td>
 </tr>
 <tr>
-<td><code>실행 시작</code></td>
-<td>체크된 각 PC/CH 행을 별도 job으로 제출</td>
+<td><code>sk_reset</code></td>
+<td>선택</td>
+<td>Reset 버튼</td>
 </tr>
 <tr>
-<td><code>모니터링</code></td>
-<td><code>PC · CH 상태</code>로 이동</td>
+<td><code>sk_power_reset</code></td>
+<td>선택</td>
+<td>Power Reset 버튼</td>
 </tr>
 <tr>
-<td><code>긴급 중단</code></td>
-<td>대상 PC에 stop signal 전송</td>
+<td><code>sk_grid_status</code></td>
+<td>감시 시 권장</td>
+<td><code>7/12 GRID_08</code> 같은 진행 component</td>
 </tr>
 <tr>
-<td><code>운영 도구 열기</code></td>
-<td>raw 패키지 등록과 단일 PC 고급 실행 표시</td>
-</tr>
-<tr>
-<td><code>Scratch 수정</code></td>
-<td>선택한 서버 FLOW를 source project로 안전하게 복원</td>
+<td><code>sk_serial_monitor</code></td>
+<td>감시 시 권장</td>
+<td>상단 serial/console 상태 component</td>
 </tr>
 </tbody>
 </table>
-<h2 id="_3">자동화 준비</h2>
+<p>SEQ 런처에는 <code>sk_seq_path &gt; sk_load &gt; sk_start</code>만 넣는 것이 안전합니다. Stop, Reset,
+Power Reset은 각각 별도 workflow로 만들어 자동화 라이브러리에서 명시적으로 실행합니다.
+한 workflow에 Start와 Reset을 함께 넣으면 런처 실행 때 두 동작이 모두 수행됩니다.</p>
+<p>업로드된 런처는 실행표 위에서 다음처럼 검사됩니다.</p>
+<ul>
+<li><code>SEQ/Load/Start 준비 완료</code>: 필수 역할이 모두 있음</li>
+<li><code>준비 미완료</code>: 표시된 역할을 다시 지정해야 함</li>
+<li><code>호환 모드</code>: 이전 버전 workflow이며 실행은 허용하지만 역할 기반 검사는 하지 못함</li>
+</ul>
+<p>같은 제목의 SK Commander가 네 개라면 창 내부 CH component를 window marker로 지정하고
+<code>${channel}</code>을 사용합니다. CH가 없는 창은 장비 Serial, Slot 또는 다른 고유 component를
+marker로 사용합니다.</p>
+<h3 id="_3">장시간 상태 감시</h3>
+<p>런처는 Start 직후 종료하고 채널 상태는 <code>외부 실행 중</code>으로 남습니다. 장시간 시험을 런처
+workflow 안에서 wait로 붙잡아 두지 않습니다. 클릭/입력이 없는 monitor workflow를 별도로
+만들어 Grid, PASS/FAIL, serial 상태를 읽습니다.</p>
+<p>Master가 시작한 시험은 monitor job으로 읽을 수 있습니다. 현장에서 사용자가 SK Commander의
+Start를 직접 누른 경우에는 Slave 화면에서 다음 순서로 감시합니다.</p>
+<p><img alt="현장 수동 실행을 읽는 Slave Agent의 SK 감시" src="../../assets/screenshots/11-slave-agent.png" /></p>
+<ol>
+<li><code>3 Rig 설정 &gt; 이 PC Agent</code>에서 <code>Agent 시작</code>을 누릅니다.</li>
+<li><code>현장 SK 감시</code>에서 읽기 전용 monitor workflow를 선택합니다.</li>
+<li>간격은 기본 <code>15초</code>, 최소 <code>5초</code>로 둡니다.</li>
+<li><code>감시 시작</code>을 누릅니다.</li>
+<li>상태가 바뀌면 결과 이력이 한 건 생성되고 Master 보드가 갱신됩니다.</li>
+</ol>
+<p>변화가 없으면 결과 파일을 계속 만들지 않습니다. 상태 변화는 즉시, 같은 상태의 heartbeat는
+최대 60초마다 발행하여 FTP와 Windows UI Automation 부하를 제한합니다.</p>
+<div class="admonition warning">
+<p class="admonition-title">SK Commander 자체 로그 경계</p>
+<p>monitor workflow는 화면 component와 판정을 구조화해 기록하지만 SK Commander가 저장하는
+원본 Grid serial log를 대신 만들지는 않습니다. 원본 로그는 SK Commander의 검증된 저장
+경로를 유지해야 합니다. AE Workbench가 Grid별 raw response까지 직접 소유해야 하면 아래
+직접 COM 경로를 사용합니다.</p>
+</div>
+<h2 id="b-sk-commander-com">경로 B: SK Commander 없이 직접 COM</h2>
+<p>Slave Agent가 각 CH의 COM을 직접 열어 SEQ command를 보냅니다. 같은 PC의 최대 네 CH가
+서로 다른 COM을 사용할 때 병렬 실행됩니다.</p>
+<h3 id="master">Master에서 시작</h3>
+<ol>
+<li>실행표에서 <code>SEQ 방식</code>을 <code>직접 COM</code>으로 선택합니다.</li>
+<li>CH, COM, baud, SEQ, 자재와 attempt를 확인합니다.</li>
+<li><code>실행 시작</code>을 누릅니다.</li>
+<li>Slave가 Grid 경계마다 heartbeat를 갱신합니다.</li>
+<li>완료 후 결과 행의 <code>더보기 &gt; 선택 결과 증거 ZIP 저장</code>으로 증거를 받습니다.</li>
+</ol>
+<h3 id="pc">실장기 PC에서 직접 시작</h3>
+<p><img alt="현장 직접 실행과 운영 기록값을 함께 입력하는 4채널 콘솔" src="../../assets/screenshots/12-four-channel-console.png" /></p>
+<ol>
+<li>실장기 PC에서 <code>2 자동화 준비 &gt; 실장기 제어 · Binary &gt; 4채널 콘솔</code>을 엽니다.</li>
+<li>실행 CH를 연결하고 SEQ를 선택합니다.</li>
+<li><code>Master 상태 공유</code>를 켭니다.</li>
+<li>시험명, 필요 시 온도/VDD, attempt를 입력합니다.</li>
+<li><code>동시 실행</code>을 누릅니다.</li>
+</ol>
+<p>실행 중에는 Grid 전환과 60초 heartbeat가 기록됩니다. 앱이나 PC가 비정상 종료되어 heartbeat가
+끊기면 Agent가 남아 있는 로컬 <code>running</code> 스냅샷을 약 3분 뒤 <code>stale/interrupted</code>로 전환하므로
+Master 화면에 영구 실행 중으로 남지 않습니다.</p>
+<p>SEQ Generator 패키지의 Recipe가 있으면 Grid별 Corner, Temp, VDD와 주파수를 Recipe에서
+가져옵니다. 로컬 raw <code>.seq</code>만 선택한 경우에는 <code>#105_0.99_...</code> 같은 Grid 이름에서 추출하고,
+화면에 입력한 온도/VDD를 fallback으로 사용합니다. 값을 추측할 수 없으면 빈 값으로 남깁니다.</p>
+<h3 id="com">직접 COM 결과 폴더</h3>
+<div class="highlight"><pre><span></span><code>work_dir/serial-results/{job_id}/
+  manifest.json
+  console.log
+  grids/
+    001__HH__T105C__VDD0.99V__GRID_NAME.log
+    002__HL__T105C__VDD0.91V__GRID_NAME.log
+</code></pre></div>
+<p><code>manifest.json</code>은 <code>rig-test-run/v2</code> 형식이며 실행 경로/시작 위치, CH/실장기/COM,
+SEQ/Test/attempt, 현재·완료 Grid, command 판정과 Grid log SHA-256을 포함합니다.</p>
+<ul>
+<li><code>console.log</code> 기본 상한: 8 MB</li>
+<li>Grid log 기본 상한: Grid당 2 MB</li>
+<li>Grid log 합계 상한: 실행당 32 MB. 이후 Grid는 manifest에 <code>log_omitted=true</code>로 기록</li>
+<li>FTP 증거 ZIP 기본 상한: 16 MB</li>
+<li>Slave 로컬 실행 폴더 기본 보관: 최근 40개</li>
+<li>FTP 증거 ZIP 기본 보관: PC당 최근 40개</li>
+<li>FTP 업로드: 실행 종료 시 CH당 한 번</li>
+<li>실시간 serial stream: FTP로 전송하지 않음</li>
+<li>보존: <code>로그 보관 개수</code>만큼, Workbench가 만든 manifest 형식의 폴더만 정리</li>
+</ul>
+<p>상한과 보관 개수는 <code>3 Rig 설정 &gt; 고급 정책</code>의 <code>실행 로그 상한(MB)</code>,
+<code>증거 ZIP 상한(MB)</code>, <code>로컬 실행 보관 개수</code>, <code>FTP 증거 ZIP 보관 개수</code>에서 조정합니다.
+<code>FTP 증거 ZIP 보관 개수</code>를 <code>0</code>으로 두면 상태·결과 JSON은 유지하면서 증거 ZIP 업로드만 끕니다.
+ZIP에는 manifest와 Grid log를 우선 넣고, 용량이 남을 때 console을 넣습니다.</p>
+<h2 id="_4">경로 전환 전 확인</h2>
 <table>
 <thead>
 <tr>
-<th>버튼/메뉴</th>
-<th>설명</th>
+<th>확인</th>
+<th>SK Commander</th>
+<th>직접 COM</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>파일</code></td>
-<td><code>*.aework.json</code> 열기·저장</td>
+<td>COM 소유</td>
+<td>SK Commander가 소유</td>
+<td>SK Commander/QTTY/PuTTY 연결 해제 후 Agent가 소유</td>
 </tr>
 <tr>
-<td><code>SEQ 편집</code></td>
-<td>현재 recipe를 Test Sequence Generator에서 열기</td>
+<td>Start/Stop/Reset</td>
+<td>녹화한 명시적 workflow</td>
+<td>SEQ 정지와 serial 명령</td>
 </tr>
 <tr>
-<td><code>검사 · 패키지 준비</code></td>
-<td>SEQ 검사 후 checksummed <code>*.rigseq.zip</code> 생성</td>
+<td>Grid 진행</td>
+<td>monitor component가 읽음</td>
+<td>실행 엔진이 직접 계산</td>
 </tr>
 <tr>
-<td><code>SEQ 더보기</code></td>
-<td>검사만 실행, recipe/package/tool 경로 선택</td>
+<td>raw Grid log</td>
+<td>SK Commander 자체 로그</td>
+<td>Workbench가 Grid별 생성</td>
 </tr>
 <tr>
-<td><code>Scratch 편집</code></td>
-<td>현재 프로그램 매크로를 블록 작업실에서 열기</td>
+<td>현장 수동 시작</td>
+<td><code>현장 SK 감시</code> 필요</td>
+<td><code>Master 상태 공유</code> 사용</td>
 </tr>
 <tr>
-<td><code>검사 · Python 준비</code></td>
-<td>Scratch 구조 검사와 최신 FLOW export</td>
-</tr>
-<tr>
-<td><code>Scratch 더보기</code></td>
-<td>새 매크로, 구성 검사만 실행, 다른 source 선택</td>
-</tr>
-<tr>
-<td><code>값 편집</code></td>
-<td>감지된 로컬 시험 변수를 입력·저장</td>
-</tr>
-<tr>
-<td><code>시험</code> / <code>중지</code></td>
-<td>현재 PC에서 실제 매크로 실행·정상 중단</td>
-</tr>
-<tr>
-<td><code>버튼 관리</code></td>
-<td>프로그램 매크로 등록, 이름/메모, 순서, 삭제</td>
-</tr>
-<tr>
-<td><code>검사 상세 보기</code></td>
-<td>기본 화면에서 숨긴 SEQ·매크로 검사 로그 펼치기</td>
-</tr>
-<tr>
-<td><code>준비 상태 확인</code></td>
-<td>recipe/package와 source/FLOW hash gate 확인</td>
-</tr>
-<tr>
-<td><code>서버 라이브러리 등록</code></td>
-<td>검증된 FLOW와 SEQ 등록; 실행은 시작하지 않음</td>
-</tr>
-<tr>
-<td><code>오늘 작업 열기</code></td>
-<td>일일 실행 화면으로 이동</td>
+<td>Master 긴급 중단</td>
+<td>실행 중 workflow 중단. 이미 시작된 시험은 별도 Stop workflow 필요</td>
+<td>다음 stop 확인에서 command 전송 중단</td>
 </tr>
 </tbody>
 </table>
-<h3 id="binary">실장기 제어 · Binary</h3>
-<table>
-<thead>
-<tr>
-<th>버튼</th>
-<th>동작</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>선택 연결</code></td>
-<td>이 Slave PC의 선택 COM을 지속 연결</td>
-</tr>
-<tr>
-<td><code>COM 대조</code></td>
-<td>이 PC의 COM/HWID를 물리 실장기 설정과 비교하고 고유한 이동만 변경 제안</td>
-</tr>
-<tr>
-<td><code>전송</code></td>
-<td>선택 CH에 출력 가능한 ASCII와 Enter 전송</td>
-</tr>
-<tr>
-<td><code>제어 키</code></td>
-<td>Enter, Ctrl+C/0x03, Ctrl+V/0x16 또는 검증된 ASCII 붙여넣기</td>
-</tr>
-<tr>
-<td><code>동시 실행</code></td>
-<td>선택한 최대 4개 CH에서 <code>.seq</code>를 병렬 실행</td>
-</tr>
-<tr>
-<td><code>Master 상태 공유</code></td>
-<td>현장 직접 COM 실행의 Grid/결과를 Master heartbeat에 반영</td>
-</tr>
-<tr>
-<td><code>정지</code></td>
-<td>직접 SEQ의 다음 command 전송 중단</td>
-</tr>
-<tr>
-<td><code>PC 환경</code></td>
-<td>원격 Windows/PowerShell/pyserial 점검 요청</td>
-</tr>
-<tr>
-<td><code>통신 점검</code></td>
-<td>원격 COM/ADB 상태 점검 요청</td>
-</tr>
-<tr>
-<td><code>전원</code></td>
-<td>CH별 ON/OFF/cycle 명령 요청</td>
-</tr>
-<tr>
-<td><code>원격 사전점검</code></td>
-<td>Tool/XML hash/USB identity/Vendor gate 검사</td>
-</tr>
-<tr>
-<td><code>Binary 업데이트 시작</code></td>
-<td>사전점검을 다시 수행한 뒤 한 CH Downloader 실행</td>
-</tr>
-</tbody>
-</table>
-<h2 id="scratch">Scratch 상단과 녹화</h2>
-<table>
-<thead>
-<tr>
-<th>버튼</th>
-<th>설명</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>불러오기</code> / <code>저장</code></td>
-<td>매크로 source project 열기·저장</td>
-</tr>
-<tr>
-<td><code>Python 내보내기</code></td>
-<td>단독 실행 가능한 Python FLOW 생성</td>
-</tr>
-<tr>
-<td><code>실행</code> / <code>데이터 실행</code></td>
-<td>기본값 1회 또는 데이터 행별 실행</td>
-</tr>
-<tr>
-<td><code>중지</code></td>
-<td>실행 중단 요청</td>
-</tr>
-<tr>
-<td><code>연속 녹화 시작</code> / <code>녹화 정지</code></td>
-<td>외부 프로그램 클릭·입력·키 세션 기록</td>
-</tr>
-<tr>
-<td><code>대상 확인</code></td>
-<td>블록을 만들지 않고 component 조사</td>
-</tr>
-<tr>
-<td><code>클릭 녹화</code> / <code>입력 녹화</code></td>
-<td>한 component의 클릭·입력 블록 생성</td>
-</tr>
-<tr>
-<td><code>대상 고급 설정</code></td>
-<td>element 역할과 동일 프로그램 창 구분 조건</td>
-</tr>
-</tbody>
-</table>
-<h2 id="scratch_1">Scratch 블록 작업실</h2>
-<table>
-<thead>
-<tr>
-<th>버튼/값</th>
-<th>설명</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>보기=작게</code></td>
-<td>46px 블록과 2px 간격의 기본 조밀 보기</td>
-</tr>
-<tr>
-<td><code>보기=보통</code></td>
-<td>58px 블록과 5px 간격</td>
-</tr>
-<tr>
-<td><code>되돌리기</code> / <code>다시 실행</code></td>
-<td>편집 undo/redo</td>
-</tr>
-<tr>
-<td><code>변경 적용</code></td>
-<td>선택 블록 설정 저장</td>
-</tr>
-<tr>
-<td><code>위로</code> / <code>아래로</code></td>
-<td>같은 컨테이너 안에서 이동</td>
-</tr>
-<tr>
-<td><code>앞 블록 안으로</code></td>
-<td>바로 앞 반복·조건·AND/OR 안으로 이동</td>
-</tr>
-<tr>
-<td><code>컨테이너 밖으로</code></td>
-<td>부모 컨테이너 바로 다음으로 이동</td>
-</tr>
-<tr>
-<td><code>복제</code> / <code>풀기</code> / <code>삭제</code></td>
-<td>블록 tree 복제, container 제거, 삭제</td>
-</tr>
-<tr>
-<td><code>대상 다시 선택</code></td>
-<td>선택 블록의 UIA selector 교체</td>
-</tr>
-<tr>
-<td><code>현재 값 읽기</code></td>
-<td>텍스트·색상 조건값 다시 읽기</td>
-</tr>
-<tr>
-<td><code>선택 블록 시험</code></td>
-<td>선택 블록만 실행·판정</td>
-</tr>
-<tr>
-<td><code>Rig 버튼으로 등록</code></td>
-<td>현재 source를 프로그램 매크로 목록에 등록</td>
-</tr>
-</tbody>
-</table>
-<h2 id="rig">Rig 설정</h2>
-<table>
-<thead>
-<tr>
-<th>버튼</th>
-<th>동작</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>연결 구조 &gt; 구성 검사</code></td>
-<td>Master/FTP/PC/실장기 4계층의 누락·중복·소유권 검사</td>
-</tr>
-<tr>
-<td><code>연결 구조 &gt; 선택 수정</code></td>
-<td>선택한 계층의 안정 ID와 실제 위치 수정</td>
-</tr>
-<tr>
-<td><code>연결 구조 &gt; 이 PC COM 대조</code></td>
-<td>선택 PC가 이 Windows에 물리적으로 연결된 경우 COM/HWID 대조</td>
-</tr>
-<tr>
-<td><code>장치 도구 &gt; 도구 추가</code></td>
-<td>MTK/QC 외부 Downloader CLI와 결과 규칙 등록</td>
-</tr>
-<tr>
-<td><code>Slave 설정 내보내기</code></td>
-<td>PC별 FTP 및 장치 설정 파일 두 개 생성</td>
-</tr>
-</tbody>
-</table>
-<table>
-<thead>
-<tr>
-<th>위치</th>
-<th>버튼/메뉴</th>
-<th>설명</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>Master · FTP</code></td>
-<td><code>파일</code></td>
-<td>config 선택·불러오기·예제 생성</td>
-</tr>
-<tr>
-<td><code>Master · FTP</code></td>
-<td><code>저장</code></td>
-<td>현재 <code>rig-ftp.info</code> 저장</td>
-</tr>
-<tr>
-<td><code>Master · FTP</code></td>
-<td><code>연결 확인</code></td>
-<td>FTP 권한 확인</td>
-</tr>
-<tr>
-<td><code>실장기 연결 PC</code></td>
-<td><code>연결 PC 추가</code></td>
-<td>별명, Node ID, 자산 ID, Windows 이름, IP, 위치와 PC별 변수 등록</td>
-</tr>
-<tr>
-<td><code>실장기 연결 PC</code></td>
-<td><code>실장기 관리</code></td>
-<td>물리 ID/Serial/위치, 자유 CH, COM/HWID, SoC, Binary, 자재 등록</td>
-</tr>
-<tr>
-<td><code>연결 PC 편집</code></td>
-<td><code>CSV 가져오기/내보내기</code></td>
-<td>여러 PC와 실장기를 Node+CH 기준으로 일괄 병합·내보내기</td>
-</tr>
-<tr>
-<td><code>실장기 연결 PC</code></td>
-<td><code>서버 폴더 준비</code></td>
-<td>PC별 FTP spool 폴더 생성</td>
-</tr>
-<tr>
-<td><code>실장기 연결 PC</code></td>
-<td><code>Slave 설정 내보내기</code></td>
-<td>각 PC용 <code>rig-ftp.info</code>와 <code>rig-commander.config.json</code> 생성</td>
-</tr>
-<tr>
-<td><code>이 PC Agent</code></td>
-<td><code>Agent 시작</code> / <code>Agent 중지</code></td>
-<td>slave polling 시작·중지</td>
-</tr>
-<tr>
-<td><code>이 PC Agent</code></td>
-<td><code>현장 SK 감시 시작/중지</code></td>
-<td>현장에서 직접 시작한 SK Commander를 읽기 전용 workflow로 감시</td>
-</tr>
-<tr>
-<td><code>Agent 더보기</code></td>
-<td><code>한 번 확인</code></td>
-<td>pending job 1회 확인</td>
-</tr>
-<tr>
-<td><code>Agent 더보기</code></td>
-<td><code>중단 신호 해제</code></td>
-<td>이 PC stop signal 제거</td>
-</tr>
-</tbody>
-</table>
-<h2 id="_4">모니터링</h2>
-<table>
-<thead>
-<tr>
-<th>버튼/메뉴</th>
-<th>설명</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>새로고침</code></td>
-<td>상태와 선택 PC 결과를 함께 읽기</td>
-</tr>
-<tr>
-<td><code>전체 화면 보기</code></td>
-<td>이번 요청과 일치하는 최신 screenshot 요청·표시</td>
-</tr>
-<tr>
-<td><code>모니터 보드</code></td>
-<td>workflow의 구조화된 텍스트·색상 판정 표시</td>
-</tr>
-<tr>
-<td><code>더보기 &gt; 선택 작업 긴급 중단</code></td>
-<td>선택 PC의 현재 job만 중단</td>
-</tr>
-<tr>
-<td><code>더보기 &gt; 선택 결과 분류</code></td>
-<td>failure class, 조치, 담당자와 근거 기록</td>
-</tr>
-<tr>
-<td><code>더보기 &gt; 선택 결과 증거 ZIP 저장</code></td>
-<td>직접 COM manifest, Grid log와 console 증거 다운로드</td>
-</tr>
-<tr>
-<td><code>더보기 &gt; Excel 내보내기</code></td>
-<td>PC State와 CH Inventory workbook 생성</td>
-</tr>
-<tr>
-<td><code>자동 상태 조회 시작/중지</code></td>
-<td>heartbeat와 결과 파일 주기 조회</td>
-</tr>
-</tbody>
-</table>
+<p>한 COM은 두 프로그램이 동시에 열 수 없습니다. SK Commander를 끄지 않고 직접 COM을
+선택하면 포트 열기 단계에서 실패하는 것이 정상입니다. 반대로 SK Commander 경로에서는
+Agent 4채널 콘솔의 해당 COM 연결을 먼저 해제합니다.</p>
+<h2 id="_5">현장 승인 체크</h2>
+<ul>
+<li>[ ] 실제 SK Commander에서 SEQ/Load/Start selector를 한 CH씩 재생했다.</li>
+<li>[ ] CH marker가 네 창을 서로 바꾸어 찾지 않는다.</li>
+<li>[ ] Stop/Reset/Power Reset workflow는 launcher와 분리했다.</li>
+<li>[ ] monitor workflow에는 클릭과 입력 블록이 없다.</li>
+<li>[ ] 직접 COM은 성공 이력이 있는 SEQ와 prompt/timing으로 한 CH dry-run했다.</li>
+<li>[ ] 실패 marker와 command timeout이 실제 장비 로그와 맞는다.</li>
+<li>[ ] 현장 시작 시험이 Master 보드에 <code>현장 PC</code>로 표시된다.</li>
+<li>[ ] 결과 ZIP에서 Grid별 Temp/VDD와 raw response를 열어 확인했다.</li>
+</ul>
 
 
 
@@ -1899,7 +1751,7 @@
       <nav class="md-footer__inner md-grid" aria-label="하단/푸터" >
         
           
-          <a href="../../rig-ftp/monitoring/" class="md-footer__link md-footer__link--prev" aria-label="이전: 상태 모니터링과 캡처">
+          <a href="../ae-campaign/" class="md-footer__link md-footer__link--prev" aria-label="이전: AE 캠페인 운영">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -1909,20 +1761,20 @@
                 이전
               </span>
               <div class="md-ellipsis">
-                상태 모니터링과 캡처
+                AE 캠페인 운영
               </div>
             </div>
           </a>
         
         
           
-          <a href="../config-files/" class="md-footer__link md-footer__link--next" aria-label="다음: 설정 파일 예시">
+          <a href="../seq-integration/" class="md-footer__link md-footer__link--next" aria-label="다음: SEQ Generator와 실장기 실행">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 다음
               </span>
               <div class="md-ellipsis">
-                설정 파일 예시
+                SEQ Generator와 실장기 실행
               </div>
             </div>
             <div class="md-footer__button md-icon">

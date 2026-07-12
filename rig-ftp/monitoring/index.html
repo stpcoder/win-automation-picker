@@ -846,6 +846,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../execution-routes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SK Commander와 직접 COM 운용
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../seq-integration/" class="md-nav__link">
         
   
@@ -1398,7 +1426,7 @@ FAIL과 CH9 PASS를 원래 job ID, 캠페인/시도, 완료 시각과 함께 보
 </tr>
 <tr>
 <td><code>CH / 자재 / Binary</code></td>
-<td>자유 CH/이름, Slot, SoC, binary 버전·최신 시각·원본 폴더, DRAM/Lot/Sample, Test, SEQ, 상태, Grid 진행</td>
+<td>자유 CH/이름, Slot, SoC, binary, 자재, Test/SEQ, <code>직접 COM/SK Commander</code>, <code>Master/현장 PC</code>, 상태와 Grid 진행</td>
 </tr>
 </tbody>
 </table>
@@ -1412,7 +1440,10 @@ workflow와 대상 PC를 지정한 뒤 <code>상태 규칙 1회</code>를 누릅
 <li>상태표에서 PC를 선택하거나 <code>결과 조회 PC</code>에 node id를 입력합니다.</li>
 <li><code>새로고침</code>을 누릅니다.</li>
 <li>PASS/FAIL 실행 이력 표에서 작업을 더블클릭해 stdout, stderr와 완료 시각을 봅니다.</li>
+<li>직접 COM raw 증거가 필요하면 결과 행을 선택하고 <code>더보기 &gt; 선택 결과 증거 ZIP 저장</code>을 누릅니다.</li>
 </ol>
+<p>직접 COM batch 결과에는 CH별 ZIP 경로가 함께 들어 있습니다. 한 CH이면 원본 ZIP을 저장하고,
+여러 CH이면 선택한 위치에 CH별 ZIP을 묶은 상위 ZIP을 만듭니다.</p>
 <h2 id="_4">원격 모니터 보드</h2>
 <ol>
 <li>상태표에서 PC 한 대를 선택합니다.</li>
@@ -1441,7 +1472,7 @@ workflow와 대상 PC를 지정한 뒤 <code>상태 규칙 1회</code>를 누릅
 <li><code>Excel 내보내기</code>를 누릅니다.</li>
 <li><code>.xlsx</code> 저장 위치를 선택합니다.</li>
 </ol>
-<p>파일에는 <code>PC State</code>와 <code>CH Inventory</code> 두 시트가 생성됩니다. 두 번째 시트는 SoC, binary provenance, 자재, test/SEQ, 현재/완료/전체 Grid를 행 단위로 내보냅니다.
+<p>파일에는 <code>PC State</code>와 <code>CH Inventory</code> 두 시트가 생성됩니다. 두 번째 시트는 SoC, binary provenance, 자재, test/SEQ, 실행 경로/시작 위치/단계, 현재/완료/전체 Grid를 행 단위로 내보냅니다.
 Campaign ID/제목/attempt, acceptance와 failure class도 같은 CH 행에 포함됩니다.</p>
 <h2 id="ae">AE 실패 분류</h2>
 <p>결과 행을 선택하고 <code>더보기 &gt; 선택 결과 분류</code>를 누르면 자동 분류를 검토하고 담당자,
