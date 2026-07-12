@@ -6,7 +6,7 @@ import shlex
 import sys
 import time
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Callable, Sequence
 
 from .rig import (
     CommandResult,
@@ -16,6 +16,7 @@ from .rig import (
     build_device_preflight_report,
     check_host,
     inspect_firmware_manifest,
+    inspect_firmware_package,
     list_remote_ports,
     resolve_named_command,
     results_to_json,
@@ -23,6 +24,7 @@ from .rig import (
     run_device_update,
     run_firmware_flashes,
     run_host_scripts,
+    run_qdl_raw_write,
     run_serial_command,
     run_serial_commands,
     select_hosts,
@@ -100,12 +102,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     monitor_parser.set_defaults(func=_cmd_monitor)
 
-    firmware_parser = subparsers.add_parser("firmware", help="Inspect or flash firmware manifests.")
+    firmware_parser = subparsers.add_parser("firmware", help="Inspect packages or run a configured downloader.")
     firmware_subparsers = firmware_parser.add_subparsers(dest="firmware_command", required=True)
 
-    firmware_inspect = firmware_subparsers.add_parser("inspect", help="Inspect a firmware XML manifest.")
-    firmware_inspect.add_argument("--xml", required=True, help="Firmware XML manifest path.")
+    firmware_inspect = firmware_subparsers.add_parser(
+        "inspect",
+        help="Inspect a firmware folder, XML/JSON descriptor, or installer ZIP.",
+    )
+    firmware_inspect.add_argument(
+        "--xml",
+        "--package",
+        dest="xml",
+        required=True,
+        help="Firmware folder, XML/JSON descriptor, or installer ZIP path.",
+    )
     firmware_inspect.add_argument("--json", action="store_true", help="Print JSON.")
+    firmware_inspect.add_argument(
+        "--vendor",
+        choices=("qualcomm", "mediatek"),
+        default="",
+        help="Enable vendor package inspection instead of generic XML listing.",
+    )
+    firmware_inspect.add_argument(
+        "--adapter",
+        choices=("auto", "generic", "qualcomm-qdl", "mediatek-genio"),
+        default="auto",
+    )
+    firmware_inspect.add_argument(
+        "--storage",
+        choices=("emmc", "nand", "nvme", "spinor", "ufs"),
+        default="ufs",
+    )
     firmware_inspect.set_defaults(func=_cmd_firmware_inspect)
 
     firmware_flash = firmware_subparsers.add_parser("flash", help="Run configured firmware downloader.")
@@ -191,21 +218,58 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Send the channel's configured preloader_exit command before MTK update.",
     )
+    device_update.add_argument(
+        "--journal-root",
+        default="rig-firmware-results",
+        help="Folder for per-step firmware manifests and logs.",
+    )
     device_update.set_defaults(func=_cmd_device_update)
+
+    device_raw_write = device_subparsers.add_parser(
+        "raw-write",
+        help="Write one checksummed image to an explicit bounded QDL P/S+L sector range.",
+    )
+    _add_target_args(device_raw_write)
+    _add_runtime_args(device_raw_write)
+    device_raw_write.add_argument("--programmer", required=True)
+    device_raw_write.add_argument("--image", required=True)
+    device_raw_write.add_argument("--image-sha256", required=True)
+    device_raw_write.add_argument("--address", required=True)
+    device_raw_write.add_argument("--sector-size", type=int, choices=(512, 4096), default=4096)
+    device_raw_write.add_argument("--qc-switch-confirmed", action="store_true")
+    device_raw_write.add_argument("--confirm-write", default="")
+    device_raw_write.add_argument("--journal-root", default="rig-firmware-results")
+    device_raw_write.set_defaults(func=_cmd_device_raw_write)
 
     return parser
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    cancel_callback: Callable[[], bool] | None = None,
+) -> int:
     args_list = list(sys.argv[1:] if argv is None else argv)
     if not args_list:
         return interactive_loop()
-    return run_command(args_list)
+    return run_command(
+        args_list,
+        progress_callback=progress_callback,
+        cancel_callback=cancel_callback,
+    )
 
 
-def run_command(argv: Sequence[str]) -> int:
+def run_command(
+    argv: Sequence[str],
+    *,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    cancel_callback: Callable[[], bool] | None = None,
+) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    args.progress_callback = progress_callback
+    args.cancel_callback = cancel_callback
     try:
         return int(args.func(args) or 0)
     except (RigConfigError, RigExecutionError) as exc:
@@ -289,7 +353,11 @@ def _add_target_args(parser: argparse.ArgumentParser) -> None:
 def _add_runtime_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--timeout", type=float, default=None, help="Command timeout seconds.")
     parser.add_argument("--parallel", action="store_true", help="Run selected serial targets concurrently.")
-    parser.add_argument("--dry-run", action="store_true", help="Print generated PowerShell instead of running it.")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show the generated command without running it.",
+    )
     parser.add_argument("--json", action="store_true", help="Print JSON results.")
 
 
@@ -298,7 +366,7 @@ def _add_device_update_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--xml-sha256", default="", help="Expected XML SHA-256 from inventory metadata.")
     parser.add_argument(
         "--mode",
-        choices=("download-only", "format-all-download"),
+        choices=("download-only", "format-all-download", "provision-only"),
         default="download-only",
     )
     parser.add_argument("--qc-switch-confirmed", action="store_true")
@@ -467,6 +535,18 @@ def _cmd_monitor(args: argparse.Namespace) -> int:
 
 
 def _cmd_firmware_inspect(args: argparse.Namespace) -> int:
+    if args.vendor:
+        inspection = inspect_firmware_package(
+            args.xml,
+            vendor=str(args.vendor),
+            adapter_kind=str(args.adapter),
+            storage_type=str(args.storage),
+        )
+        if args.json:
+            print(json.dumps(inspection.to_mapping(), indent=2, ensure_ascii=True))
+        else:
+            print(inspection.render())
+        return 0 if inspection.ready else 1
     manifest = inspect_firmware_manifest(args.xml)
     if args.json:
         print(json.dumps(manifest.to_mapping(), indent=2, ensure_ascii=True))
@@ -627,6 +707,33 @@ def _cmd_device_update(args: argparse.Namespace) -> int:
         format_confirmation=str(args.confirm_format or ""),
         timeout=args.timeout,
         dry_run=bool(args.dry_run),
+        journal_root=str(args.journal_root or ""),
+        progress_callback=args.progress_callback,
+        cancel_callback=args.cancel_callback,
+    )
+    _print_results([result], as_json=bool(args.json))
+    return 0 if result.ok else 1
+
+
+def _cmd_device_raw_write(args: argparse.Namespace) -> int:
+    config = _load_config(args.config)
+    targets = select_serial_targets(config, args.target)
+    if len(targets) != 1:
+        raise RigConfigError("Device raw-write accepts exactly one channel at a time.")
+    result = run_qdl_raw_write(
+        targets[0],
+        programmer_path=str(args.programmer),
+        image_path=str(args.image),
+        image_sha256=str(args.image_sha256),
+        address=str(args.address),
+        confirmation=str(args.confirm_write or ""),
+        physical_switch_confirmed=bool(args.qc_switch_confirmed),
+        sector_size=int(args.sector_size),
+        timeout=args.timeout,
+        dry_run=bool(args.dry_run),
+        journal_root=str(args.journal_root or ""),
+        progress_callback=args.progress_callback,
+        cancel_callback=args.cancel_callback,
     )
     _print_results([result], as_json=bool(args.json))
     return 0 if result.ok else 1

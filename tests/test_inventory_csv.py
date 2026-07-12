@@ -65,6 +65,14 @@ def test_inventory_csv_dump_round_trips_physical_identity() -> None:
                     "com_port": "COM11",
                     "console_identity": "VID_0403&PID_6001\\SERIAL-0009",
                     "usb_location": "Hub-A / Port 1",
+                    "board_control_serial": "FTDI-CH9",
+                    "gpio_power": "0",
+                    "gpio_reset": "1",
+                    "gpio_download": "2",
+                    "download_reentry_command": "DOWNLOAD REENTER",
+                    "package_selector": "layout1/ufs",
+                    "daa_enabled": True,
+                    "firmware_partitions": ["mmc0", "mmc0boot0"],
                 }
             ],
         }
@@ -78,6 +86,11 @@ def test_inventory_csv_dump_round_trips_physical_identity() -> None:
     assert fixture["fixture_serial"] == "SERIAL-0009"
     assert fixture["console_identity"].endswith("SERIAL-0009")
     assert fixture["usb_location"] == "Hub-A / Port 1"
+    assert fixture["board_control_serial"] == "FTDI-CH9"
+    assert fixture["download_reentry_command"] == "DOWNLOAD REENTER"
+    assert fixture["package_selector"] == "layout1/ufs"
+    assert fixture["daa_enabled"] is True
+    assert fixture["firmware_partitions"] == ["mmc0", "mmc0boot0"]
 
 
 def test_inventory_csv_rejects_duplicate_pc_channel_rows() -> None:

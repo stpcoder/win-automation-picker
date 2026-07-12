@@ -149,6 +149,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "RigCommander.exe --help failed" }
           & "dist\RigCommander.exe" device system-check
           if ($LASTEXITCODE -ne 0) { throw "RigCommander.exe device system-check failed" }
+          & "dist\RigCommander.exe" firmware --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "RigCommander.exe firmware --help failed" }
+          & "dist\RigCommander.exe" device raw-write --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "RigCommander.exe device raw-write --help failed" }
           & "dist\RigFtpCli.exe" --help | Out-Null
           if ($LASTEXITCODE -ne 0) { throw "RigFtpCli.exe --help failed" }
 

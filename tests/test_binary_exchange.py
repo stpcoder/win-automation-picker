@@ -88,6 +88,20 @@ def test_binary_metadata_imports_recommended_device_communication(tmp_path) -> N
                     "adb_serial": "MTK-CH11",
                     "adb_postcheck_enabled": True,
                     "download_identity": "MediaTek PreLoader USB VCOM",
+                    "storage_type": "ufs",
+                    "package_selector": "ufs,safe_rtos",
+                    "bootstrap_path": "D:/binary/mtk/lk.bin",
+                    "bootstrap_address": "0x2001000",
+                    "bootstrap_mode": "aarch64",
+                    "bootstrap_sign_path": "D:/binary/mtk/lk.sign",
+                    "bootstrap_auth_path": "D:/binary/mtk/auth_sv5.auth",
+                    "daa_enabled": True,
+                    "board_control_serial": "FTDI-CH11",
+                    "gpio_power": "0",
+                    "gpio_reset": "1",
+                    "gpio_download": "2",
+                    "download_reentry_command": "DOWNLOAD REENTER",
+                    "firmware_partitions": ["mmc0", "mmc0boot0"],
                     "firmware_tool_id": "mtk-downloader",
                 },
             }
@@ -102,3 +116,8 @@ def test_binary_metadata_imports_recommended_device_communication(tmp_path) -> N
     assert values["baud_rate"] == 921600
     assert values["adb_serial"] == "MTK-CH11"
     assert values["firmware_tool_id"] == "mtk-downloader"
+    assert values["board_control_serial"] == "FTDI-CH11"
+    assert values["daa_enabled"] is True
+    assert values["package_selector"] == "ufs,safe_rtos"
+    assert values["download_reentry_command"] == "DOWNLOAD REENTER"
+    assert values["firmware_partitions"] == ["mmc0", "mmc0boot0"]

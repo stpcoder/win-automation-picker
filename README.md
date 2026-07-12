@@ -60,7 +60,8 @@ The executables are not code-signed, so Windows SmartScreen may show a warning.
 - Keeps up to four COM consoles open for live output, boot-state markers, ASCII/control-key input, and parallel `.seq` runs.
 - Revalidates the configured hardware identity before opening a COM and only suggests uniquely identified COM moves.
 - Batches direct-COM run-table rows by slave/campaign/attempt and runs up to four distinct ports concurrently.
-- Pins MTK/QC updates to one CH with XML hashes, USB identity, fixed ADB serials, vendor gates, and allowlisted external downloader rules.
+- Pins MTK/QC updates to one CH with full descriptor/payload fingerprints, exact USB serials,
+  fixed ADB targets, vendor gates, dry-runs, and allowlisted QDL/Genio or generic downloader rules.
 - Exports `rig-ftp.info` and `rig-commander.config.json` together for each slave PC.
 - Keeps configured but stale PCs visible as offline and matches screenshots to their exact request job.
 

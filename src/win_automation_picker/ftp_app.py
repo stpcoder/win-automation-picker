@@ -1781,15 +1781,30 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                 ("usb_location", "USB Hub / Port / 케이블 라벨"),
                 ("firmware_port", "Download COM"),
                 ("download_identity", "USB Download 식별자"),
+                ("download_serial", "EDL / Download Serial"),
+                ("storage_type", "Storage 종류"),
+                ("storage_slot", "UFS / Storage Slot"),
+                ("package_selector", "QDL Package selector"),
                 ("adb_executable", "ADB 실행 파일"),
                 ("adb_serial", "ADB Serial"),
             ],
             "전원 · 도구": [
                 ("firmware_tool_id", "Downloader 도구"),
+                ("bootstrap_path", "MTK Download Agent / lk.bin"),
+                ("bootstrap_address", "MTK Bootstrap SRAM 주소"),
+                ("bootstrap_mode", "MTK Bootstrap 모드"),
+                ("bootstrap_sign_path", "MTK DAA Signature"),
+                ("bootstrap_auth_path", "MTK DAA Auth"),
+                ("board_control_serial", "MTK FTDI Board Serial"),
+                ("gpio_power", "MTK Power GPIO"),
+                ("gpio_reset", "MTK Reset GPIO"),
+                ("gpio_download", "MTK Download GPIO"),
+                ("firmware_partitions", "Genio 파티션 (, 구분)"),
                 ("power_on_command", "전원 ON 명령"),
                 ("power_off_command", "전원 OFF 명령"),
                 ("status_command", "상태 명령"),
                 ("preloader_exit_command", "MTK preloader 종료 명령"),
+                ("download_reentry_command", "포맷 후 Download 재진입 명령"),
             ],
             "자재 · 시험": [
                 ("binary_name", "Binary 이름"),
@@ -1807,6 +1822,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         dialog = tk.Toplevel(parent)
         dialog.title("CH 정보")
         dialog.transient(parent)
+        dialog.configure(background="#f1f5f9")
         dialog.geometry("840x500")
         dialog.minsize(720, 440)
         dialog.columnconfigure(0, weight=1)
@@ -1833,8 +1849,19 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                     padx=(0 if pair == 0 else 18, 6),
                     pady=7,
                 )
-                default = "115200" if key == "baud_rate" else "adb.exe" if key == "adb_executable" else ""
-                variable = tk.StringVar(value=str(initial.get(key, default) or default))
+                default = (
+                    "115200"
+                    if key == "baud_rate"
+                    else "adb.exe"
+                    if key == "adb_executable"
+                    else "ufs"
+                    if key == "storage_type"
+                    else ""
+                )
+                initial_value = initial.get(key, default)
+                if key == "firmware_partitions" and isinstance(initial_value, list):
+                    initial_value = ", ".join(str(item) for item in initial_value)
+                variable = tk.StringVar(value=str(initial_value or default))
                 variables[key] = variable
                 if key == "soc_vendor":
                     widget = ttk.Combobox(
@@ -1850,6 +1877,20 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                         values=tool_ids,
                         state="readonly" if tool_ids else "normal",
                     )
+                elif key == "storage_type":
+                    widget = ttk.Combobox(
+                        page,
+                        textvariable=variable,
+                        values=("ufs", "emmc", "nand", "nvme", "spinor"),
+                        state="readonly",
+                    )
+                elif key == "bootstrap_mode":
+                    widget = ttk.Combobox(
+                        page,
+                        textvariable=variable,
+                        values=("", "aarch32", "aarch64"),
+                        state="readonly",
+                    )
                 else:
                     widget = ttk.Entry(page, textvariable=variable)
                 widget.grid(row=row, column=entry_column, sticky="ew", pady=7)
@@ -1858,23 +1899,36 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             value=bool(initial.get("adb_enabled", bool(initial.get("adb_serial"))))
         )
         adb_required = tk.BooleanVar(value=bool(initial.get("adb_required_after_update", False)))
+        daa_enabled = tk.BooleanVar(value=bool(initial.get("daa_enabled", False)))
         communication_page = notebook.nametowidget(notebook.tabs()[1])
         ttk.Checkbutton(
             communication_page,
             text="이 CH에서 ADB 사용",
             variable=adb_enabled,
-        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(10, 0))
         ttk.Checkbutton(
             communication_page,
             text="Binary 업데이트 후 이 ADB 장치가 online이어야 성공",
             variable=adb_required,
-        ).grid(row=5, column=2, columnspan=2, sticky="w", pady=(10, 0))
+        ).grid(row=7, column=2, columnspan=2, sticky="w", pady=(10, 0))
+        tool_page = notebook.nametowidget(notebook.tabs()[2])
+        ttk.Checkbutton(
+            tool_page,
+            text="MTK Download Agent Authentication (DAA) 사용",
+            variable=daa_enabled,
+        ).grid(row=9, column=0, columnspan=4, sticky="w", pady=(10, 0))
 
         def save() -> None:
             nonlocal result
             mapped = {key: variable.get().strip() for key, variable in variables.items()}
+            mapped["firmware_partitions"] = [
+                item.strip()
+                for item in str(mapped.get("firmware_partitions") or "").split(",")
+                if item.strip()
+            ]
             mapped["adb_enabled"] = adb_enabled.get()
             mapped["adb_required_after_update"] = adb_required.get()
+            mapped["daa_enabled"] = daa_enabled.get()
             mapped.update(
                 {
                     "state": str(initial.get("state") or "idle"),

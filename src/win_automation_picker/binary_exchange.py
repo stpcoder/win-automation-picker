@@ -33,6 +33,22 @@ class BinaryReleaseMetadata:
     recommended_adb_serial: str = ""
     adb_postcheck_enabled: bool = False
     recommended_download_identity: str = ""
+    recommended_download_serial: str = ""
+    recommended_storage_type: str = ""
+    recommended_storage_slot: str = ""
+    recommended_package_selector: str = ""
+    recommended_bootstrap_path: str = ""
+    recommended_bootstrap_address: str = ""
+    recommended_bootstrap_mode: str = ""
+    recommended_bootstrap_sign_path: str = ""
+    recommended_bootstrap_auth_path: str = ""
+    recommended_daa_enabled: bool = False
+    recommended_board_control_serial: str = ""
+    recommended_gpio_power: str = ""
+    recommended_gpio_reset: str = ""
+    recommended_gpio_download: str = ""
+    recommended_download_reentry_command: str = ""
+    recommended_firmware_partitions: tuple[str, ...] = ()
     recommended_firmware_tool_id: str = ""
     power_control_configured: bool = False
 
@@ -43,6 +59,12 @@ class BinaryReleaseMetadata:
         provisioning: dict[str, Any] | None = None,
     ) -> "BinaryReleaseMetadata":
         provisioning = provisioning or {}
+        firmware_partitions = provisioning.get("firmware_partitions") or []
+        if not isinstance(firmware_partitions, list):
+            raise BinaryExchangeError("binary metadata firmware_partitions must be a list")
+        storage_type = str(provisioning.get("storage_type") or "").strip().casefold()
+        if storage_type and storage_type not in {"emmc", "nand", "nvme", "spinor", "ufs"}:
+            raise BinaryExchangeError("binary metadata storage_type is invalid")
         metadata = cls(
             release_id=str(data.get("release_id") or "").strip(),
             soc_vendor=str(data.get("soc_vendor") or "").strip().casefold(),
@@ -60,6 +82,40 @@ class BinaryReleaseMetadata:
             recommended_adb_serial=str(provisioning.get("adb_serial") or "").strip(),
             adb_postcheck_enabled=bool(provisioning.get("adb_postcheck_enabled", False)),
             recommended_download_identity=str(provisioning.get("download_identity") or "").strip(),
+            recommended_download_serial=str(
+                provisioning.get("download_serial") or provisioning.get("edl_serial") or ""
+            ).strip(),
+            recommended_storage_type=storage_type,
+            recommended_storage_slot=str(provisioning.get("storage_slot") or "").strip(),
+            recommended_package_selector=str(
+                provisioning.get("package_selector") or ""
+            ).strip(),
+            recommended_bootstrap_path=str(provisioning.get("bootstrap_path") or "").strip(),
+            recommended_bootstrap_address=str(
+                provisioning.get("bootstrap_address") or ""
+            ).strip(),
+            recommended_bootstrap_mode=str(provisioning.get("bootstrap_mode") or "").strip(),
+            recommended_bootstrap_sign_path=str(
+                provisioning.get("bootstrap_sign_path") or ""
+            ).strip(),
+            recommended_bootstrap_auth_path=str(
+                provisioning.get("bootstrap_auth_path") or ""
+            ).strip(),
+            recommended_daa_enabled=bool(provisioning.get("daa_enabled", False)),
+            recommended_board_control_serial=str(
+                provisioning.get("board_control_serial")
+                or provisioning.get("ftdi_serial")
+                or ""
+            ).strip(),
+            recommended_gpio_power=str(provisioning.get("gpio_power") or "").strip(),
+            recommended_gpio_reset=str(provisioning.get("gpio_reset") or "").strip(),
+            recommended_gpio_download=str(provisioning.get("gpio_download") or "").strip(),
+            recommended_download_reentry_command=str(
+                provisioning.get("download_reentry_command") or ""
+            ).strip(),
+            recommended_firmware_partitions=tuple(
+                str(item).strip() for item in firmware_partitions if str(item).strip()
+            ),
             recommended_firmware_tool_id=str(provisioning.get("firmware_tool_id") or "").strip(),
             power_control_configured=bool(provisioning.get("power_control_configured", False)),
         )
@@ -94,6 +150,38 @@ class BinaryReleaseMetadata:
             values["adb_required_after_update"] = self.adb_postcheck_enabled
         if self.recommended_download_identity:
             values["download_identity"] = self.recommended_download_identity
+        if self.recommended_storage_type:
+            values["storage_type"] = self.recommended_storage_type
+        if self.recommended_download_serial:
+            values["download_serial"] = self.recommended_download_serial
+        if self.recommended_storage_slot:
+            values["storage_slot"] = self.recommended_storage_slot
+        if self.recommended_package_selector:
+            values["package_selector"] = self.recommended_package_selector
+        if self.recommended_bootstrap_path:
+            values["bootstrap_path"] = self.recommended_bootstrap_path
+        if self.recommended_bootstrap_address:
+            values["bootstrap_address"] = self.recommended_bootstrap_address
+        if self.recommended_bootstrap_mode:
+            values["bootstrap_mode"] = self.recommended_bootstrap_mode
+        if self.recommended_bootstrap_sign_path:
+            values["bootstrap_sign_path"] = self.recommended_bootstrap_sign_path
+        if self.recommended_bootstrap_auth_path:
+            values["bootstrap_auth_path"] = self.recommended_bootstrap_auth_path
+        if self.recommended_daa_enabled:
+            values["daa_enabled"] = True
+        if self.recommended_board_control_serial:
+            values["board_control_serial"] = self.recommended_board_control_serial
+        if self.recommended_gpio_power:
+            values["gpio_power"] = self.recommended_gpio_power
+        if self.recommended_gpio_reset:
+            values["gpio_reset"] = self.recommended_gpio_reset
+        if self.recommended_gpio_download:
+            values["gpio_download"] = self.recommended_gpio_download
+        if self.recommended_download_reentry_command:
+            values["download_reentry_command"] = self.recommended_download_reentry_command
+        if self.recommended_firmware_partitions:
+            values["firmware_partitions"] = list(self.recommended_firmware_partitions)
         if self.recommended_firmware_tool_id:
             values["firmware_tool_id"] = self.recommended_firmware_tool_id
         return values

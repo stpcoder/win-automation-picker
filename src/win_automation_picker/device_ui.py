@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 import platform
@@ -280,6 +281,14 @@ class DeviceWorkspaceMixin:
             command=self._render_device_binary_profile,
         )
         self.device_format_radio.pack(side="left", padx=(12, 0))
+        self.device_provision_radio = ttk.Radiobutton(
+            options,
+            text="UFS Provision only",
+            variable=self.device_binary_mode_var,
+            value="provision-only",
+            command=self._render_device_binary_profile,
+        )
+        self.device_provision_radio.pack(side="left", padx=(12, 0))
         self.device_qc_switch_var = tk.BooleanVar(value=False)
         self.device_mtk_preloader_var = tk.BooleanVar(value=False)
         self.device_run_preloader_var = tk.BooleanVar(value=False)
@@ -304,10 +313,10 @@ class DeviceWorkspaceMixin:
         confirm = ttk.Frame(binary)
         confirm.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(8, 0))
         confirm.columnconfigure(1, weight=1)
-        ttk.Label(confirm, text="Format 확인문").grid(row=0, column=0, padx=(0, 7))
+        ttk.Label(confirm, text="Firmware 확인문").grid(row=0, column=0, padx=(0, 7))
         self.device_format_confirmation_var = tk.StringVar(value="")
         ttk.Entry(confirm, textvariable=self.device_format_confirmation_var).grid(row=0, column=1, sticky="ew")
-        self.device_format_hint_var = tk.StringVar(value="Download only에서는 비워둡니다.")
+        self.device_format_hint_var = tk.StringVar(value="원격 사전점검에서 확인문을 받습니다.")
         ttk.Label(confirm, textvariable=self.device_format_hint_var, style="Muted.TLabel").grid(
             row=0, column=2, padx=(8, 0)
         )
@@ -330,6 +339,14 @@ class DeviceWorkspaceMixin:
             command=self._submit_device_update,
             style="Primary.TButton",
         ).grid(row=0, column=2)
+        advanced = ttk.Menubutton(actions, text="고급 작업")
+        advanced.grid(row=0, column=3, padx=(6, 0))
+        advanced_menu = tk.Menu(advanced, tearoff=False)
+        advanced_menu.add_command(
+            label="Qualcomm QDL Storage 범위 쓰기",
+            command=self._open_qdl_raw_write_dialog,
+        )
+        advanced["menu"] = advanced_menu
 
         log_frame = ttk.Labelframe(parent, text="작업 결과는 오늘 작업 > PC · CH 상태에서 확인", padding=8)
         log_frame.grid(row=3, column=0, sticky="nsew")
@@ -362,17 +379,24 @@ class DeviceWorkspaceMixin:
         frame.grid(row=1, column=0, sticky="nsew")
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
-        columns = ("id", "vendor", "executable", "modes", "enabled", "evidence")
+        columns = ("id", "vendor", "adapter", "executable", "modes", "enabled")
         self.device_tool_tree = ttk.Treeview(frame, columns=columns, show="headings", selectmode="browse")
         labels = {
             "id": "도구 ID",
             "vendor": "Vendor",
+            "adapter": "Adapter",
             "executable": "실행 파일",
             "modes": "허용 모드",
             "enabled": "실행",
-            "evidence": "CLI 근거",
         }
-        widths = {"id": 130, "vendor": 90, "executable": 320, "modes": 180, "enabled": 65, "evidence": 260}
+        widths = {
+            "id": 120,
+            "vendor": 85,
+            "adapter": 140,
+            "executable": 300,
+            "modes": 190,
+            "enabled": 65,
+        }
         for column in columns:
             self.device_tool_tree.heading(column, text=labels[column])
             self.device_tool_tree.column(column, width=widths[column], anchor="w")
@@ -1352,17 +1376,31 @@ class DeviceWorkspaceMixin:
         allowed_modes = set(tool.get("allowed_modes", [])) if tool else set()
         download_allowed = "download-only" in allowed_modes
         format_allowed = "format-all-download" in allowed_modes
+        provision_allowed = "provision-only" in allowed_modes
         self.device_download_radio.configure(state="normal" if download_allowed else "disabled")
         self.device_format_radio.configure(state="normal" if format_allowed else "disabled")
-        if not format_allowed and self.device_binary_mode_var.get() == "format-all-download":
-            self.device_binary_mode_var.set("download-only")
-        if not download_allowed and format_allowed and self.device_binary_mode_var.get() == "download-only":
-            self.device_binary_mode_var.set("format-all-download")
+        self.device_provision_radio.configure(state="normal" if provision_allowed else "disabled")
+        if self.device_binary_mode_var.get() not in allowed_modes:
+            self.device_binary_mode_var.set(
+                next(
+                    (
+                        candidate
+                        for candidate in (
+                            "download-only",
+                            "format-all-download",
+                            "provision-only",
+                        )
+                        if candidate in allowed_modes
+                    ),
+                    "download-only",
+                )
+            )
         mode_summary = "/".join(
             label
             for mode, label in (
                 ("download-only", "Download"),
                 ("format-all-download", "Format"),
+                ("provision-only", "Provision"),
             )
             if mode in allowed_modes
         ) or "-"
@@ -1371,13 +1409,35 @@ class DeviceWorkspaceMixin:
             f"{channel.soc_vendor.upper()} {channel.soc_model}  |  "
             f"{channel.com_port or 'COM 미설정'}@{channel.baud_rate}  |  "
             f"ADB {channel.adb_serial or '(serial 없음)' if channel.adb_enabled or channel.adb_required_after_update else 'OFF'}  |  "
-            f"{channel.firmware_tool_id or 'Tool 미설정'}  |  {mode_summary}"
+            f"{channel.firmware_tool_id or 'Tool 미설정'}"
+            f"({str((tool or {}).get('adapter_kind') or 'generic')})  |  "
+            f"{channel.storage_type.upper()}  |  {mode_summary}"
         )
-        token = f"FORMAT {slave.get('node_id')}:{channel.label()}"
+        mode = self.device_binary_mode_var.get()
+        adapter_kind = str((tool or {}).get("adapter_kind") or "generic")
+        requires_mtk_preloader = is_mtk and adapter_kind != "mediatek-genio"
+        self.device_mtk_preloader_check.configure(
+            state="normal" if requires_mtk_preloader else "disabled"
+        )
+        self.device_run_preloader_check.configure(
+            state=(
+                "normal"
+                if requires_mtk_preloader and bool(channel.preloader_exit_command)
+                else "disabled"
+            )
+        )
+        if not requires_mtk_preloader:
+            self.device_mtk_preloader_var.set(False)
+            self.device_run_preloader_var.set(False)
+        staged_generic_download = (
+            adapter_kind == "generic"
+            and mode == "download-only"
+            and bool((tool or {}).get("download_arguments"))
+        )
         self.device_format_hint_var.set(
-            f"정확히 입력: {token}"
-            if self.device_binary_mode_var.get() == "format-all-download"
-            else "Download only에서는 비워둡니다."
+            "원격 사전점검 결과의 Type exactly 값을 입력합니다."
+            if adapter_kind != "generic" or mode != "download-only" or staged_generic_download
+            else "Generic Download only에서는 비워둡니다."
         )
 
     def _browse_device_binary_metadata(self) -> None:
@@ -1459,6 +1519,21 @@ class DeviceWorkspaceMixin:
             raise FtpSpoolError(
                 "Binary Metadata의 Vendor/SoC가 선택 CH와 다릅니다. 잘못된 장치 다운로드를 차단했습니다."
             )
+        if (
+            metadata.recommended_storage_type
+            and metadata.recommended_storage_type != channel.storage_type
+        ):
+            raise FtpSpoolError(
+                "Binary Metadata의 storage 종류가 선택 CH와 다릅니다."
+            )
+        if (
+            metadata.recommended_download_serial
+            and channel.download_serial
+            and metadata.recommended_download_serial != channel.download_serial
+        ):
+            raise FtpSpoolError(
+                "Binary Metadata의 Download/EDL serial이 선택 CH와 다릅니다."
+            )
         node, target, args = self._device_base_rig_args()
         args.extend(
             [
@@ -1482,6 +1557,8 @@ class DeviceWorkspaceMixin:
             args.extend(["--confirm-format", confirmation])
         if command == "update" and self.device_run_preloader_var.get():
             args.append("--run-preloader-exit")
+        if command == "update":
+            args.append("--json")
         return node, args
 
     def _submit_device_preflight(self) -> None:
@@ -1495,27 +1572,315 @@ class DeviceWorkspaceMixin:
         try:
             node, args = self._device_update_args("update")
             mode = self.device_binary_mode_var.get()
-            if mode == "format-all-download":
-                _slave, channel = self._selected_binary_channel()
-                expected = f"FORMAT {node}:{channel.label()}"
-                if self.device_format_confirmation_var.get().strip() != expected:
-                    raise FtpSpoolError(f"Format 확인문이 일치하지 않습니다: {expected}")
+            _slave, channel = self._selected_binary_channel()
+            tool = next(
+                (
+                    row
+                    for row in self._settings_device_tools
+                    if str(row.get("id") or "").casefold()
+                    == channel.firmware_tool_id.casefold()
+                ),
+                None,
+            )
+            adapter_kind = str((tool or {}).get("adapter_kind") or "generic")
+            staged_generic_download = (
+                adapter_kind == "generic"
+                and mode == "download-only"
+                and bool((tool or {}).get("download_arguments"))
+            )
+            requires_confirmation = (
+                adapter_kind != "generic"
+                or staged_generic_download
+                or mode in {"format-all-download", "provision-only"}
+            )
+            if requires_confirmation and not self.device_format_confirmation_var.get().strip():
+                raise FtpSpoolError("원격 사전점검 결과에 표시된 확인문을 입력하세요.")
             if not messagebox.askyesno(
                 "Binary 업데이트",
                 "선택한 한 CH의 통신·Vendor·XML hash를 다시 검사한 뒤 외부 Downloader를 실행합니다.\n\n"
                 "업데이트 중에는 AE Workbench를 종료하거나 전원을 끄지 마세요. 계속할까요?",
             ):
                 return
-            self._submit_device_job(node, args, timeout=3600.0, label="Binary 업데이트")
+            metadata = self._device_binary_metadata
+            self._submit_device_job(
+                node,
+                args,
+                timeout=3600.0,
+                label="Binary 업데이트",
+                variables={
+                    "channel": channel.label(),
+                    "binary_name": Path(metadata.xml_path).name if metadata else "",
+                    "binary_version": metadata.version if metadata else "",
+                    "binary_source_path": metadata.source_folder if metadata else "",
+                    "binary_updated_at": metadata.latest_modified_at if metadata else "",
+                },
+            )
         except BaseException as exc:
             self._show_error(exc)
 
-    def _submit_device_job(self, node: str, args: list[str], *, timeout: float, label: str) -> None:
+    def _open_qdl_raw_write_dialog(self) -> None:
+        try:
+            slave, channel = self._selected_binary_channel()
+            tool = next(
+                (
+                    row
+                    for row in self._settings_device_tools
+                    if str(row.get("id") or "").casefold()
+                    == channel.firmware_tool_id.casefold()
+                ),
+                None,
+            )
+            if channel.soc_vendor.casefold() != "qualcomm" or str(
+                (tool or {}).get("adapter_kind") or "generic"
+            ) != "qualcomm-qdl":
+                raise FtpSpoolError(
+                    "QDL Storage 범위 쓰기는 Qualcomm QDL adapter가 지정된 CH에서만 가능합니다."
+                )
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+
+        dialog = tk.Toplevel(self)
+        dialog.title(f"QDL Storage 범위 쓰기 - {slave.get('node_id')}:{channel.label()}")
+        dialog.transient(self)
+        dialog.configure(background="#f1f5f9")
+        dialog.geometry("760x430")
+        dialog.minsize(680, 400)
+        dialog.columnconfigure(1, weight=1)
+        programmer_value = str((tool or {}).get("programmer_path") or "")
+        if programmer_value and not Path(programmer_value).is_absolute():
+            metadata = self._device_binary_metadata
+            if metadata is not None:
+                programmer_value = str(Path(metadata.xml_path).parent / programmer_value)
+        programmer = tk.StringVar(value=programmer_value)
+        raw_target = f"{slave.get('node_id')}:{channel.label()}"
+        image_path = tk.StringVar(value="")
+        image_sha256 = tk.StringVar(value="")
+        address = tk.StringVar(value="")
+        sector_size = tk.StringVar(value="4096")
+        confirmation = tk.StringVar(value="")
+        hint = tk.StringVar(value=f"WRITE {raw_target} <P/S+L> <SHA-256 앞 12자리>")
+
+        fields = (
+            ("QDL Programmer", programmer),
+            ("쓰기 이미지", image_path),
+            ("이미지 SHA-256", image_sha256),
+            ("Sector 범위 (P/S+L)", address),
+            ("Sector bytes", sector_size),
+            ("확인문", confirmation),
+        )
+        for row, (label, variable) in enumerate(fields):
+            ttk.Label(dialog, text=label).grid(
+                row=row,
+                column=0,
+                sticky="w",
+                padx=(14, 8),
+                pady=(14 if row == 0 else 7, 0),
+            )
+            if variable is sector_size:
+                widget = ttk.Combobox(
+                    dialog,
+                    textvariable=variable,
+                    values=("512", "4096"),
+                    state="readonly",
+                    width=12,
+                )
+                widget.grid(row=row, column=1, sticky="w", pady=(14 if row == 0 else 7, 0))
+            else:
+                ttk.Entry(dialog, textvariable=variable).grid(
+                    row=row,
+                    column=1,
+                    sticky="ew",
+                    padx=(0, 7),
+                    pady=(14 if row == 0 else 7, 0),
+                )
+
+        def browse_programmer() -> None:
+            path = filedialog.askopenfilename(
+                title="Qualcomm Firehose Programmer",
+                parent=dialog,
+                filetypes=[("Programmer", "*.elf *.melf *.mbn *.bin *.xml *.cpio"), ("All files", "*.*")],
+            )
+            if path:
+                programmer.set(path)
+
+        def browse_image() -> None:
+            path = filedialog.askopenfilename(
+                title="QDL raw write image",
+                parent=dialog,
+                filetypes=[("Firmware image", "*.bin *.img *.raw"), ("All files", "*.*")],
+            )
+            if not path:
+                return
+            image_path.set(path)
+            image_sha256.set("SHA-256 계산 중...")
+
+            def worker() -> None:
+                try:
+                    digest = hashlib.sha256()
+                    with Path(path).open("rb") as handle:
+                        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                            digest.update(chunk)
+                    value = digest.hexdigest()
+                except OSError as exc:
+                    error_message = str(exc)
+                    dialog.after(
+                        0,
+                        lambda message=error_message: messagebox.showerror(
+                            "QDL UFS 쓰기",
+                            message,
+                            parent=dialog,
+                        ),
+                    )
+                    return
+                dialog.after(0, lambda: image_sha256.set(value))
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        ttk.Button(dialog, text="찾기", command=browse_programmer).grid(
+            row=0,
+            column=2,
+            padx=(0, 14),
+            pady=(14, 0),
+        )
+        ttk.Button(dialog, text="찾기 · SHA 계산", command=browse_image).grid(
+            row=1,
+            column=2,
+            padx=(0, 14),
+            pady=(7, 0),
+        )
+
+        def update_hint(*_args: object) -> None:
+            digest = image_sha256.get().strip().casefold()
+            raw_address = address.get().strip()
+            hint.set(
+                f"정확히 입력: WRITE {raw_target} {raw_address} {digest[:12]}"
+                if raw_address and len(digest) >= 12
+                else f"WRITE {raw_target} <P/S+L> <SHA-256 앞 12자리>"
+            )
+
+        image_sha256.trace_add("write", update_hint)
+        address.trace_add("write", update_hint)
+        ttk.Label(dialog, textvariable=hint, style="Muted.TLabel").grid(
+            row=6,
+            column=0,
+            columnspan=3,
+            sticky="w",
+            padx=14,
+            pady=(12, 0),
+        )
+        ttk.Label(
+            dialog,
+            text=(
+                "직접 쓰기는 용량을 검증할 수 있는 P/S+L만 허용됩니다. "
+                "GPT 이름 쓰기는 Vendor rawprogram XML을 사용하세요. "
+                "MTK BROM bootstrap SRAM 주소를 여기에 입력하면 안 됩니다."
+            ),
+            style="Muted.TLabel",
+            wraplength=700,
+        ).grid(row=7, column=0, columnspan=3, sticky="w", padx=14, pady=(8, 0))
+
+        def submit() -> None:
+            digest = image_sha256.get().strip().casefold()
+            raw_address = address.get().strip()
+            expected = f"WRITE {raw_target} {raw_address} {digest[:12]}"
+            if not programmer.get().strip() or not image_path.get().strip() or not raw_address:
+                messagebox.showerror(
+                    "QDL UFS 쓰기",
+                    "Programmer, 쓰기 이미지, UFS 주소를 모두 입력하세요.",
+                    parent=dialog,
+                )
+                return
+            range_match = re.fullmatch(r"\d+/\d+\+(\d+)", raw_address)
+            if range_match is None or int(range_match.group(1)) < 1:
+                messagebox.showerror(
+                    "QDL Storage 쓰기",
+                    "주소는 양수 길이를 가진 P/S+L 형식으로 입력하세요. 예: 0/32768+4096",
+                    parent=dialog,
+                )
+                return
+            if not re.fullmatch(r"[0-9a-f]{64}", digest):
+                messagebox.showerror("QDL UFS 쓰기", "SHA-256 64자리를 입력하세요.", parent=dialog)
+                return
+            if confirmation.get().strip() != expected:
+                messagebox.showerror(
+                    "QDL UFS 쓰기",
+                    f"확인문이 일치하지 않습니다: {expected}",
+                    parent=dialog,
+                )
+                return
+            if not self.device_qc_switch_var.get():
+                messagebox.showerror(
+                    "QDL UFS 쓰기",
+                    "먼저 QC 물리 Download 스위치 확인을 체크하세요.",
+                    parent=dialog,
+                )
+                return
+            if not messagebox.askyesno(
+                "QDL UFS 쓰기",
+                "선택한 UFS 영역을 직접 덮어씁니다. 대상과 주소를 다시 확인했습니까?",
+                parent=dialog,
+            ):
+                return
+            try:
+                node, target, args = self._device_base_rig_args()
+                args.extend(
+                    [
+                        "raw-write",
+                        "--target",
+                        target,
+                        "--programmer",
+                        programmer.get().strip(),
+                        "--image",
+                        image_path.get().strip(),
+                        "--image-sha256",
+                        digest,
+                        "--address",
+                        raw_address,
+                        "--sector-size",
+                        sector_size.get(),
+                        "--qc-switch-confirmed",
+                        "--confirm-write",
+                        expected,
+                        "--json",
+                    ]
+                )
+                self._submit_device_job(
+                    node,
+                    args,
+                    timeout=3600.0,
+                    label="QDL Storage 범위 쓰기",
+                )
+            except BaseException as exc:
+                messagebox.showerror("QDL UFS 쓰기", str(exc), parent=dialog)
+                return
+            dialog.destroy()
+
+        buttons = ttk.Frame(dialog, padding=14)
+        buttons.grid(row=8, column=0, columnspan=3, sticky="e")
+        ttk.Button(buttons, text="취소", command=dialog.destroy).pack(side="right")
+        ttk.Button(buttons, text="영역 쓰기", command=submit, style="Danger.TButton").pack(
+            side="right",
+            padx=(0, 6),
+        )
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
+        dialog.grab_set()
+
+    def _submit_device_job(
+        self,
+        node: str,
+        args: list[str],
+        *,
+        timeout: float,
+        label: str,
+        variables: dict[str, str] | None = None,
+    ) -> None:
         def worker() -> None:
             _config, backend, _local_root = self._snapshot_backend()
             job = SpoolJob.create(
                 kind="rig",
                 payload={"args": args, "timeout_seconds": timeout},
+                variables=variables,
                 origin=self._job_origin(),
             )
             submit_job(backend, job, [node])
@@ -1562,6 +1927,7 @@ class DeviceWorkspaceMixin:
                 for mode, label in (
                     ("download-only", "Download"),
                     ("format-all-download", "Format"),
+                    ("provision-only", "Provision"),
                 )
                 if mode in modes
             )
@@ -1572,10 +1938,10 @@ class DeviceWorkspaceMixin:
                 values=(
                     row.get("id", ""),
                     str(row.get("vendor", "")).upper(),
+                    row.get("adapter_kind", "generic"),
                     row.get("executable", ""),
                     mode_label or "-",
                     "허용" if row.get("execution_enabled") else "차단",
-                    row.get("cli_evidence_ref", ""),
                 ),
             )
 
@@ -1591,8 +1957,9 @@ class DeviceWorkspaceMixin:
         dialog = tk.Toplevel(self)
         dialog.title("다운로드 도구 추가" if index is None else "다운로드 도구 수정")
         dialog.transient(self)
-        dialog.geometry("760x620")
-        dialog.minsize(680, 560)
+        dialog.configure(background="#f1f5f9")
+        dialog.geometry("860x720")
+        dialog.minsize(760, 420)
         dialog.columnconfigure(0, weight=1)
         dialog.rowconfigure(2, weight=1)
 
@@ -1602,6 +1969,7 @@ class DeviceWorkspaceMixin:
         identity.columnconfigure(3, weight=1)
         tool_id = tk.StringVar(value=str(initial.get("id") or ""))
         vendor = tk.StringVar(value=str(initial.get("vendor") or "qualcomm"))
+        adapter_kind = tk.StringVar(value=str(initial.get("adapter_kind") or "generic"))
         executable = tk.StringVar(value=str(initial.get("executable") or ""))
         working_dir = tk.StringVar(value=str(initial.get("working_dir") or ""))
         ttk.Label(identity, text="도구 ID").grid(row=0, column=0, sticky="w", padx=(0, 6))
@@ -1620,9 +1988,17 @@ class DeviceWorkspaceMixin:
             text="찾기",
             command=lambda: self._choose_device_tool_executable(executable),
         ).grid(row=1, column=3, sticky="e", pady=(8, 0))
-        ttk.Label(identity, text="작업 폴더").grid(row=2, column=0, sticky="w", padx=(0, 6), pady=(8, 0))
+        ttk.Label(identity, text="Adapter").grid(row=2, column=0, sticky="w", padx=(0, 6), pady=(8, 0))
+        adapter_combo = ttk.Combobox(
+            identity,
+            textvariable=adapter_kind,
+            values=("generic", "qualcomm-qdl", "mediatek-genio"),
+            state="readonly",
+        )
+        adapter_combo.grid(row=2, column=1, sticky="ew", pady=(8, 0), padx=(0, 14))
+        ttk.Label(identity, text="작업 폴더").grid(row=2, column=2, sticky="w", padx=(0, 6), pady=(8, 0))
         ttk.Entry(identity, textvariable=working_dir).grid(
-            row=2, column=1, columnspan=3, sticky="ew", pady=(8, 0)
+            row=2, column=3, sticky="ew", pady=(8, 0)
         )
 
         policy = ttk.Labelframe(dialog, text="안전 정책", padding=12)
@@ -1632,6 +2008,7 @@ class DeviceWorkspaceMixin:
         execution_enabled = tk.BooleanVar(value=bool(initial.get("execution_enabled", False)))
         allow_download = tk.BooleanVar(value="download-only" in (initial.get("allowed_modes") or ["download-only"]))
         allow_format = tk.BooleanVar(value="format-all-download" in (initial.get("allowed_modes") or []))
+        allow_provision = tk.BooleanVar(value="provision-only" in (initial.get("allowed_modes") or []))
         evidence = tk.StringVar(value=str(initial.get("cli_evidence_ref") or ""))
         mode_values = initial.get("mode_values") if isinstance(initial.get("mode_values"), dict) else {}
         download_mode_value = tk.StringVar(
@@ -1641,37 +2018,67 @@ class DeviceWorkspaceMixin:
             value=str(mode_values.get("format-all-download") or "format-all-download")
         )
         timeout_seconds = tk.StringVar(value=str(initial.get("timeout_seconds") or "1800"))
+        storage_types = tk.StringVar(value=", ".join(initial.get("storage_types") or ["ufs"]))
+        version_arguments = tk.StringVar(
+            value=" ".join(initial.get("version_arguments") or ["--version"])
+        )
+        programmer_path = tk.StringVar(value=str(initial.get("programmer_path") or ""))
         ttk.Checkbutton(policy, text="Download only", variable=allow_download).grid(row=0, column=0, sticky="w")
         ttk.Checkbutton(policy, text="Format + Download", variable=allow_format).grid(
             row=0, column=1, sticky="w"
+        )
+        provision_check = ttk.Checkbutton(
+            policy,
+            text="UFS Provision",
+            variable=allow_provision,
+        )
+        provision_check.grid(
+            row=0, column=2, sticky="w"
         )
         ttk.Checkbutton(
             policy,
             text="검증 완료 후 실제 실행 허용",
             variable=execution_enabled,
-        ).grid(row=0, column=2, columnspan=2, sticky="e")
+        ).grid(row=0, column=3, sticky="e")
         ttk.Label(policy, text="CLI 근거 문서").grid(row=1, column=0, sticky="w", pady=(8, 0))
         ttk.Entry(policy, textvariable=evidence).grid(
             row=1, column=1, columnspan=3, sticky="ew", pady=(8, 0)
         )
         ttk.Label(policy, text="Download mode 값").grid(row=2, column=0, sticky="w", pady=(8, 0))
-        ttk.Entry(policy, textvariable=download_mode_value).grid(
+        download_mode_entry = ttk.Entry(policy, textvariable=download_mode_value)
+        download_mode_entry.grid(
             row=2, column=1, sticky="ew", pady=(8, 0), padx=(0, 12)
         )
         ttk.Label(policy, text="Format mode 값").grid(row=2, column=2, sticky="w", pady=(8, 0))
-        ttk.Entry(policy, textvariable=format_mode_value).grid(
+        format_mode_entry = ttk.Entry(policy, textvariable=format_mode_value)
+        format_mode_entry.grid(
             row=2, column=3, sticky="ew", pady=(8, 0)
         )
         ttk.Label(policy, text="Timeout 초").grid(row=3, column=0, sticky="w", pady=(8, 0))
         ttk.Entry(policy, textvariable=timeout_seconds).grid(
             row=3, column=1, sticky="ew", pady=(8, 0), padx=(0, 12)
         )
+        ttk.Label(policy, text="Storage").grid(row=3, column=2, sticky="w", pady=(8, 0))
+        ttk.Entry(policy, textvariable=storage_types).grid(
+            row=3, column=3, sticky="ew", pady=(8, 0)
+        )
+        ttk.Label(policy, text="Version 인자").grid(row=4, column=0, sticky="w", pady=(8, 0))
+        ttk.Entry(policy, textvariable=version_arguments).grid(
+            row=4, column=1, sticky="ew", pady=(8, 0), padx=(0, 12)
+        )
+        ttk.Label(policy, text="Programmer 경로").grid(row=4, column=2, sticky="w", pady=(8, 0))
+        programmer_entry = ttk.Entry(policy, textvariable=programmer_path)
+        programmer_entry.grid(
+            row=4, column=3, sticky="ew", pady=(8, 0)
+        )
 
         details = ttk.Notebook(dialog)
         details.grid(row=2, column=0, sticky="nsew", padx=12, pady=(0, 8))
         args_page = ttk.Frame(details, padding=10)
+        phases_page = ttk.Frame(details, padding=10)
         result_page = ttk.Frame(details, padding=10)
         details.add(args_page, text="CLI 인자")
+        details.add(phases_page, text="단계별 인자")
         details.add(result_page, text="결과 판정")
         args_page.columnconfigure(0, weight=1)
         args_page.rowconfigure(1, weight=1)
@@ -1684,6 +2091,22 @@ class DeviceWorkspaceMixin:
             "1.0",
             "\n".join(initial.get("arguments") or ["--xml", "{xml}", "--port", "{port}", "--mode", "{mode}"]),
         )
+        phases_page.columnconfigure(0, weight=1)
+        phases_page.columnconfigure(1, weight=1)
+        phases_page.columnconfigure(2, weight=1)
+        phases_page.rowconfigure(1, weight=1)
+        ttk.Label(phases_page, text="Format (Generic)").grid(row=0, column=0, sticky="w")
+        ttk.Label(phases_page, text="Download (Generic)").grid(row=0, column=1, sticky="w", padx=(8, 0))
+        ttk.Label(phases_page, text="Provision (Generic)").grid(row=0, column=2, sticky="w", padx=(8, 0))
+        format_arguments = self._style_text_widget(tk.Text(phases_page, height=8, wrap="none"))
+        download_arguments = self._style_text_widget(tk.Text(phases_page, height=8, wrap="none"))
+        provision_arguments = self._style_text_widget(tk.Text(phases_page, height=8, wrap="none"))
+        format_arguments.grid(row=1, column=0, sticky="nsew")
+        download_arguments.grid(row=1, column=1, sticky="nsew", padx=(8, 0))
+        provision_arguments.grid(row=1, column=2, sticky="nsew", padx=(8, 0))
+        format_arguments.insert("1.0", "\n".join(initial.get("format_arguments") or []))
+        download_arguments.insert("1.0", "\n".join(initial.get("download_arguments") or []))
+        provision_arguments.insert("1.0", "\n".join(initial.get("provision_arguments") or []))
         result_page.columnconfigure(0, weight=1)
         result_page.columnconfigure(1, weight=1)
         result_page.rowconfigure(1, weight=1)
@@ -1696,21 +2119,78 @@ class DeviceWorkspaceMixin:
         success.insert("1.0", "\n".join(initial.get("success_markers") or []))
         failure.insert("1.0", "\n".join(initial.get("failure_markers") or []))
 
+        def sync_adapter(*_args: object) -> None:
+            kind = adapter_kind.get().strip()
+            generic = kind == "generic"
+            qdl = kind == "qualcomm-qdl"
+            if qdl:
+                vendor.set("qualcomm")
+                if not evidence.get().strip():
+                    evidence.set("https://github.com/linux-msm/qdl")
+                if not storage_types.get().strip() or storage_types.get().strip() == "ufs":
+                    storage_types.set("ufs, emmc, nand, nvme, spinor")
+            elif kind == "mediatek-genio":
+                vendor.set("mediatek")
+                allow_provision.set(False)
+                if not evidence.get().strip():
+                    evidence.set(
+                        "https://genio.mediatek.com/doc/iot-yocto/latest/tools/genio-tools.html"
+                    )
+                if not storage_types.get().strip() or storage_types.get().strip() == "ufs":
+                    storage_types.set("ufs, emmc")
+            provision_check.configure(state="normal" if qdl or generic else "disabled")
+            details.tab(args_page, state="normal" if generic else "disabled")
+            details.tab(phases_page, state="normal" if generic else "disabled")
+            details.tab(result_page, state="normal" if generic else "disabled")
+            if generic:
+                details.grid()
+                dialog.rowconfigure(2, weight=1)
+                dialog.minsize(760, 640)
+            else:
+                details.grid_remove()
+                dialog.rowconfigure(2, weight=0)
+                dialog.minsize(760, 420)
+                dialog.geometry("860x470")
+            download_mode_entry.configure(state="normal" if generic else "disabled")
+            format_mode_entry.configure(state="normal" if generic else "disabled")
+            programmer_entry.configure(state="normal" if qdl or generic else "disabled")
+
+        adapter_combo.bind("<<ComboboxSelected>>", sync_adapter)
+        sync_adapter()
+
         def save() -> None:
             modes = [
                 mode
                 for mode, selected in (
                     ("download-only", allow_download.get()),
                     ("format-all-download", allow_format.get()),
+                    ("provision-only", allow_provision.get()),
                 )
                 if selected
             ]
             mapped = {
                 "id": tool_id.get().strip(),
                 "vendor": vendor.get().strip(),
+                "adapter_kind": adapter_kind.get().strip(),
                 "executable": executable.get().strip(),
                 "working_dir": working_dir.get().strip(),
                 "arguments": [line for line in arguments.get("1.0", "end").splitlines() if line],
+                "format_arguments": [
+                    line for line in format_arguments.get("1.0", "end").splitlines() if line
+                ],
+                "download_arguments": [
+                    line for line in download_arguments.get("1.0", "end").splitlines() if line
+                ],
+                "provision_arguments": [
+                    line for line in provision_arguments.get("1.0", "end").splitlines() if line
+                ],
+                "version_arguments": version_arguments.get().split(),
+                "programmer_path": programmer_path.get().strip(),
+                "storage_types": [
+                    item.strip().casefold()
+                    for item in storage_types.get().split(",")
+                    if item.strip()
+                ],
                 "execution_enabled": execution_enabled.get(),
                 "cli_evidence_ref": evidence.get().strip(),
                 "allowed_modes": modes,
@@ -1725,7 +2205,7 @@ class DeviceWorkspaceMixin:
             }
             try:
                 tool = DeviceToolInfo.from_mapping(mapped)
-                if tool.execution_enabled and (
+                if tool.execution_enabled and tool.adapter_kind == "generic" and (
                     not tool.cli_evidence_ref or not tool.success_markers or not tool.failure_markers
                 ):
                     raise FtpSpoolError(
