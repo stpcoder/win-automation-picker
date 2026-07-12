@@ -96,6 +96,16 @@ def build_parser() -> argparse.ArgumentParser:
     submit_monitor.add_argument("--package", required=True, help="Exported workflow under packages/.")
     submit_monitor.set_defaults(func=_cmd_submit_monitor)
 
+    submit_margin = subparsers.add_parser(
+        "submit-margin",
+        help="Submit a checksummed DRAM margin campaign bundle to one fixture PC.",
+    )
+    _add_submit_args(submit_margin)
+    submit_margin.add_argument("--package", required=True, help="*.drammargin.zip under packages/.")
+    submit_margin.add_argument("--probe-timeout", type=float, default=120.0)
+    submit_margin.add_argument("--sweep-timeout", type=float, default=3600.0)
+    submit_margin.set_defaults(func=_cmd_submit_margin)
+
     submit_shell = subparsers.add_parser("submit-shell", help="Submit a shell command job.")
     _add_submit_args(submit_shell)
     command_group = submit_shell.add_mutually_exclusive_group(required=True)
@@ -261,6 +271,24 @@ def _cmd_submit_monitor(args: argparse.Namespace) -> int:
         payload={
             "package": args.package,
             "timeout_seconds": float(args.timeout or 0.0),
+        },
+    )
+    return _submit(args, job)
+
+
+def _cmd_submit_margin(args: argparse.Namespace) -> int:
+    if not args.target or any(str(target).casefold() == "all" for target in args.target):
+        raise FtpSpoolError("DRAM margin requires exactly one explicit fixture PC target.")
+    if len(args.target) != 1:
+        raise FtpSpoolError("DRAM margin accepts one fixture PC per job.")
+    job = _job(
+        args,
+        kind="dram_margin",
+        payload={
+            "package": args.package,
+            "timeout_seconds": float(args.timeout or 0.0),
+            "probe_timeout_seconds": float(args.probe_timeout),
+            "sweep_timeout_seconds": float(args.sweep_timeout),
         },
     )
     return _submit(args, job)

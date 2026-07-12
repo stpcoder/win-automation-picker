@@ -3796,6 +3796,10 @@ class PickerApp(tk.Toplevel):
             if package is None:
                 raise FtpSpoolError("Select an FTP macro package first.")
             targets = self._ftp_targets(self.ftp_target_var.get()) or ["all"]
+            if package.runner == "dram_margin" and "all" in targets:
+                raise FtpSpoolError(
+                    "DRAM margin은 exact fixture/ADB identity를 사용하므로 PC 하나를 지정하세요."
+                )
             job = SpoolJob.create(
                 kind=package_job_kind(package),
                 payload={
@@ -3850,7 +3854,13 @@ class PickerApp(tk.Toplevel):
         lines = [
             f"Name: {package.name}",
             f"Title: {package.title or '-'}",
-            f"Runner: {'내장 워크플로 엔진' if package.runner == 'workflow' else '외부 Python'}",
+            "Runner: "
+            + {
+                "workflow": "내장 워크플로 엔진",
+                "sequence": "검증된 Rig SEQ",
+                "dram_margin": "DRAM DQ 마진 캠페인",
+                "python": "외부 Python",
+            }.get(package.runner, package.runner),
             f"Uploaded: {package.uploaded_at or '-'}",
             f"Path: {package.path}",
             "",

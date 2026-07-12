@@ -60,6 +60,11 @@
     "python_executable": "python",
     "capture_on_error": true,
     "max_output_chars": 200000,
+    "max_artifact_upload_bytes": 16777216,
+    "max_margin_artifact_upload_bytes": 134217728,
+    "max_local_run_files": 40,
+    "max_staged_margin_bundles": 10,
+    "max_artifact_files": 40,
     "max_result_files": 200,
     "max_log_files": 200,
     "max_archive_files": 500,
@@ -181,7 +186,9 @@
 | `runtime.python_executable` | 일반 Python package 전용 실행기. export workflow에는 사용하지 않음 |
 | `runtime.max_run_log_bytes` | CH별 직접 COM console 파일 상한. 기본 8 MB |
 | `runtime.max_artifact_upload_bytes` | 실행 종료 시 FTP 증거 ZIP 상한. 기본 16 MB |
+| `runtime.max_margin_artifact_upload_bytes` | raw JSONL·CSV를 포함한 DRAM margin 결과 ZIP 상한. 기본 128 MB, 허용 1 MB~1 GB |
 | `runtime.max_local_run_files` | Slave의 직접 COM 실행 폴더 보관 개수. 기본 40 |
+| `runtime.max_staged_margin_bundles` | Slave에 checksum별로 보관하는 DRAM margin 실행 번들 수. 기본 10, 허용 1~50 |
 | `runtime.max_artifact_files` | PC별 FTP 증거 ZIP 보관 개수. 기본 40, `0`이면 증거 ZIP 업로드 끔 |
 | `runtime.max_*` | 파일 보관 개수 |
 | `variables` | job 실행 시 기본 변수 |

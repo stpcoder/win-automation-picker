@@ -56,6 +56,7 @@ nav:
       - AE 캠페인 운영: rig-ftp/ae-campaign.md
       - SK Commander와 직접 COM 운용: rig-ftp/execution-routes.md
       - SEQ Generator와 실장기 실행: rig-ftp/seq-integration.md
+      - DRAM DQ margin 원격 실행: rig-ftp/dram-margin.md
       - Master 세팅: rig-ftp/master-setup.md
       - Slave 세팅: rig-ftp/slave-setup.md
       - 상태 모니터링과 캡처: rig-ftp/monitoring.md
