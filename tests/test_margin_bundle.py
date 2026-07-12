@@ -4,6 +4,7 @@ from hashlib import sha256
 import io
 import json
 from pathlib import Path
+import platform
 import struct
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -289,7 +290,7 @@ def test_ftp_margin_job_runs_exact_fixture_and_uploads_artifact(tmp_path, monkey
             SlaveInfo(
                 node_id="rig-pc-04",
                 alias="PC04",
-                windows_name="RIG-PC-04",
+                windows_name=platform.node(),
                 channels=(
                     ChannelInfo(
                         channel_id="CH11",
