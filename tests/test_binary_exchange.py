@@ -62,3 +62,43 @@ def test_binary_metadata_rejects_unknown_vendor(tmp_path) -> None:
 
     with pytest.raises(BinaryExchangeError, match="vendor"):
         read_binary_release_metadata(path)
+
+
+def test_binary_metadata_imports_recommended_device_communication(tmp_path) -> None:
+    path = tmp_path / "mtk.rigbinary.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "rig-binary-release/v1",
+                "release": {
+                    "release_id": "mtk",
+                    "soc_vendor": "mediatek",
+                    "soc_model": "MTK25D",
+                    "version": "v1",
+                    "source_folder": "D:/binary/mtk",
+                    "xml_path": "D:/binary/mtk/download.xml",
+                    "relative_xml_path": "mtk/download.xml",
+                    "xml_sha256": "b" * 64,
+                    "latest_modified_at": "2026-07-12T00:00:00+00:00",
+                },
+                "provisioning": {
+                    "channel_id": "CH11",
+                    "com_port": "COM7",
+                    "baud_rate": 921600,
+                    "adb_serial": "MTK-CH11",
+                    "adb_postcheck_enabled": True,
+                    "download_identity": "MediaTek PreLoader USB VCOM",
+                    "firmware_tool_id": "mtk-downloader",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    metadata = read_binary_release_metadata(path)
+    values = metadata.channel_values()
+
+    assert values["com_port"] == "COM7"
+    assert values["baud_rate"] == 921600
+    assert values["adb_serial"] == "MTK-CH11"
+    assert values["firmware_tool_id"] == "mtk-downloader"

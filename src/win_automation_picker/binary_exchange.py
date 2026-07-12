@@ -26,9 +26,23 @@ class BinaryReleaseMetadata:
     relative_xml_path: str
     xml_sha256: str
     latest_modified_at: str
+    recommended_slot_id: str = ""
+    recommended_channel_id: str = ""
+    recommended_com_port: str = ""
+    recommended_baud_rate: int = 115200
+    recommended_adb_serial: str = ""
+    adb_postcheck_enabled: bool = False
+    recommended_download_identity: str = ""
+    recommended_firmware_tool_id: str = ""
+    power_control_configured: bool = False
 
     @classmethod
-    def from_mapping(cls, data: dict[str, Any]) -> "BinaryReleaseMetadata":
+    def from_mapping(
+        cls,
+        data: dict[str, Any],
+        provisioning: dict[str, Any] | None = None,
+    ) -> "BinaryReleaseMetadata":
+        provisioning = provisioning or {}
         metadata = cls(
             release_id=str(data.get("release_id") or "").strip(),
             soc_vendor=str(data.get("soc_vendor") or "").strip().casefold(),
@@ -39,6 +53,15 @@ class BinaryReleaseMetadata:
             relative_xml_path=str(data.get("relative_xml_path") or "").strip(),
             xml_sha256=str(data.get("xml_sha256") or "").strip().casefold(),
             latest_modified_at=str(data.get("latest_modified_at") or "").strip(),
+            recommended_slot_id=str(provisioning.get("slot_id") or "").strip(),
+            recommended_channel_id=str(provisioning.get("channel_id") or "").strip(),
+            recommended_com_port=str(provisioning.get("com_port") or "").strip(),
+            recommended_baud_rate=max(1, int(provisioning.get("baud_rate") or 115200)),
+            recommended_adb_serial=str(provisioning.get("adb_serial") or "").strip(),
+            adb_postcheck_enabled=bool(provisioning.get("adb_postcheck_enabled", False)),
+            recommended_download_identity=str(provisioning.get("download_identity") or "").strip(),
+            recommended_firmware_tool_id=str(provisioning.get("firmware_tool_id") or "").strip(),
+            power_control_configured=bool(provisioning.get("power_control_configured", False)),
         )
         if metadata.soc_vendor not in {"qualcomm", "mediatek"}:
             raise BinaryExchangeError("binary metadata vendor must be qualcomm or mediatek")
@@ -48,9 +71,9 @@ class BinaryReleaseMetadata:
             raise BinaryExchangeError("binary metadata XML SHA-256 is invalid")
         return metadata
 
-    def channel_values(self) -> dict[str, str]:
+    def channel_values(self) -> dict[str, Any]:
         xml_name = self.xml_path.replace("\\", "/").rsplit("/", 1)[-1]
-        return {
+        values: dict[str, Any] = {
             "soc_vendor": self.soc_vendor,
             "soc_model": self.soc_model,
             "binary_name": xml_name,
@@ -58,6 +81,22 @@ class BinaryReleaseMetadata:
             "binary_source_path": self.source_folder,
             "binary_updated_at": self.latest_modified_at,
         }
+        if self.recommended_slot_id:
+            values["slot_id"] = self.recommended_slot_id
+        if self.recommended_channel_id:
+            values["channel_id"] = self.recommended_channel_id
+        if self.recommended_com_port:
+            values["com_port"] = self.recommended_com_port
+            values["baud_rate"] = self.recommended_baud_rate
+        if self.recommended_adb_serial:
+            values["adb_serial"] = self.recommended_adb_serial
+            values["adb_enabled"] = True
+            values["adb_required_after_update"] = self.adb_postcheck_enabled
+        if self.recommended_download_identity:
+            values["download_identity"] = self.recommended_download_identity
+        if self.recommended_firmware_tool_id:
+            values["firmware_tool_id"] = self.recommended_firmware_tool_id
+        return values
 
 
 def read_binary_release_metadata(path: str | Path) -> BinaryReleaseMetadata:
@@ -75,4 +114,7 @@ def read_binary_release_metadata(path: str | Path) -> BinaryReleaseMetadata:
     release = payload.get("release")
     if not isinstance(release, dict):
         raise BinaryExchangeError("Rig binary metadata has no release object")
-    return BinaryReleaseMetadata.from_mapping(release)
+    provisioning = payload.get("provisioning")
+    if provisioning is not None and not isinstance(provisioning, dict):
+        raise BinaryExchangeError("Rig binary metadata provisioning must be an object")
+    return BinaryReleaseMetadata.from_mapping(release, provisioning)

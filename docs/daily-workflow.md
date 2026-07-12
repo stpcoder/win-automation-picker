@@ -75,15 +75,28 @@ MTK · Preloader exit 후 Download
 3. PC를 선택하고 `CH 관리`에서 `CH9~CH12`, Slot, COM, SoC, Binary, 자재를 등록합니다.
 4. CH가 없는 프로그램은 `QC-DL`, `Main` 같은 자유 이름을 사용합니다.
 5. `서버 폴더 준비`로 각 Node의 FTP spool 폴더를 만듭니다.
-6. `Slave 설정 내보내기`로 PC별 `rig-ftp.info`를 생성합니다.
+6. `장치 도구`에서 검증된 MTK/QC Downloader와 결과 규칙을 등록합니다.
+7. `Slave 설정 내보내기`로 PC별 `rig-ftp.info`와 `rig-commander.config.json`을 생성합니다.
 
 ### Slave Agent
 
 ![Slave PC에서 실행하는 Agent 화면](assets/screenshots/11-slave-agent.png)
 
-각 원격 PC에 `AEWorkbench.exe`와 해당 PC용 `rig-ftp.info`를 같은 폴더에 둡니다.
+각 원격 PC에 `AEWorkbench.exe`, 해당 PC용 `rig-ftp.info`,
+`rig-commander.config.json`을 같은 폴더에 둡니다.
 `3 Rig 설정 > 이 PC Agent`에서 Node ID를 확인하고 `Agent 시작`을 누릅니다. 평소에는
 창을 유지하고, `한 번 확인`과 `중단 신호 해제`는 `더보기`에서 사용합니다.
+
+## 실장기 직접 제어와 Binary
+
+![네 COM을 동시에 보는 직접 시리얼 콘솔](assets/screenshots/12-four-channel-console.png)
+
+- 실장기 PC에서 `2 자동화 준비 > 실장기 제어 · Binary > 4채널 콘솔`을 엽니다.
+- 선택 CH를 연결하고 ASCII 명령, Enter/Ctrl+C, 문자 지연 또는 검증된 SEQ를 보냅니다.
+- Master에서 Binary를 바꿀 때는 같은 작업 영역의 `Binary 업데이트`를 사용합니다.
+- 한 CH씩 PC 환경·통신·XML hash·Vendor 조건을 점검한 후 실행합니다.
+
+전체 절차는 [실장기 직접 제어와 Binary](device-control.md)를 따릅니다.
 
 ## C. 매일 시험 시작
 
@@ -94,13 +107,18 @@ MTK · Preloader exit 후 Download
 3. `1 오늘 작업 > 실행`에서 `자동화 새로고침`을 누릅니다.
 4. 자동화 라이브러리에서 `[FLOW]` 프로그램 매크로와 `[SEQ]`를 확인합니다.
 5. 실행할 `[SEQ]`를 선택합니다.
-6. `Rig 대상 불러오기`로 PC/CH 행을 만듭니다.
-7. 셀을 더블클릭해 `sequence_name`, 자재, launcher, attempt를 확인·수정합니다.
-8. 제외할 행은 첫 열 체크를 끕니다.
-9. `실행 시작`을 누릅니다.
+6. `SEQ 방식`에서 `직접 COM` 또는 `SK Commander`를 고릅니다.
+7. `Rig 대상 불러오기`로 PC/CH 행을 만듭니다.
+8. CH, COM, baud, `sequence_name`, 자재와 attempt를 확인·수정합니다.
+9. `SK Commander` 방식이면 각 행의 launcher도 확인합니다.
+10. 제외할 행은 첫 열 체크를 끕니다.
+11. `실행 시작`을 누릅니다.
 
 한 행은 한 PC/CH/attempt입니다. PC01과 PC02가 다른 SEQ를 사용해도 같은 매크로를
 재사용하고 실행표 값만 다르게 입력합니다.
+
+`직접 COM` 행은 같은 PC·Campaign·attempt 기준 최대 네 개가 한 묶음으로 동시에 실행됩니다.
+`SK Commander` 행은 Windows UI 포커스 충돌을 피하기 위해 Slave가 순서대로 런처를 실행합니다.
 
 `운영 도구 열기`는 다음 저빈도 기능만 표시합니다.
 

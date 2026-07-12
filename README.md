@@ -47,11 +47,15 @@ The executables are not code-signed, so Windows SmartScreen may show a warning.
 - Exports the complete nested workflow as runnable Python.
 - Runs exported workflows inside the slave executable without requiring a separate Python installation.
 - Distributes jobs and collects status, results, and screenshots through an FTP spool.
-- Verifies Test Sequence Generator `.rigseq.zip` artifacts and assigns them to SK Commander launchers by PC, slot, and CH.
+- Verifies Test Sequence Generator `.rigseq.zip` artifacts and assigns each PC/slot/CH to direct COM or an SK Commander launcher.
 - Tracks free-form per-PC channels with SoC, binary source/version/time, DRAM material, current test/SEQ, and Grid progress in FTP heartbeats and two-sheet Excel exports.
 - Verifies checksummed AE campaign snapshots, expands PC/CH/repeat run rows, and shows acceptance/failure state in a campaign board.
 - Stores operator failure classification and disposition in separate triage sidecars without rewriting raw results.
 - Imports Seq Generator `.rigbinary.json` metadata without copying proprietary binary payloads.
+- Keeps up to four COM consoles open for live output, boot-state markers, ASCII/control-key input, and parallel `.seq` runs.
+- Batches direct-COM run-table rows by slave/campaign/attempt and runs up to four distinct ports concurrently.
+- Pins MTK/QC updates to one CH with XML hashes, USB identity, fixed ADB serials, vendor gates, and allowlisted external downloader rules.
+- Exports `rig-ftp.info` and `rig-commander.config.json` together for each slave PC.
 - Keeps configured but stale PCs visible as offline and matches screenshots to their exact request job.
 
 ## Macro quick start
@@ -70,6 +74,20 @@ For the complete flow, use the [AE Workbench guide](https://stpcoder.github.io/w
 Continuous recording is active only after an explicit start and always shows elapsed time and action count. One-shot click/input capture remains available for adding a single block.
 
 See the [basic macro guide](https://stpcoder.github.io/win-automation-picker/macro-builder/basic-flow/) and [block workspace guide](https://stpcoder.github.io/win-automation-picker/macro-builder/block-designer/).
+
+## Direct fixture control and binary updates
+
+![Four persistent serial consoles](docs/assets/screenshots/12-four-channel-console.png)
+
+Open `2 자동화 준비 > 실장기 제어 · Binary` on the PC that owns the COM ports. The console
+supports printable ASCII, explicit Enter/Ctrl+C/Ctrl+V, per-character delay, keepalive Enter, and
+parallel execution of one `.seq` on up to four selected channels.
+
+Binary jobs import checksummed Seq Generator metadata and execute one channel at a time. The slave
+rechecks the SoC vendor, downloader allowlist, XML hash, COM port, USB download identity, Qualcomm
+physical switch or MediaTek preloader state, and optional post-download ADB serial.
+
+See the [Korean device-control guide](https://stpcoder.github.io/win-automation-picker/device-control/).
 
 ## Monitoring quick start
 
@@ -96,7 +114,7 @@ The FTP tools use a configured root directory as a shared spool when inbound por
 
 Connections are opened only for transfers. Poll jitter, screenshot rate limits, retention limits, stale-heartbeat classification, and agent reconnect backoff reduce server load and false status. The tool stays under its configured FTP root and does not touch unrelated folders.
 
-See the [FTP overview](https://stpcoder.github.io/win-automation-picker/rig-ftp/overview/) and [SEQ Generator / SK Commander workflow](https://stpcoder.github.io/win-automation-picker/rig-ftp/seq-integration/).
+See the [FTP overview](https://stpcoder.github.io/win-automation-picker/rig-ftp/overview/) and [SEQ Generator / fixture execution workflow](https://stpcoder.github.io/win-automation-picker/rig-ftp/seq-integration/).
 
 ## Install from source
 
@@ -128,13 +146,11 @@ mkdocs serve
 
 ```powershell
 RigCommander.exe init-config --output rig-config.json
-RigCommander.exe list --config rig-config.json
-RigCommander.exe run --config rig-config.json --target rig-pc-01 -- command args
-RigCommander.exe status --config rig-config.json --target rig-pc-01
-RigCommander.exe cancel --config rig-config.json --target rig-pc-01
+RigCommander.exe -c rig-config.json list
+RigCommander.exe -c rig-config.json run --target rig-pc-01:ch1 status
+RigCommander.exe -c rig-config.json device probe --target rig-pc-01:ch1
+RigCommander.exe device system-check
 ```
-
-With `--backend auto`, Windows/PowerShell hosts use PowerShell remoting and other hosts use SSH.
 
 ## CI and releases
 

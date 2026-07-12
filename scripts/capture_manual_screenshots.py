@@ -20,6 +20,8 @@ from types import SimpleNamespace
 from win_automation_picker.exporter import generate_python_script
 from win_automation_picker.ftp_app import RigFtpApp
 from win_automation_picker.ftp_spool import ChannelInfo, FtpSpoolConfig, PackageInfo, SlaveInfo
+from win_automation_picker.ftp_spool import DeviceToolInfo
+from win_automation_picker.binary_exchange import BinaryReleaseMetadata
 from win_automation_picker.project_file import AutomationProject
 from win_automation_picker.recipe import AutomationRecipe, AutomationStep
 from win_automation_picker.recording import RecordedAction
@@ -65,12 +67,29 @@ Task { @MainActor in
         config.height = Int(window.frame.height * 2)
         config.showsCursor = false
         config.ignoreShadowsSingleWindow = true
-        config.shouldBeOpaque = true
+        config.shouldBeOpaque = false
         config.captureResolution = .best
         let image = try await SCScreenshotManager.captureImage(
             contentFilter: filter,
             configuration: config
         )
+        guard let context = CGContext(
+            data: nil,
+            width: image.width,
+            height: image.height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            throw NSError(domain: "AEManualCapture", code: 4)
+        }
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        guard let opaqueImage = context.makeImage() else {
+            throw NSError(domain: "AEManualCapture", code: 5)
+        }
         let url = URL(fileURLWithPath: outputPath)
         try? FileManager.default.removeItem(at: url)
         guard let destination = CGImageDestinationCreateWithURL(
@@ -81,7 +100,7 @@ Task { @MainActor in
         ) else {
             throw NSError(domain: "AEManualCapture", code: 2)
         }
-        CGImageDestinationAddImage(destination, image, nil)
+        CGImageDestinationAddImage(destination, opaqueImage, nil)
         guard CGImageDestinationFinalize(destination) else {
             throw NSError(domain: "AEManualCapture", code: 3)
         }
@@ -235,8 +254,16 @@ def _demo_config() -> FtpSpoolConfig:
             channel_id=f"CH{number}",
             slot_id=f"S{number}",
             com_port=f"COM{number + 2}",
+            baud_rate=115200,
             soc_vendor="Qualcomm" if number < 11 else "MediaTek",
             soc_model="SM8850" if number < 11 else "MTK 25D",
+            firmware_tool_id="qc-downloader" if number < 11 else "mtk-downloader",
+            download_identity="VID_05C6&PID_9008" if number < 11 else "MediaTek PreLoader USB VCOM",
+            adb_serial=f"AE-CH{number}",
+            adb_required_after_update=True,
+            power_on_command=f"POWER ON {number}",
+            power_off_command=f"POWER OFF {number}",
+            preloader_exit_command="exit" if number >= 11 else "",
             binary_name="AE_2026W28",
             binary_version=f"R{number - 8}.2",
             binary_source_path=f"D:/Binary/{'SM8850' if number < 11 else 'MTK25D'}/AE_2026W28",
@@ -263,6 +290,27 @@ def _demo_config() -> FtpSpoolConfig:
         min_screenshot_interval_seconds=30,
         work_dir="agent-work",
         variables={"line": "Mobile-AE", "operator": "AE User"},
+        device_tools=(
+            DeviceToolInfo(
+                id="qc-downloader",
+                vendor="qualcomm",
+                executable="C:/Tools/Qualcomm/VendorDownload.exe",
+                execution_enabled=True,
+                cli_evidence_ref="vendor-cli/qc-sm8850.md",
+                success_markers=("Download OK",),
+                failure_markers=("FAIL", "ERROR"),
+            ),
+            DeviceToolInfo(
+                id="mtk-downloader",
+                vendor="mediatek",
+                executable="C:/Tools/MediaTek/VendorDownload.exe",
+                execution_enabled=True,
+                cli_evidence_ref="vendor-cli/mtk-25d.md",
+                allowed_modes=("download-only", "format-all-download"),
+                success_markers=("Download OK",),
+                failure_markers=("FAIL", "ERROR"),
+            ),
+        ),
         slaves=(
             SlaveInfo(
                 node_id="rig-pc-04",
@@ -387,17 +435,52 @@ def _capture(widget: object, path: Path) -> None:
     widget.update()
     time.sleep(0.25)
     widget.update()
-    dimensions = subprocess.check_output(
-        [
-            "swift",
-            "-e",
-            WINDOW_CAPTURE_SWIFT,
-            str(os.getpid()),
-            str(widget.title()),
-            str(path),
-        ],
-        text=True,
-    ).strip()
+    dimensions = ""
+    last_error: subprocess.CalledProcessError | None = None
+    capture_issue = ""
+    for _attempt in range(6):
+        try:
+            candidate_dimensions = subprocess.check_output(
+                [
+                    "swift",
+                    "-e",
+                    WINDOW_CAPTURE_SWIFT,
+                    str(os.getpid()),
+                    str(widget.title()),
+                    str(path),
+                ],
+                text=True,
+            ).strip()
+        except subprocess.CalledProcessError as exc:
+            last_error = exc
+            capture_issue = "ScreenCaptureKit command failed"
+        else:
+            parts = candidate_dimensions.split("|")
+            if len(parts) == 2 and path.is_file() and path.stat().st_size >= 10_000:
+                sampled = tk.PhotoImage(file=str(path))
+                sample_count = 0
+                black_count = 0
+                for y in range(0, sampled.height(), 36):
+                    for x in range(0, sampled.width(), 36):
+                        red, green, blue = sampled.get(x, y)[:3]
+                        sample_count += 1
+                        if max(red, green, blue) <= 3:
+                            black_count += 1
+                black_ratio = black_count / max(1, sample_count)
+                if black_ratio < 0.08:
+                    dimensions = candidate_dimensions
+                    break
+                capture_issue = f"invalid black-frame ratio {black_ratio:.1%}"
+            else:
+                capture_issue = "invalid image or dimensions"
+        time.sleep(0.45)
+        widget.update_idletasks()
+        widget.lift()
+        widget.update()
+    if not dimensions:
+        raise RuntimeError(
+            f"ScreenCaptureKit failed for {widget.title()}: {capture_issue}"
+        ) from last_error
     parts = dimensions.split("|")
     if len(parts) != 2:
         raise RuntimeError(f"Could not capture the macOS window: {widget.title()}")
@@ -430,6 +513,9 @@ def _demo_packages(paths: dict[str, Path]) -> list[PackageInfo]:
     variables = {
         "channel": "",
         "slot_id": "",
+        "sequence_backend": "serial",
+        "com_port": "",
+        "baud_rate": "115200",
         "sequence_name": "RH_4C_SM8850_V04",
         "dram_part": "K3KL9L90CM",
         "launcher_package": "sk-launcher.py",
@@ -466,6 +552,9 @@ def _run_profiles(package_name: str) -> list[dict[str, object]]:
                 "variables": {
                     "channel": f"CH{number}",
                     "slot_id": f"S{number}",
+                    "sequence_backend": "serial",
+                    "com_port": f"COM{number + 2}",
+                    "baud_rate": "115200",
                     "sequence_name": "RH_4C_SM8850_V04",
                     "dram_part": "K3KL9L90CM",
                     "launcher_package": "sk-launcher.py",
@@ -693,10 +782,17 @@ def _exercise_minimum_layout(app: object) -> None:
     _assert_visible_controls_inside(app, "Monitoring")
     app._show_preparation()
     _assert_visible_controls_inside(app, "Preparation")
+    app.preparation_workspace.select(1)
+    app.device_workspace_notebook.select(0)
+    _assert_visible_controls_inside(app, "Serial console")
+    app.device_workspace_notebook.select(1)
+    _assert_visible_controls_inside(app, "Binary update")
     app._show_rig_setup()
     app.rig_setup_notebook.select(0)
     app.settings_workspace.select(1)
     _assert_visible_controls_inside(app, "Rig inventory")
+    app.settings_workspace.select(2)
+    _assert_visible_controls_inside(app, "Device tools")
     app.rig_setup_notebook.select(1)
     _assert_visible_controls_inside(app, "Agent")
 
@@ -802,6 +898,33 @@ def capture(output_dir: Path) -> None:
             app.update()
             _capture(app, output_dir / "03-automation-preparation.png")
 
+            app.preparation_workspace.select(1)
+            app.device_workspace_notebook.select(0)
+            app.update()
+            _capture(app, output_dir / "12-four-channel-console.png")
+
+            app.device_workspace_notebook.select(1)
+            app.device_binary_target_var.set("PC04")
+            app._refresh_device_binary_channels()
+            app.device_binary_channel_var.set("CH11")
+            app._device_binary_metadata = BinaryReleaseMetadata(
+                release_id="mtk25d-r4",
+                soc_vendor="mediatek",
+                soc_model="MTK 25D",
+                version="AE_2026W28_R4.2",
+                source_folder="D:/Binary/MTK25D/AE_2026W28",
+                xml_path="D:/Binary/MTK25D/AE_2026W28/download.xml",
+                relative_xml_path="MTK25D/AE_2026W28/download.xml",
+                xml_sha256="b" * 64,
+                latest_modified_at="2026-07-12T08:30:00+00:00",
+            )
+            app.device_binary_metadata_path_var.set("MTK25D_R4.rigbinary.json")
+            app.device_binary_xml_var.set("D:/Binary/MTK25D/AE_2026W28/download.xml")
+            app.device_mtk_preloader_var.set(True)
+            app._render_device_binary_profile()
+            app.update()
+            _capture(app, output_dir / "13-binary-update.png")
+
             app._set_status_rows(_status_rows())
             app._set_result_rows(
                 [
@@ -846,6 +969,10 @@ def capture(output_dir: Path) -> None:
             app.settings_workspace.select(0)
             app.update()
             _capture(app, output_dir / "10-master-connection.png")
+
+            app.settings_workspace.select(2)
+            app.update()
+            _capture(app, output_dir / "14-device-tools.png")
 
             app.rig_setup_notebook.select(1)
             app.update()

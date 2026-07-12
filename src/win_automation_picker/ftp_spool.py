@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from ftplib import FTP, FTP_TLS, error_perm
@@ -13,16 +14,18 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from contextlib import redirect_stderr, redirect_stdout
-from typing import Any, Iterable, Protocol, Sequence
+from typing import Any, Callable, Iterable, Protocol, Sequence
 
 from . import rig_cli
 from .exporter import parse_exported_workflow
 from .recipe import ConditionResult, DataSet, monitor_only_recipe, run_recipe
-from .rig import RigConfigError, RigExecutionError, powershell_argv
-from .sequence_bundle import RigSequenceBundleError, parse_rig_sequence_bundle
+from .rig import RigConfigError, RigExecutionError, SerialPortConfig, powershell_argv
+from .sequence_bundle import RigSequenceBundle, RigSequenceBundleError, parse_rig_sequence_bundle
+from .serial_console import SerialConsoleSession, parse_serial_sequence
 
 
 SPOOL_DIRS = (
@@ -51,8 +54,20 @@ class ChannelInfo:
     name: str = ""
     slot_id: str = ""
     com_port: str = ""
+    baud_rate: int = 115200
+    firmware_port: str = ""
     soc_vendor: str = ""
     soc_model: str = ""
+    firmware_tool_id: str = ""
+    download_identity: str = ""
+    adb_executable: str = "adb.exe"
+    adb_serial: str = ""
+    adb_enabled: bool = False
+    adb_required_after_update: bool = False
+    power_on_command: str = ""
+    power_off_command: str = ""
+    status_command: str = ""
+    preloader_exit_command: str = ""
     binary_name: str = ""
     binary_version: str = ""
     binary_source_path: str = ""
@@ -81,8 +96,20 @@ class ChannelInfo:
             name=str(data.get("name") or data.get("alias") or "").strip(),
             slot_id=str(data.get("slot_id") or data.get("slot") or "").strip(),
             com_port=str(data.get("com_port") or data.get("com") or "").strip(),
+            baud_rate=max(1, int(data.get("baud_rate") or data.get("baud") or 115200)),
+            firmware_port=str(data.get("firmware_port") or "").strip(),
             soc_vendor=str(data.get("soc_vendor") or data.get("vendor") or "").strip(),
             soc_model=str(data.get("soc_model") or data.get("soc") or "").strip(),
+            firmware_tool_id=str(data.get("firmware_tool_id") or data.get("tool_id") or "").strip(),
+            download_identity=str(data.get("download_identity") or "").strip(),
+            adb_executable=str(data.get("adb_executable") or "adb.exe").strip(),
+            adb_serial=str(data.get("adb_serial") or "").strip(),
+            adb_enabled=bool(data.get("adb_enabled", bool(data.get("adb_serial")))),
+            adb_required_after_update=bool(data.get("adb_required_after_update", False)),
+            power_on_command=str(data.get("power_on_command") or "").strip(),
+            power_off_command=str(data.get("power_off_command") or "").strip(),
+            status_command=str(data.get("status_command") or "").strip(),
+            preloader_exit_command=str(data.get("preloader_exit_command") or "").strip(),
             binary_name=str(data.get("binary_name") or "").strip(),
             binary_version=str(data.get("binary_version") or "").strip(),
             binary_source_path=str(data.get("binary_source_path") or "").strip(),
@@ -120,8 +147,20 @@ class ChannelInfo:
             "name": self.name,
             "slot_id": self.slot_id,
             "com_port": self.com_port,
+            "baud_rate": self.baud_rate,
+            "firmware_port": self.firmware_port,
             "soc_vendor": self.soc_vendor,
             "soc_model": self.soc_model,
+            "firmware_tool_id": self.firmware_tool_id,
+            "download_identity": self.download_identity,
+            "adb_executable": self.adb_executable,
+            "adb_serial": self.adb_serial,
+            "adb_enabled": self.adb_enabled,
+            "adb_required_after_update": self.adb_required_after_update,
+            "power_on_command": self.power_on_command,
+            "power_off_command": self.power_off_command,
+            "status_command": self.status_command,
+            "preloader_exit_command": self.preloader_exit_command,
             "binary_name": self.binary_name,
             "binary_version": self.binary_version,
             "binary_source_path": self.binary_source_path,
@@ -142,6 +181,73 @@ class ChannelInfo:
             "total_grids": self.total_grids,
             "notes": self.notes,
             "updated_at": self.updated_at,
+        }
+
+
+@dataclass(frozen=True)
+class DeviceToolInfo:
+    id: str
+    vendor: str
+    executable: str
+    arguments: tuple[str, ...] = ("--xml", "{xml}", "--port", "{port}", "--mode", "{mode}")
+    working_dir: str = ""
+    execution_enabled: bool = False
+    cli_evidence_ref: str = ""
+    allowed_modes: tuple[str, ...] = ("download-only",)
+    mode_values: dict[str, str] = field(default_factory=dict)
+    timeout_seconds: float = 1800.0
+    success_exit_codes: tuple[int, ...] = (0,)
+    success_markers: tuple[str, ...] = ()
+    failure_markers: tuple[str, ...] = ()
+
+    @classmethod
+    def from_mapping(cls, data: dict[str, Any]) -> "DeviceToolInfo":
+        tool_id = str(data.get("id") or "").strip()
+        vendor = str(data.get("vendor") or data.get("soc_vendor") or "").strip().casefold()
+        vendor = {"qc": "qualcomm", "qcom": "qualcomm", "mtk": "mediatek"}.get(vendor, vendor)
+        executable = str(data.get("executable") or "").strip()
+        arguments = data.get("arguments") or ["--xml", "{xml}", "--port", "{port}", "--mode", "{mode}"]
+        allowed_modes = data.get("allowed_modes") or ["download-only"]
+        mode_values = data.get("mode_values") or {}
+        if not tool_id or vendor not in {"qualcomm", "mediatek"} or not executable:
+            raise FtpSpoolError("Device tool requires id, Qualcomm/MediaTek vendor, and executable path.")
+        if not isinstance(arguments, list) or not isinstance(allowed_modes, list) or not isinstance(mode_values, dict):
+            raise FtpSpoolError("Device tool arguments/allowed_modes/mode_values have invalid types.")
+        return cls(
+            id=tool_id,
+            vendor=vendor,
+            executable=executable,
+            arguments=tuple(str(item) for item in arguments),
+            working_dir=str(data.get("working_dir") or "").strip(),
+            execution_enabled=bool(data.get("execution_enabled", False)),
+            cli_evidence_ref=str(data.get("cli_evidence_ref") or "").strip(),
+            allowed_modes=tuple(str(item) for item in allowed_modes),
+            mode_values={
+                str(key): str(value)
+                for key, value in mode_values.items()
+                if str(value).strip()
+            },
+            timeout_seconds=max(1.0, float(data.get("timeout_seconds") or 1800.0)),
+            success_exit_codes=tuple(int(item) for item in data.get("success_exit_codes", [0])),
+            success_markers=tuple(str(item) for item in data.get("success_markers", [])),
+            failure_markers=tuple(str(item) for item in data.get("failure_markers", [])),
+        )
+
+    def to_mapping(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "vendor": self.vendor,
+            "executable": self.executable,
+            "arguments": list(self.arguments),
+            "working_dir": self.working_dir,
+            "execution_enabled": self.execution_enabled,
+            "cli_evidence_ref": self.cli_evidence_ref,
+            "allowed_modes": list(self.allowed_modes),
+            "mode_values": dict(self.mode_values),
+            "timeout_seconds": self.timeout_seconds,
+            "success_exit_codes": list(self.success_exit_codes),
+            "success_markers": list(self.success_markers),
+            "failure_markers": list(self.failure_markers),
         }
 
 
@@ -252,6 +358,7 @@ class FtpSpoolConfig:
     max_archive_files: int = 500
     max_screenshot_files: int = 20
     variables: dict[str, str] = field(default_factory=dict)
+    device_tools: tuple[DeviceToolInfo, ...] = ()
     slaves: tuple[SlaveInfo, ...] = ()
     run_profiles: tuple[RunProfile, ...] = ()
 
@@ -268,6 +375,20 @@ class FtpSpoolConfig:
         profiles_data = data.get("run_profiles") or []
         if not isinstance(profiles_data, list):
             raise FtpSpoolError("Config field 'run_profiles' must be a list.")
+        device_tools_data = data.get("device_tools") or []
+        if not isinstance(device_tools_data, list):
+            raise FtpSpoolError("Config field 'device_tools' must be a list.")
+        parsed_device_tools = tuple(
+            DeviceToolInfo.from_mapping(item)
+            for item in device_tools_data
+            if isinstance(item, dict)
+        )
+        device_tool_ids = [tool.id.casefold() for tool in parsed_device_tools]
+        duplicates = sorted(
+            {tool_id for tool_id in device_tool_ids if device_tool_ids.count(tool_id) > 1}
+        )
+        if duplicates:
+            raise FtpSpoolError(f"Duplicate device tool ids: {', '.join(duplicates)}")
         password_env = str(ftp_data.get("password_env", "") or "")
         password = str(ftp_data.get("password", "") or "")
         if password_env:
@@ -310,6 +431,7 @@ class FtpSpoolConfig:
                 runtime_data.get("max_screenshot_files", data.get("max_screenshot_files", 20)) or 20
             ),
             variables={str(key): str(value) for key, value in variables.items()},
+            device_tools=parsed_device_tools,
             slaves=tuple(SlaveInfo.from_mapping(item) for item in slaves_data if isinstance(item, dict)),
             run_profiles=tuple(RunProfile.from_mapping(item) for item in profiles_data if isinstance(item, dict)),
         )
@@ -354,6 +476,7 @@ class FtpSpoolConfig:
                 "max_screenshot_files": self.max_screenshot_files,
             },
             "variables": dict(self.variables),
+            "device_tools": [tool.to_mapping() for tool in self.device_tools],
             "slaves": [slave.to_mapping() for slave in self.slaves],
             "run_profiles": [profile.to_mapping() for profile in self.run_profiles],
         }
@@ -371,6 +494,25 @@ def example_spool_config() -> dict[str, Any]:
             "line": "line-a",
             "channel": "ch1",
         },
+        device_tools=(
+            DeviceToolInfo(
+                id="qc-downloader",
+                vendor="qualcomm",
+                executable="C:\\Tools\\Qualcomm\\VendorDownload.exe",
+                cli_evidence_ref="docs/vendor-cli/qc-downloader.md",
+                success_markers=("Download OK",),
+                failure_markers=("FAIL", "ERROR"),
+            ),
+            DeviceToolInfo(
+                id="mtk-downloader",
+                vendor="mediatek",
+                executable="C:\\Tools\\MediaTek\\VendorDownload.exe",
+                cli_evidence_ref="docs/vendor-cli/mtk-downloader.md",
+                allowed_modes=("download-only", "format-all-download"),
+                success_markers=("Download OK",),
+                failure_markers=("FAIL", "ERROR"),
+            ),
+        ),
         slaves=(
             SlaveInfo(
                 node_id="rig-pc-04",
@@ -383,8 +525,16 @@ def example_spool_config() -> dict[str, Any]:
                     ChannelInfo(
                         channel_id="CH4",
                         slot_id="A4",
+                        com_port="COM4",
+                        baud_rate=115200,
                         soc_vendor="qualcomm",
                         soc_model="SM8850",
+                        firmware_tool_id="qc-downloader",
+                        download_identity="VID_05C6&PID_9008",
+                        adb_serial="QC-CH4",
+                        adb_enabled=True,
+                        power_on_command="POWER ON",
+                        power_off_command="POWER OFF",
                         state="idle",
                     ),
                 ),
@@ -399,6 +549,73 @@ def write_example_spool_config(path: str | Path, *, force: bool = False) -> Path
         raise FtpSpoolError(f"Config already exists: {output}")
     output.write_text(json.dumps(example_spool_config(), indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
     return output
+
+
+def build_slave_rig_config(
+    slave: SlaveInfo,
+    device_tools: Sequence[DeviceToolInfo],
+) -> dict[str, Any]:
+    tool_ids = {tool.id for tool in device_tools}
+    ports: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for channel in slave.channels:
+        if not channel.com_port:
+            continue
+        channel_id = channel.label()
+        if not channel_id:
+            continue
+        folded = channel_id.casefold()
+        if folded in seen_ids:
+            raise FtpSpoolError(f"Slave {slave.node_id} has duplicate channel id {channel_id!r}.")
+        seen_ids.add(folded)
+        if channel.firmware_tool_id and channel.firmware_tool_id not in tool_ids:
+            raise FtpSpoolError(
+                f"{slave.label()} / {channel_id} references unknown device tool "
+                f"{channel.firmware_tool_id!r}."
+            )
+        commands = {
+            key: value
+            for key, value in {
+                "power_on": channel.power_on_command,
+                "power_off": channel.power_off_command,
+                "status": channel.status_command,
+                "preloader_exit": channel.preloader_exit_command,
+            }.items()
+            if value
+        }
+        ports.append(
+            {
+                "id": channel_id,
+                "port": channel.com_port,
+                "baud": channel.baud_rate,
+                "newline": "\\r\\n",
+                "firmware_port": channel.firmware_port or channel.com_port,
+                "soc_vendor": channel.soc_vendor,
+                "soc_model": channel.soc_model,
+                "firmware_tool_id": channel.firmware_tool_id,
+                "download_identity": channel.download_identity,
+                "adb": {
+                    "enabled": bool(channel.adb_enabled or channel.adb_required_after_update),
+                    "executable": channel.adb_executable or "adb.exe",
+                    "serial": channel.adb_serial,
+                    "required_after_update": channel.adb_required_after_update,
+                },
+                "commands": commands,
+            }
+        )
+    return {
+        "default_timeout_seconds": 30,
+        "hosts": [
+            {
+                "id": slave.node_id,
+                "address": "localhost",
+                "transport": "local",
+                "tags": [slave.alias] if slave.alias else [],
+                "firmware_tools": [tool.to_mapping() for tool in device_tools],
+                "ports": ports,
+            }
+        ],
+    }
 
 
 class SpoolBackend(Protocol):
@@ -740,6 +957,7 @@ def deploy_package(
         sequence_variables = {
             "channel": "",
             "slot_id": "",
+            "sequence_backend": "serial",
             "launcher_package": "",
             "campaign_attempt": "1",
         }
@@ -1058,6 +1276,17 @@ def execute_job(
                 started_at=started,
                 max_output_chars=config.max_output_chars,
             )
+        if job.kind == "sequence_batch":
+            return _execute_sequence_batch(
+                backend,
+                config,
+                job,
+                variables,
+                timeout=timeout,
+                node_id=node_id,
+                started_at=started,
+                max_output_chars=config.max_output_chars,
+            )
         if job.kind == "rig":
             return _limit_result(
                 _execute_rig(job, variables, node_id=node_id, started_at=started),
@@ -1226,7 +1455,45 @@ def _update_channel_status(
     details = result.details if isinstance(result.details, dict) else {}
     job_channel = str(details.get("channel_id") or job.variables.get("channel") or "").strip()
     job_slot = str(details.get("slot_id") or job.variables.get("slot_id") or "").strip()
-    if job.kind == "sequence":
+    if job.kind == "sequence_batch":
+        batch_channels = details.get("channels") or []
+        if isinstance(batch_channels, list):
+            for item in batch_channels:
+                if not isinstance(item, dict):
+                    continue
+                channel = upsert(
+                    str(item.get("channel_id") or "").strip(),
+                    str(item.get("slot_id") or "").strip(),
+                )
+                if channel is None:
+                    continue
+                _apply_nonempty_channel_values(
+                    channel,
+                    {
+                        "com_port": item.get("com_port", ""),
+                        "baud_rate": item.get("baud_rate", ""),
+                        "soc_vendor": item.get("soc_vendor", ""),
+                        "soc_model": item.get("soc_model", ""),
+                        "binary_name": item.get("binary_name", ""),
+                        "binary_version": item.get("binary_version", ""),
+                        "dram_part": item.get("dram_part", ""),
+                        "lot_id": item.get("lot_id", ""),
+                        "sample_id": item.get("sample_id", ""),
+                        "current_test": item.get("current_test", ""),
+                        "sequence_name": item.get("sequence_name", ""),
+                        "campaign_id": item.get("campaign_id", ""),
+                        "campaign_title": item.get("campaign_title", ""),
+                        "campaign_attempt": item.get("campaign_attempt", "1"),
+                        "failure_class": item.get("failure_class", ""),
+                        "acceptance_result": item.get("acceptance_result", ""),
+                    },
+                )
+                channel["state"] = str(item.get("state") or "error")
+                channel["current_grid"] = str(item.get("current_grid") or "")
+                channel["completed_grids"] = int(item.get("completed_grids") or 0)
+                channel["total_grids"] = int(item.get("total_grids") or 0)
+                channel["updated_at"] = str(item.get("updated_at") or result.finished_at)
+    elif job.kind == "sequence":
         channel = upsert(job_channel, job_slot)
         if channel is not None:
             _apply_nonempty_channel_values(
@@ -1256,7 +1523,13 @@ def _update_channel_status(
                     or ("pending" if result.ok else "fail"),
                 },
             )
-            channel["state"] = "running" if result.ok else "error"
+            channel["state"] = (
+                "pass"
+                if result.ok and details.get("sequence_backend") == "serial"
+                else "running"
+                if result.ok
+                else "error"
+            )
             channel["current_grid"] = ""
             channel["completed_grids"] = int(details.get("completed_grids") or 0)
             channel["total_grids"] = int(details.get("total_grids") or 0)
@@ -1338,6 +1611,49 @@ def _update_campaign_run_history(
                 "updated_at": result.finished_at,
             }
         )
+
+    if job.kind == "sequence_batch":
+        batch_channels = details.get("channels") or []
+        if isinstance(batch_channels, list):
+            for item in batch_channels:
+                if not isinstance(item, dict):
+                    continue
+                item_campaign = str(item.get("campaign_id") or "").strip()
+                if not item_campaign:
+                    continue
+                item_channel = str(item.get("channel_id") or "").strip()
+                item_slot = str(item.get("slot_id") or "").strip()
+                try:
+                    item_attempt = max(1, int(item.get("campaign_attempt") or 1))
+                except (TypeError, ValueError):
+                    item_attempt = 1
+                run = _find_campaign_run(
+                    runs,
+                    item_campaign,
+                    item_channel,
+                    item_slot,
+                    item_attempt,
+                )
+                if run is None:
+                    run = {}
+                    runs.append(run)
+                run.update(
+                    {
+                        "campaign_id": item_campaign,
+                        "campaign_title": str(item.get("campaign_title") or ""),
+                        "campaign_attempt": item_attempt,
+                        "channel_id": item_channel,
+                        "slot_id": item_slot,
+                        "state": str(item.get("state") or "error"),
+                        "acceptance_result": str(item.get("acceptance_result") or "fail"),
+                        "failure_class": str(item.get("failure_class") or ""),
+                        "sequence_name": str(item.get("sequence_name") or ""),
+                        "current_grid": str(item.get("current_grid") or ""),
+                        "completed_grids": int(item.get("completed_grids") or 0),
+                        "total_grids": int(item.get("total_grids") or 0),
+                        "updated_at": str(item.get("updated_at") or result.finished_at),
+                    }
+                )
 
     for channel in channels:
         channel_campaign = str(channel.get("campaign_id") or "").strip()
@@ -1814,6 +2130,7 @@ def _execute_sequence(
     node_id: str,
     started_at: str,
     max_output_chars: int,
+    serial_progress_callback: Callable[[str, str], None] | None = None,
 ) -> JobResult:
     package = str(job.payload.get("package", "") or "")
     if not package:
@@ -1827,6 +2144,27 @@ def _execute_sequence(
     launcher_value = str(job.payload.get("launcher_package", "") or "")
     launcher_value = launcher_value or variables.get("launcher_package", "")
     launcher_name = _safe_name(_render_placeholders(launcher_value, variables)) if launcher_value else ""
+    backend_mode = str(
+        job.payload.get("sequence_backend", "")
+        or variables.get("sequence_backend", "")
+        or ("sk_commander" if launcher_name else "serial" if variables.get("com_port") else "")
+    ).strip().casefold()
+    if backend_mode == "serial":
+        return _execute_serial_sequence_bundle(
+            backend,
+            config,
+            job,
+            bundle,
+            package_name=package_name,
+            variables=variables,
+            timeout=timeout,
+            node_id=node_id,
+            started_at=started_at,
+            max_output_chars=max_output_chars,
+            progress_callback=serial_progress_callback,
+        )
+    if backend_mode not in {"", "sk_commander"}:
+        raise FtpSpoolError(f"Unsupported sequence_backend: {backend_mode}")
     if not launcher_name:
         raise FtpSpoolError(
             "Sequence job requires launcher_package: select an exported SK Commander workflow."
@@ -1936,6 +2274,493 @@ def _execute_sequence(
         replace(result, stdout=stdout, details=details),
         max_output_chars=max_output_chars,
     )
+
+
+def _execute_sequence_batch(
+    backend: SpoolBackend,
+    config: FtpSpoolConfig,
+    job: SpoolJob,
+    variables: dict[str, str],
+    *,
+    timeout: float,
+    node_id: str,
+    started_at: str,
+    max_output_chars: int,
+) -> JobResult:
+    raw_runs = job.payload.get("runs")
+    if not isinstance(raw_runs, list) or not raw_runs:
+        raise FtpSpoolError("Direct serial batch requires one or more runs.")
+    if len(raw_runs) > 4:
+        raise FtpSpoolError("Direct serial batch supports at most four CH runs per Slave PC.")
+
+    prepared: list[dict[str, Any]] = []
+    ports: set[str] = set()
+    channel_keys: set[str] = set()
+    for index, raw_run in enumerate(raw_runs, start=1):
+        if not isinstance(raw_run, dict):
+            raise FtpSpoolError(f"Direct serial batch run {index} must be an object.")
+        package = str(raw_run.get("package") or "").strip()
+        if not package:
+            raise FtpSpoolError(f"Direct serial batch run {index} requires a package.")
+        raw_variables = raw_run.get("variables") or {}
+        if not isinstance(raw_variables, dict):
+            raise FtpSpoolError(f"Direct serial batch run {index} variables must be an object.")
+        run_variables = {**variables, **{str(key): str(value) for key, value in raw_variables.items()}}
+        mode = str(raw_run.get("sequence_backend") or run_variables.get("sequence_backend") or "serial")
+        if mode.strip().casefold() != "serial":
+            raise FtpSpoolError("A sequence batch may contain direct serial runs only.")
+        com_port = str(run_variables.get("com_port") or "").strip()
+        channel = str(run_variables.get("channel") or run_variables.get("slot_id") or f"CH{index}").strip()
+        if not com_port:
+            raise FtpSpoolError(f"{channel}: direct serial batch requires com_port.")
+        port_key = com_port.casefold()
+        channel_key = channel.casefold()
+        if port_key in ports:
+            raise FtpSpoolError(f"Direct serial batch cannot open the same COM twice: {com_port}")
+        if channel_key in channel_keys:
+            raise FtpSpoolError(f"Direct serial batch contains a duplicate CH: {channel}")
+        ports.add(port_key)
+        channel_keys.add(channel_key)
+
+        package_name = _safe_name(_render_placeholders(package, run_variables))
+        try:
+            bundle = parse_rig_sequence_bundle(backend.read_bytes(f"packages/{package_name}"))
+            sequence_text = bundle.sequence_bytes.decode("utf-8")
+            blocks = parse_serial_sequence(sequence_text)
+        except (RigSequenceBundleError, UnicodeDecodeError) as exc:
+            raise FtpSpoolError(f"{channel}: invalid direct serial SEQ package: {exc}") from exc
+        if not blocks:
+            raise FtpSpoolError(f"{channel}: direct serial SEQ has no commands.")
+        package_details = bundle.package_details()
+        child_id = _safe_name(f"{job.job_id}-{index}-{channel}")
+        prepared.append(
+            {
+                "channel": channel,
+                "com_port": com_port,
+                "package": package_name,
+                "variables": run_variables,
+                "bundle": bundle,
+                "child_id": child_id,
+                "initial": {
+                    "channel_id": channel,
+                    "slot_id": run_variables.get("slot_id", ""),
+                    "com_port": com_port,
+                    "baud_rate": int(run_variables.get("baud_rate") or run_variables.get("baud") or 115200),
+                    "state": "running",
+                    "sequence_name": bundle.recipe_name,
+                    "current_test": run_variables.get("test_name", "")
+                    or package_details.get("purpose", ""),
+                    "current_grid": "",
+                    "completed_grids": 0,
+                    "total_grids": len(blocks),
+                    "campaign_id": package_details.get("campaign_id", ""),
+                    "campaign_title": package_details.get("campaign_title", ""),
+                    "campaign_attempt": run_variables.get("campaign_attempt", "1"),
+                },
+            }
+        )
+
+    progress_lock = threading.Lock()
+    progress_rows = {item["channel"]: dict(item["initial"]) for item in prepared}
+    last_status_at = 0.0
+
+    def on_progress(channel: str, message: str) -> None:
+        nonlocal last_status_at
+        snapshot: list[dict[str, Any]] | None = None
+        with progress_lock:
+            row = progress_rows[channel]
+            row["current_step"] = message
+            if message.startswith("GRID "):
+                row["current_grid"] = message.removeprefix("GRID ").strip()
+            now = time.monotonic()
+            if message.startswith("GRID ") or now - last_status_at >= 1.5:
+                last_status_at = now
+                snapshot = [dict(progress_rows[item["channel"]]) for item in prepared]
+        if snapshot is not None:
+            try:
+                write_status(
+                    backend,
+                    node_id,
+                    state="running",
+                    message=f"Direct COM SEQ: {channel} | {message}",
+                    current_job=job.job_id,
+                    details={"channels": snapshot},
+                )
+            except Exception:
+                pass
+
+    def run_child(item: dict[str, Any]) -> JobResult:
+        child_job = SpoolJob(
+            job_id=item["child_id"],
+            kind="sequence",
+            payload={
+                "package": item["package"],
+                "sequence_backend": "serial",
+                "stop_job_id": job.job_id,
+                "defer_result_prune": True,
+            },
+            variables={str(key): str(value) for key, value in item["variables"].items()},
+            created_at=job.created_at,
+        )
+        try:
+            return _execute_sequence(
+                backend,
+                config,
+                child_job,
+                item["variables"],
+                timeout=timeout,
+                node_id=node_id,
+                started_at=started_at,
+                max_output_chars=max_output_chars,
+                serial_progress_callback=on_progress,
+            )
+        except Exception as exc:
+            return JobResult(
+                job_id=child_job.job_id,
+                node_id=node_id,
+                kind="sequence",
+                ok=False,
+                returncode=1,
+                started_at=started_at,
+                finished_at=_utc_now(),
+                stderr=str(exc),
+                details={
+                    "sequence_backend": "serial",
+                    "channel_id": item["channel"],
+                    "slot_id": item["variables"].get("slot_id", ""),
+                    "com_port": item["com_port"],
+                    "sequence_name": item["bundle"].recipe_name,
+                    "completed_grids": 0,
+                    "total_grids": int(item["initial"]["total_grids"]),
+                    "acceptance_result": "fail",
+                    "failure_class": "infrastructure",
+                },
+            )
+
+    with ThreadPoolExecutor(max_workers=len(prepared), thread_name_prefix="rig-serial") as executor:
+        child_results = list(executor.map(run_child, prepared))
+
+    channel_results: list[dict[str, Any]] = []
+    result_roots: dict[Path, set[str]] = {}
+    for item, result in zip(prepared, child_results, strict=True):
+        details = result.details if isinstance(result.details, dict) else {}
+        channel_row = {
+            **item["initial"],
+            "state": "pass" if result.ok else "stopped" if result.returncode == 130 else "error",
+            "ok": result.ok,
+            "returncode": result.returncode,
+            "completed_grids": int(details.get("completed_grids") or 0),
+            "total_grids": int(details.get("total_grids") or item["initial"]["total_grids"]),
+            "acceptance_result": details.get("acceptance_result")
+            or ("pass" if result.ok else "fail"),
+            "failure_class": details.get("failure_class") or _classify_failure(result),
+            "sequence_name": details.get("sequence_name") or item["bundle"].recipe_name,
+            "campaign_id": details.get("campaign_id") or item["initial"].get("campaign_id", ""),
+            "campaign_title": details.get("campaign_title")
+            or item["initial"].get("campaign_title", ""),
+            "campaign_attempt": details.get("campaign_attempt")
+            or item["initial"].get("campaign_attempt", "1"),
+            "soc_vendor": item["variables"].get("soc_vendor", ""),
+            "soc_model": item["variables"].get("soc_model", ""),
+            "binary_name": item["variables"].get("binary_name", ""),
+            "binary_version": item["variables"].get("binary_version", ""),
+            "dram_part": item["variables"].get("dram_part", ""),
+            "lot_id": item["variables"].get("lot_id", ""),
+            "sample_id": item["variables"].get("sample_id", ""),
+            "updated_at": result.finished_at,
+            "error": result.stderr[-1000:],
+            "result_dir": details.get("result_dir", ""),
+            "console_log": details.get("console_log", ""),
+        }
+        channel_results.append(channel_row)
+        result_dir_value = str(details.get("result_dir") or "")
+        if result_dir_value:
+            result_dir = Path(result_dir_value)
+            result_roots.setdefault(result_dir.parent, set()).add(result_dir.name)
+
+    for root, preserve in result_roots.items():
+        _prune_direct_serial_results(root, preserve=preserve, limit=config.max_log_files)
+
+    passed = sum(1 for result in child_results if result.ok)
+    stopped = any(result.returncode == 130 for result in child_results)
+    try:
+        write_status(
+            backend,
+            node_id,
+            state="running",
+            message=f"Direct COM SEQ complete: {passed}/{len(child_results)} PASS",
+            current_job=job.job_id,
+            details={"channels": channel_results},
+        )
+    except Exception:
+        pass
+    stdout = "\n".join(
+        f"[{item['channel']}] {result.stdout}" for item, result in zip(prepared, child_results, strict=True)
+    )
+    stderr = "\n".join(
+        f"[{item['channel']}] {result.stderr}"
+        for item, result in zip(prepared, child_results, strict=True)
+        if result.stderr
+    )
+    aggregate = JobResult(
+        job_id=job.job_id,
+        node_id=node_id,
+        kind=job.kind,
+        ok=passed == len(child_results),
+        returncode=0 if passed == len(child_results) else 130 if stopped else 1,
+        started_at=started_at,
+        finished_at=_utc_now(),
+        stdout=stdout,
+        stderr=stderr,
+        details={
+            "sequence_backend": "serial",
+            "batch_size": len(child_results),
+            "passed_channels": passed,
+            "channels": channel_results,
+            "completed_grids": sum(int(row["completed_grids"]) for row in channel_results),
+            "total_grids": sum(int(row["total_grids"]) for row in channel_results),
+        },
+    )
+    return _limit_result(aggregate, max_output_chars=max_output_chars)
+
+
+def _execute_serial_sequence_bundle(
+    backend: SpoolBackend,
+    config: FtpSpoolConfig,
+    job: SpoolJob,
+    bundle: RigSequenceBundle,
+    *,
+    package_name: str,
+    variables: dict[str, str],
+    timeout: float,
+    node_id: str,
+    started_at: str,
+    max_output_chars: int,
+    progress_callback: Callable[[str, str], None] | None = None,
+) -> JobResult:
+    channel = str(variables.get("channel") or variables.get("slot_id") or "serial").strip()
+    com_port = str(variables.get("com_port") or "").strip()
+    if not com_port:
+        raise FtpSpoolError("Direct serial SEQ requires the target CH com_port variable.")
+    try:
+        baud = int(variables.get("baud_rate") or variables.get("baud") or 115200)
+        command_timeout = float(variables.get("serial_command_timeout_seconds") or 30.0)
+        idle_seconds = float(variables.get("serial_idle_seconds") or 0.75)
+        character_delay_ms = int(variables.get("serial_character_delay_ms") or 0)
+    except ValueError as exc:
+        raise FtpSpoolError("Direct serial baud and timing values must be numeric.") from exc
+    try:
+        sequence_text = bundle.sequence_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise FtpSpoolError("Rig SEQ must be UTF-8 for direct serial execution.") from exc
+    blocks = parse_serial_sequence(sequence_text)
+    if not blocks:
+        raise FtpSpoolError("Rig SEQ has no serial commands.")
+
+    package_details = bundle.package_details()
+    campaign_id = str(package_details.get("campaign_id") or "")
+    repeat_count = max(1, int(package_details.get("repeat_count") or 1))
+    try:
+        campaign_attempt = int(variables.get("campaign_attempt") or 1)
+    except ValueError as exc:
+        raise FtpSpoolError("campaign_attempt must be an integer.") from exc
+    if campaign_attempt < 1 or campaign_attempt > repeat_count:
+        raise FtpSpoolError(
+            f"campaign_attempt must be between 1 and {repeat_count} for this package."
+        )
+
+    work_dir = Path(_render_placeholders(config.work_dir, variables))
+    result_root = work_dir / "serial-results"
+    result_dir = result_root / _safe_name(job.job_id)
+    result_dir.mkdir(parents=True, exist_ok=True)
+    log_path = result_dir / "console.log"
+    summary_path = result_dir / "manifest.json"
+    log_lock = threading.Lock()
+
+    def append_console(_channel: str, text: str) -> None:
+        with log_lock:
+            with log_path.open("a", encoding="utf-8", errors="replace") as handle:
+                handle.write(text)
+
+    def report_progress(message: str) -> None:
+        append_console(channel, f"\n[{message}]\n")
+        if progress_callback is not None:
+            progress_callback(channel, message)
+
+    port_config = SerialPortConfig.from_mapping(
+        {
+            "id": channel,
+            "port": com_port,
+            "baud": baud,
+            "newline": variables.get("serial_newline") or "\\r\\n",
+        }
+    )
+    stop_event = threading.Event()
+    watcher_stop = threading.Event()
+    started_monotonic = time.monotonic()
+
+    def watch_stop() -> None:
+        while not watcher_stop.wait(2.0):
+            if timeout > 0 and time.monotonic() - started_monotonic >= timeout:
+                stop_event.set()
+                return
+            try:
+                stop_job_id = str(job.payload.get("stop_job_id") or job.job_id)
+                if stop_requested(backend, node_id, job_id=stop_job_id):
+                    stop_event.set()
+                    return
+            except Exception:
+                continue
+
+    watcher = threading.Thread(target=watch_stop, name=f"serial-stop-{job.job_id}", daemon=True)
+    watcher.start()
+    session = SerialConsoleSession(port_config, output_callback=append_console)
+    error = ""
+    sequence_result = None
+    try:
+        session.connect()
+        sequence_result = session.run_sequence(
+            sequence_text,
+            stop_event=stop_event,
+            command_timeout_seconds=max(0.1, command_timeout),
+            idle_seconds=max(0.02, idle_seconds),
+            character_delay_ms=max(0, character_delay_ms),
+            progress_callback=report_progress,
+        )
+    except Exception as exc:
+        error = str(exc)
+    finally:
+        session.close()
+        watcher_stop.set()
+        watcher.join(timeout=1.5)
+
+    if sequence_result is None:
+        ok = False
+        stopped = stop_event.is_set()
+        completed_commands = 0
+        total_commands = sum(len(block.commands) for block in blocks)
+        command_rows: list[dict[str, Any]] = []
+    else:
+        ok = sequence_result.ok
+        stopped = sequence_result.stopped
+        completed_commands = sequence_result.completed_commands
+        total_commands = sequence_result.total_commands
+        command_rows = [
+            {
+                "block": command.block,
+                "command": command.command,
+                "ok": command.ok,
+                "timed_out": command.timed_out,
+                "response": command.response[-4000:],
+            }
+            for command in sequence_result.commands
+        ]
+        if not ok and not stopped and command_rows:
+            failed = next((row for row in reversed(command_rows) if not row["ok"]), command_rows[-1])
+            error = f"Serial command failed: {failed['block']} / {failed['command']}"
+
+    completed_grids = 0
+    for block in blocks:
+        block_rows = [row for row in command_rows if row["block"] == block.name]
+        if len(block_rows) == len(block.commands) and all(bool(row["ok"]) for row in block_rows):
+            completed_grids += 1
+    acceptance_result = "pass" if ok else "stopped" if stopped else "fail"
+    failure_class = "" if ok else "stopped" if stopped else "test"
+    manifest = {
+        "schema": "rig-direct-serial-result/v1",
+        "job_id": job.job_id,
+        "node_id": node_id,
+        "channel_id": channel,
+        "slot_id": variables.get("slot_id", ""),
+        "com_port": com_port,
+        "baud_rate": baud,
+        "sequence_name": bundle.recipe_name,
+        "sequence_bundle_id": bundle.bundle_id,
+        "package": package_name,
+        "ok": ok,
+        "stopped": stopped,
+        "completed_commands": completed_commands,
+        "total_commands": total_commands,
+        "completed_grids": completed_grids,
+        "total_grids": len(blocks),
+        "campaign_id": campaign_id,
+        "campaign_attempt": campaign_attempt,
+        "started_at": started_at,
+        "finished_at": _utc_now(),
+        "error": error,
+        "commands": command_rows,
+    }
+    summary_path.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=True) + "\n",
+        encoding="utf-8",
+    )
+    if not bool(job.payload.get("defer_result_prune", False)):
+        _prune_direct_serial_results(result_root, preserve=result_dir.name, limit=config.max_log_files)
+    details = {
+        "sequence_backend": "serial",
+        "channel_id": channel,
+        "slot_id": variables.get("slot_id", ""),
+        "com_port": com_port,
+        "baud_rate": baud,
+        "sequence_name": bundle.recipe_name,
+        "sequence_bundle_id": bundle.bundle_id,
+        "current_test": variables.get("test_name", "") or package_details.get("purpose", ""),
+        "completed_grids": completed_grids,
+        "total_grids": len(blocks),
+        "campaign_id": campaign_id,
+        "campaign_title": str(package_details.get("campaign_title") or ""),
+        "campaign_attempt": campaign_attempt,
+        "campaign_repeat_count": repeat_count,
+        "acceptance_result": acceptance_result,
+        "failure_class": failure_class,
+        "result_dir": str(result_dir.resolve()),
+        "console_log": str(log_path.resolve()),
+    }
+    stdout = (
+        f"Direct serial SEQ {bundle.recipe_name!r} on {channel} "
+        f"({com_port} @ {baud}): {completed_commands}/{total_commands} commands, "
+        f"{completed_grids}/{len(blocks)} grids.\nResult: {result_dir.resolve()}"
+    )
+    result = JobResult(
+        job_id=job.job_id,
+        node_id=node_id,
+        kind=job.kind,
+        ok=ok,
+        returncode=0 if ok else 130 if stopped else 1,
+        started_at=started_at,
+        finished_at=_utc_now(),
+        stdout=stdout,
+        stderr=error,
+        details=details,
+    )
+    return _limit_result(result, max_output_chars=max_output_chars)
+
+
+def _prune_direct_serial_results(
+    root: Path,
+    *,
+    preserve: str | Iterable[str],
+    limit: int,
+) -> None:
+    if not root.is_dir():
+        return
+    preserve_names = {preserve} if isinstance(preserve, str) else set(preserve)
+    candidates: list[Path] = []
+    for path in root.iterdir():
+        if path.name in preserve_names or not path.is_dir() or path.is_symlink():
+            continue
+        entries = list(path.iterdir())
+        if not entries or any(not member.is_file() or member.is_symlink() for member in entries):
+            continue
+        members = {member.name for member in entries}
+        if members <= {"console.log", "manifest.json"} and "manifest.json" in members:
+            candidates.append(path)
+    candidates.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    keep_existing = max(0, int(limit) - len(preserve_names))
+    for directory in candidates[keep_existing:]:
+        for member in directory.iterdir():
+            member.unlink()
+        directory.rmdir()
 
 
 def _prune_staged_sequence_dirs(

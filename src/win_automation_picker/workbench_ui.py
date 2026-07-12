@@ -38,6 +38,9 @@ WORKBENCH_FILE = "ae-workbench.aework.json"
 
 class AEWorkbenchMixin:
     def _close_workbench_app(self) -> None:
+        disconnect_devices = getattr(self, "_disconnect_device_channels", None)
+        if callable(disconnect_devices):
+            disconnect_devices()
         if self._macro_editor is not None:
             try:
                 if self._macro_editor.winfo_exists():

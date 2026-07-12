@@ -15,6 +15,7 @@
 | 버튼/메뉴 | 설명 |
 | --- | --- |
 | `자동화 새로고침` | 서버의 FLOW와 SEQ 라이브러리 다시 읽기 |
+| `SEQ 방식` | 선택 행 또는 전체 실행표를 `직접 COM`/`SK Commander`로 전환 |
 | `Rig 대상 불러오기` | 설정한 PC/CH를 실행표 행으로 생성 |
 | `행 편집` | 대상 추가, 행 복제, 선택 행 삭제 |
 | `실행 시작` | 체크된 각 PC/CH 행을 별도 job으로 제출 |
@@ -41,6 +42,22 @@
 | `준비 상태 확인` | recipe/package와 source/FLOW hash gate 확인 |
 | `서버 라이브러리 등록` | 검증된 FLOW와 SEQ 등록; 실행은 시작하지 않음 |
 | `오늘 작업 열기` | 일일 실행 화면으로 이동 |
+
+### 실장기 제어 · Binary
+
+| 버튼 | 동작 |
+| --- | --- |
+| `선택 연결` | 이 Slave PC의 선택 COM을 지속 연결 |
+| `COM 검색` | 이 PC가 감지한 COM, description과 HWID 표시 |
+| `전송` | 선택 CH에 출력 가능한 ASCII와 Enter 전송 |
+| `제어 키` | Enter, Ctrl+C/0x03, Ctrl+V/0x16 또는 검증된 ASCII 붙여넣기 |
+| `동시 실행` | 선택한 최대 4개 CH에서 `.seq`를 병렬 실행 |
+| `정지` | 직접 SEQ의 다음 command 전송 중단 |
+| `PC 환경` | 원격 Windows/PowerShell/pyserial 점검 요청 |
+| `통신 점검` | 원격 COM/ADB 상태 점검 요청 |
+| `전원` | CH별 ON/OFF/cycle 명령 요청 |
+| `원격 사전점검` | Tool/XML hash/USB identity/Vendor gate 검사 |
+| `Binary 업데이트 시작` | 사전점검을 다시 수행한 뒤 한 CH Downloader 실행 |
 
 ## Scratch 상단과 녹화
 
@@ -73,6 +90,11 @@
 | `Rig 버튼으로 등록` | 현재 source를 프로그램 매크로 목록에 등록 |
 
 ## Rig 설정
+
+| 버튼 | 동작 |
+| --- | --- |
+| `장치 도구 > 도구 추가` | MTK/QC 외부 Downloader CLI와 결과 규칙 등록 |
+| `Slave 설정 내보내기` | PC별 FTP 및 장치 설정 파일 두 개 생성 |
 
 | 위치 | 버튼/메뉴 | 설명 |
 | --- | --- | --- |

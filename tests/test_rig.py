@@ -1,8 +1,11 @@
 import base64
+import hashlib
 import json
 
 from win_automation_picker.rig import (
     RigConfig,
+    build_device_preflight_report,
+    build_device_probe_script,
     build_firmware_flash_script,
     build_remote_script,
     build_serial_command_script,
@@ -141,3 +144,93 @@ def test_build_firmware_flash_script_invokes_configured_tool() -> None:
     assert "'C:\\fw\\firmware.xml'" in script
     assert "'download_only'" in script
     assert "'COM3'" in script
+
+
+def _safe_device_target(tmp_path, *, vendor: str = "qualcomm"):
+    tool = tmp_path / "downloader.exe"
+    tool.write_bytes(b"tool")
+    image = tmp_path / "image.bin"
+    image.write_bytes(b"image")
+    xml = tmp_path / "firmware.xml"
+    xml.write_text('<firmware><program filename="image.bin" /></firmware>', encoding="utf-8")
+    config = RigConfig.from_mapping(
+        {
+            "hosts": [
+                {
+                    "id": "PC04",
+                    "address": "localhost",
+                    "transport": "local",
+                    "firmware_tools": [
+                        {
+                            "id": f"{vendor}-tool",
+                            "vendor": vendor,
+                            "executable": str(tool),
+                            "execution_enabled": True,
+                            "cli_evidence_ref": "verified-cli.md",
+                            "allowed_modes": ["download-only", "format-all-download"],
+                            "success_markers": ["PASS"],
+                            "failure_markers": ["FAIL"],
+                        }
+                    ],
+                    "ports": [
+                        {
+                            "id": "CH1",
+                            "port": "COM7",
+                            "baud": 921600,
+                            "soc_vendor": vendor,
+                            "soc_model": "SM8850" if vendor == "qualcomm" else "MTK25D",
+                            "firmware_tool_id": f"{vendor}-tool",
+                            "download_identity": "VID_05C6&PID_9008",
+                            "adb": {
+                                "enabled": True,
+                                "serial": "DEVICE-CH1",
+                                "required_after_update": True,
+                            },
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+    return select_serial_targets(config, ["PC04:CH1"])[0], xml
+
+
+def test_device_preflight_enforces_vendor_gate_hash_and_exact_format_token(tmp_path) -> None:
+    target, xml = _safe_device_target(tmp_path)
+    sha256 = hashlib.sha256(xml.read_bytes()).hexdigest()
+
+    blocked = build_device_preflight_report(
+        target,
+        xml_path=str(xml),
+        mode="format-all-download",
+        expected_xml_sha256=sha256,
+        physical_switch_confirmed=False,
+    )
+    ready = build_device_preflight_report(
+        target,
+        xml_path=str(xml),
+        mode="format-all-download",
+        expected_xml_sha256=sha256,
+        physical_switch_confirmed=True,
+        format_confirmation="FORMAT PC04:CH1",
+    )
+
+    assert not blocked.ready
+    assert {check.id for check in blocked.checks if not check.ok} >= {
+        "qc_physical_switch",
+        "format_confirmation",
+    }
+    assert ready.ready
+
+
+def test_device_probe_script_pins_com_usb_identity_and_adb_serial(tmp_path) -> None:
+    target, xml = _safe_device_target(tmp_path)
+
+    download_script = build_device_probe_script(target, phase="download", xml_path=str(xml))
+    post_script = build_device_probe_script(target, phase="post")
+
+    assert "COM7" in download_script
+    assert "VID_05C6&PID_9008" in download_script
+    assert "Get-CimInstance Win32_PnPEntity" in download_script
+    assert "DEVICE-CH1" in post_script
+    assert "-s $adbSerial get-state" in post_script

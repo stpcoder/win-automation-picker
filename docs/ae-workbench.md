@@ -10,6 +10,10 @@
 
 전체 일일 절차는 [Mobile DRAM AE 업무 흐름](daily-workflow.md)을 먼저 확인합니다.
 
+`2 자동화 준비`는 `SEQ · 매크로`와 `실장기 제어 · Binary`로 나뉩니다. COM에 직접
+연결해 네 장치를 동시에 보거나 MTK/QC binary를 준비할 때는
+[실장기 직접 제어와 Binary](device-control.md)를 사용합니다.
+
 ## 자동화 세트
 
 ![SEQ와 Scratch를 준비하는 자동화 준비 화면](assets/screenshots/03-automation-preparation.png)
@@ -37,7 +41,7 @@
 
 검사 범위에는 한 줄 command, `;` 뒤 공백, Grid 중복, boot stage의 `exit`, clock,
 diagnostic, log, reboot와 4-corner 누락이 포함됩니다. 자세한 내용은
-[SEQ Generator와 SK Commander](rig-ftp/seq-integration.md)를 확인합니다.
+[SEQ Generator와 실장기 실행](rig-ftp/seq-integration.md)을 확인합니다.
 
 ## 프로그램 매크로 준비
 
@@ -87,8 +91,9 @@ Scratch source가 export 이후 바뀌면 SHA-256이 달라져 서버 등록 버
 
 ![일일 실행에 필요한 선택과 실행표](assets/screenshots/01-today-work.png)
 
-자동화 라이브러리에서 항목을 선택하고 `Rig 대상 불러오기`로 실행표를 만듭니다.
-셀을 더블클릭하면 PC/CH별 변수, SEQ, launcher와 attempt를 바꿀 수 있습니다.
+자동화 라이브러리에서 항목을 선택하고 `직접 COM` 또는 `SK Commander` 방식을 고른 뒤
+`Rig 대상 불러오기`로 실행표를 만듭니다. 셀을 더블클릭하면 PC/CH별 변수, SEQ 방식,
+COM/baud, launcher와 attempt를 바꿀 수 있습니다.
 `실행 시작` 전까지 원격 job은 생성되지 않습니다.
 
 `운영 도구 열기`에는 raw 파일 등록과 단일 PC 고급 실행만 있습니다. 일반적인 일괄
@@ -97,6 +102,7 @@ Scratch source가 export 이후 바뀌면 SHA-256이 달라져 서버 등록 버
 ## 안전 경계
 
 - 정적 검사는 실제 SK Commander prompt timing을 보장하지 않습니다.
+- 직접 COM 엔진도 새 SoC/SEQ의 현장 command 의미와 timing을 자동 보증하지 않습니다.
 - 로컬 `시험`은 현재 Windows desktop에서 실제 클릭과 입력을 수행합니다.
 - UI 자동화와 화면 캡처에는 로그인된 interactive desktop이 필요합니다.
 - 관리자 권한 대상은 Workbench와 Agent도 같은 권한으로 실행해야 합니다.
@@ -113,6 +119,7 @@ Scratch source가 export 이후 바뀌면 SHA-256이 달라져 서버 등록 버
 | Scratch 작게/보통 레이아웃과 팔레트 drag/drop | PASS |
 | 반복 블록 내부 삽입, 안팎 이동, 복제·삭제·undo/redo | PASS |
 | 로컬 wait 매크로 실행 후 중지 | PASS |
+| 4채널 콘솔·Binary·장치 도구의 1080×720 경계 | PASS |
 | 모든 기본 컨트롤의 1080×720 경계 | PASS |
 | 기본 4-corner recipe Validate | `5 blocks, 86 commands` PASS |
 

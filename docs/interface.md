@@ -112,6 +112,7 @@
 | `Rig 설정 > Master · 원격 PC` | FTP, 공통 변수, PC·자유 CH, 보관 정책 |
 | `Rig 설정 > 이 PC Agent` | 현재 PC의 slave polling 실행 |
 
-`PC / 슬롯 / CH별 실행표`는 package metadata에서 변수 열을 자동으로 만들며, 한 번의
-실행으로 PC마다 다른 값과 SEQ를 보냅니다. raw 업로드와 단일 PC 고급 실행은
+`PC / 슬롯 / CH별 실행표`는 실행에 필요한 CH, SEQ 방식, COM/baud와 package 사용자 변수만
+우선 표시합니다. SoC·Binary 상태 메타데이터는 `PC · CH 상태`에서 확인합니다. `직접 COM`은
+같은 PC의 최대 네 CH를 병렬로 보내고 `SK Commander`는 지정 런처를 사용합니다. raw 업로드와 단일 PC 고급 실행은
 `운영 도구 열기` 안에 있습니다.

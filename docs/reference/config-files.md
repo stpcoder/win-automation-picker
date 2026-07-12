@@ -61,6 +61,20 @@
     "channel": "CH1",
     "line": "line-a"
   },
+  "device_tools": [
+    {
+      "id": "mtk-downloader",
+      "vendor": "mediatek",
+      "executable": "C:/Tools/MediaTek/VendorDownload.exe",
+      "arguments": ["--xml", "{xml}", "--port", "{port}", "--mode", "{mode}"],
+      "execution_enabled": false,
+      "cli_evidence_ref": "docs/vendor-cli/mtk-downloader.md",
+      "allowed_modes": ["download-only", "format-all-download"],
+      "success_exit_codes": [0],
+      "success_markers": ["Download OK"],
+      "failure_markers": ["FAIL", "ERROR"]
+    }
+  ],
   "slaves": [
     {
       "node_id": "rig-pc-04",
@@ -77,8 +91,19 @@
           "name": "SK Commander 3",
           "slot_id": "S3",
           "com_port": "COM7",
+          "baud_rate": 115200,
+          "firmware_port": "COM7",
           "soc_vendor": "mediatek",
           "soc_model": "MTK25D",
+          "firmware_tool_id": "mtk-downloader",
+          "download_identity": "MediaTek PreLoader USB VCOM",
+          "adb_executable": "adb.exe",
+          "adb_serial": "MTK-CH11",
+          "adb_enabled": true,
+          "adb_required_after_update": true,
+          "power_on_command": "POWER ON 11",
+          "power_off_command": "POWER OFF 11",
+          "preloader_exit_command": "exit",
           "binary_name": "download.xml",
           "binary_version": "MTK25D_20260711",
           "binary_source_path": "D:/binary/MTK25D_20260711",
@@ -103,11 +128,16 @@
   "run_profiles": [
     {
       "enabled": true,
-      "alias": "PC04",
+      "alias": "PC04 / CH11",
       "target": "rig-pc-04",
-      "package": "workflow.py",
+      "package": "row-hammer.rigseq.zip",
       "variables": {
-        "sequenceinput_value": "Seq 4"
+        "channel": "CH11",
+        "slot_id": "S3",
+        "sequence_backend": "serial",
+        "com_port": "COM7",
+        "baud_rate": "115200",
+        "sequence_name": "RH_4C_SM8850_V04"
       }
     }
   ]
@@ -126,11 +156,55 @@
 | `runtime.python_executable` | 일반 Python package 전용 실행기. export workflow에는 사용하지 않음 |
 | `runtime.max_*` | 파일 보관 개수 |
 | `variables` | job 실행 시 기본 변수 |
+| `device_tools` | 실제 CLI와 결과 규칙을 확인한 외부 MTK/QC Downloader |
 | `slaves` | master에서 보는 slave roster |
-| `slaves[].channels` | 자유 이름 CH/slot과 SoC, binary provenance, 자재, test, SEQ 초기값 |
+| `slaves[].channels` | 자유 CH, COM/baud/ADB/전원, SoC, binary provenance, 자재와 SEQ |
 | `run_profiles` | Master의 PC별 매크로 실행표 |
 
+`run_profiles[].variables.sequence_backend`은 `serial`(화면의 `직접 COM`) 또는
+`sk_commander`입니다. 직접 COM 행에는 `com_port`와 `baud_rate`가 필요합니다.
+
 `저장`은 현재 실행표도 `run_profiles`에 저장합니다. `Slave 설정 내보내기`로 생성되는 slave용 파일에서는 다른 PC의 실행표를 제거합니다. 실행표 변수는 일반 문자열로 저장되므로 비밀번호나 token은 저장하지 말고 실행 직전에 입력하십시오.
+
+## rig-commander.config.json
+
+이 파일은 직접 편집하는 기본 경로가 아닙니다. `Slave 설정 내보내기`가 각 PC의 CH와
+`device_tools`를 기준으로 자동 생성합니다.
+
+```json
+{
+  "hosts": [
+    {
+      "id": "rig-pc-04",
+      "address": "localhost",
+      "transport": "local",
+      "firmware_tools": [
+        {
+          "id": "mtk-downloader",
+          "vendor": "mediatek",
+          "executable": "C:/Tools/MediaTek/VendorDownload.exe",
+          "execution_enabled": false,
+          "allowed_modes": ["download-only", "format-all-download"]
+        }
+      ],
+      "ports": [
+        {
+          "id": "CH11",
+          "port": "COM7",
+          "baud": 115200,
+          "soc_vendor": "mediatek",
+          "soc_model": "MTK25D",
+          "firmware_tool_id": "mtk-downloader",
+          "adb": {"enabled": true, "serial": "MTK-CH11"},
+          "commands": {"preloader_exit": "exit"}
+        }
+      ]
+    }
+  ]
+}
+```
+
+`execution_enabled`는 실제 도구 버전의 CLI, 성공/실패 문구를 확인한 뒤 GUI에서만 켭니다.
 
 CH 이름은 `CH1` 형식을 강제하지 않습니다. `CH9`, `CH10`, `PC04-RIG2`를 사용할 수 있고 CH가 없는 단일 창은 `channel_id`를 비우고 `name`을 `Main`처럼 입력합니다. 각 항목에는 `channel_id`, `slot_id`, `name` 중 하나가 반드시 있어야 합니다.
 

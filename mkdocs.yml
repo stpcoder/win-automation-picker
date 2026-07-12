@@ -40,6 +40,7 @@ nav:
       - 개요: index.md
       - Mobile DRAM AE 업무 흐름: daily-workflow.md
       - AE Workbench 통합 흐름: ae-workbench.md
+      - 실장기 직접 제어와 Binary: device-control.md
       - 설치와 실행: getting-started.md
       - 화면 구성: interface.md
       - UX 완성도와 지원 범위: ux-readiness.md
@@ -52,7 +53,7 @@ nav:
   - 원격 운영:
       - FTP master/slave 개요: rig-ftp/overview.md
       - AE 캠페인 운영: rig-ftp/ae-campaign.md
-      - SEQ Generator와 SK Commander: rig-ftp/seq-integration.md
+      - SEQ Generator와 실장기 실행: rig-ftp/seq-integration.md
       - Master 세팅: rig-ftp/master-setup.md
       - Slave 세팅: rig-ftp/slave-setup.md
       - 상태 모니터링과 캡처: rig-ftp/monitoring.md
