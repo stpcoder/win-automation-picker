@@ -152,6 +152,17 @@ Manager에서 실제 중복 프로세스를 확인하고 하나만 남깁니다.
 - 결과 상세의 `artifact_error`를 확인합니다.
 - FTP 업로드가 실패해도 Slave의 `work_dir/serial-results/{job_id}` 원본은 유지됩니다.
 - ZIP 상한보다 큰 경우 `고급 정책 > 증거 ZIP 상한(MB)`을 검토하되 FTP 정책보다 크게 올리지 않습니다.
+
+## DRAM margin 패키지가 실행 전에 차단됨
+
+1. 패키지 상세의 Target이 연결 구조의 `PC별명:CH`와 정확히 같은지 확인합니다.
+2. ADB 실행이면 plan과 CH의 `adb_serial`이 같은지 확인합니다.
+3. `DramMarginController.exe verify-bundle package.drammargin.zip`을 실행합니다.
+4. controller가 Windows x64 PE인지, ADB runner가 Android arm64 ELF인지 확인합니다.
+5. PHY reference의 backend, profile, spec/DQ-map SHA-256, dimension 순서와 conversion을 확인합니다.
+
+`physical-evidence-rejected`는 통신 실패가 아닙니다. probe 또는 실행 결과의 실제 mV/ps/raw-code가
+승인 reference와 다르다는 뜻이므로 reference를 임의 수정하지 말고 SoC 담당 자료와 대조합니다.
 - SK Commander 경로의 raw Grid log는 SK Commander 자체 저장 경로에서 확인합니다.
 - `same COM twice`이면 같은 PC의 두 CH가 같은 COM을 가리키므로 Device Manager와 설정을 바로잡습니다.
 - 같은 PC/Campaign/attempt에 5행 이상이면 최대 네 CH씩 attempt 또는 실행 체크를 나눕니다.

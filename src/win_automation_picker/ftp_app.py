@@ -11,6 +11,7 @@ import queue
 import random
 import re
 import shlex
+import subprocess
 import sys
 import threading
 import time
@@ -667,9 +668,11 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         self.capture_error_var = tk.BooleanVar(value=True)
         self.max_run_log_mb_var = tk.StringVar(value="8")
         self.max_artifact_mb_var = tk.StringVar(value="16")
+        self.max_margin_artifact_mb_var = tk.StringVar(value="128")
         self.max_results_var = tk.StringVar(value="200")
         self.max_logs_var = tk.StringVar(value="200")
         self.max_local_runs_var = tk.StringVar(value="40")
+        self.max_staged_margin_bundles_var = tk.StringVar(value="10")
         self.max_artifacts_var = tk.StringVar(value="40")
         self.max_archive_var = tk.StringVar(value="500")
         self.max_screens_var = tk.StringVar(value="20")
@@ -865,11 +868,19 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             "FTP 증거 ZIP 보관 개수",
             self.max_artifacts_var,
         )
+        self._entry_row(
+            advanced_page,
+            7,
+            "마진 ZIP 상한(MB)",
+            self.max_margin_artifact_mb_var,
+            "마진 번들 보관 개수",
+            self.max_staged_margin_bundles_var,
+        )
         ttk.Checkbutton(
             advanced_page,
             text="오류 발생 시 전체 화면 저장",
             variable=self.capture_error_var,
-        ).grid(row=7, column=1, sticky="w", pady=(8, 0))
+        ).grid(row=8, column=1, sticky="w", pady=(8, 0))
 
     def _build_topology_settings(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -2060,6 +2071,11 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             pady=(8, 0),
             padx=(0, 6),
         )
+        ttk.Button(
+            package,
+            text="마진 번들 만들기",
+            command=self._open_margin_bundle_dialog,
+        ).grid(row=4, column=0, sticky="w", pady=(8, 0))
         ttk.Button(package, text="목록 새로고침", command=self._refresh_packages).grid(
             row=4,
             column=2,
@@ -2696,7 +2712,8 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         path = filedialog.askopenfilename(
             title="Select automation or Rig SEQ package",
             filetypes=[
-                ("Automation / Rig SEQ", "*.py *.rigseq.zip"),
+                ("Automation / Rig SEQ / DRAM Margin", "*.py *.rigseq.zip *.drammargin.zip"),
+                ("DRAM margin package", "*.drammargin.zip"),
                 ("Rig SEQ package", "*.rigseq.zip"),
                 ("Python workflow", "*.py"),
                 ("All files", "*.*"),
@@ -2716,10 +2733,144 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                     title = bundle.recipe_name
                     details = bundle.package_details()
                     notes = str(details.get("purpose") or details.get("product") or "")
+            elif Path(path).name.casefold().endswith(".drammargin.zip"):
+                title = Path(path).name[: -len(".drammargin.zip")]
+                notes = "DQ margin campaign: nominal probe, sweep, physical-unit acceptance"
             self.package_title_var.set(title)
             self.package_notes_text.delete("1.0", "end")
             if notes:
                 self.package_notes_text.insert("1.0", notes)
+
+    def _open_margin_bundle_dialog(self) -> None:
+        dialog = tk.Toplevel(self)
+        dialog.title("DRAM 마진 번들 만들기")
+        dialog.transient(self)
+        dialog.resizable(True, False)
+        dialog.columnconfigure(1, weight=1)
+        controller_var = tk.StringVar(value=self._default_margin_controller_path())
+        plan_var = tk.StringVar(value="")
+        reference_var = tk.StringVar(value="")
+        output_var = tk.StringVar(value="")
+        fields = (
+            ("Controller", controller_var, "controller"),
+            ("Plan", plan_var, "plan"),
+            ("PHY reference", reference_var, "reference"),
+            ("출력", output_var, "output"),
+        )
+
+        def browse(kind: str, variable: tk.StringVar) -> None:
+            if kind == "output":
+                path = filedialog.asksaveasfilename(
+                    title="DRAM margin bundle 저장",
+                    defaultextension=".drammargin.zip",
+                    filetypes=[("DRAM margin bundle", "*.drammargin.zip")],
+                    parent=dialog,
+                )
+            else:
+                filetypes = (
+                    [("Windows controller", "*.exe")]
+                    if kind == "controller"
+                    else [("JSON", "*.json"), ("All files", "*.*")]
+                )
+                path = filedialog.askopenfilename(
+                    title=f"{kind} 선택",
+                    filetypes=filetypes,
+                    parent=dialog,
+                )
+            if path:
+                variable.set(path)
+                if kind == "plan" and not output_var.get().strip():
+                    output_var.set(
+                        str(Path(path).with_name(Path(path).stem + ".drammargin.zip"))
+                    )
+
+        for row, (label, variable, kind) in enumerate(fields):
+            ttk.Label(dialog, text=label).grid(
+                row=row, column=0, sticky="w", padx=(12, 8), pady=6
+            )
+            ttk.Entry(dialog, textvariable=variable, width=64).grid(
+                row=row, column=1, sticky="ew", pady=6
+            )
+            ttk.Button(
+                dialog,
+                text="찾기",
+                command=lambda k=kind, v=variable: browse(k, v),
+            ).grid(row=row, column=2, padx=(8, 12), pady=6)
+        status_var = tk.StringVar(value="대기")
+        ttk.Label(dialog, textvariable=status_var).grid(
+            row=4, column=0, columnspan=2, sticky="w", padx=12, pady=(8, 12)
+        )
+
+        def create() -> None:
+            controller = Path(controller_var.get().strip())
+            plan = Path(plan_var.get().strip())
+            reference = Path(reference_var.get().strip())
+            output = Path(output_var.get().strip())
+            if not all(path.is_file() for path in (controller, plan, reference)):
+                self._show_error(
+                    FtpSpoolError("Controller, plan, PHY reference 파일을 모두 선택하세요.")
+                )
+                return
+            if not output.name.casefold().endswith(".drammargin.zip"):
+                self._show_error(FtpSpoolError("출력 파일은 .drammargin.zip이어야 합니다."))
+                return
+            status_var.set("생성 중...")
+
+            def worker() -> None:
+                options: dict[str, Any] = {
+                    "check": False,
+                    "capture_output": True,
+                    "text": True,
+                    "timeout": 300,
+                }
+                if os.name == "nt":
+                    options["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                completed = subprocess.run(
+                    [
+                        str(controller),
+                        "bundle",
+                        str(plan),
+                        str(reference),
+                        "--output",
+                        str(output),
+                    ],
+                    **options,
+                )
+                if completed.returncode != 0:
+                    raise FtpSpoolError(
+                        completed.stderr.strip()
+                        or completed.stdout.strip()
+                        or f"Margin controller exited {completed.returncode}."
+                    )
+                self._queue.put(
+                    (
+                        "margin_bundle_ready",
+                        {
+                            "path": str(output.resolve()),
+                            "dialog": dialog,
+                        },
+                    )
+                )
+
+            self._start_worker("DRAM margin bundle 생성", worker)
+
+        actions = ttk.Frame(dialog)
+        actions.grid(row=4, column=2, sticky="e", padx=12, pady=(8, 12))
+        ttk.Button(actions, text="취소", command=dialog.destroy).pack(side="left", padx=(0, 6))
+        ttk.Button(actions, text="만들기", command=create, style="Primary.TButton").pack(
+            side="left"
+        )
+        dialog.grab_set()
+        dialog.wait_visibility()
+        dialog.focus_set()
+
+    @staticmethod
+    def _default_margin_controller_path() -> str:
+        for directory in (Path.cwd(), Path(sys.executable).resolve().parent):
+            candidate = directory / "DramMarginController.exe"
+            if candidate.is_file():
+                return str(candidate)
+        return ""
 
     def _create_example_config(self) -> None:
         path = Path(self.config_path_var.get().strip() or DEFAULT_CONFIG)
@@ -2853,9 +3004,13 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         self.capture_error_var.set(config.capture_on_error)
         self.max_run_log_mb_var.set(f"{config.max_run_log_bytes / (1024 * 1024):g}")
         self.max_artifact_mb_var.set(f"{config.max_artifact_upload_bytes / (1024 * 1024):g}")
+        self.max_margin_artifact_mb_var.set(
+            f"{config.max_margin_artifact_upload_bytes / (1024 * 1024):g}"
+        )
         self.max_results_var.set(str(config.max_result_files))
         self.max_logs_var.set(str(config.max_log_files))
         self.max_local_runs_var.set(str(config.max_local_run_files))
+        self.max_staged_margin_bundles_var.set(str(config.max_staged_margin_bundles))
         self.max_artifacts_var.set(str(config.max_artifact_files))
         self.max_archive_var.set(str(config.max_archive_files))
         self.max_screens_var.set(str(config.max_screenshot_files))
@@ -2910,9 +3065,20 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                 4096,
                 int(float(self.max_artifact_mb_var.get() or "16") * 1024 * 1024),
             ),
+            max_margin_artifact_upload_bytes=max(
+                1024 * 1024,
+                int(
+                    float(self.max_margin_artifact_mb_var.get() or "128")
+                    * 1024
+                    * 1024
+                ),
+            ),
             max_result_files=int(self.max_results_var.get() or "200"),
             max_log_files=int(self.max_logs_var.get() or "200"),
             max_local_run_files=int(self.max_local_runs_var.get() or "40"),
+            max_staged_margin_bundles=int(
+                self.max_staged_margin_bundles_var.get() or "10"
+            ),
             max_artifact_files=int(self.max_artifacts_var.get() or "40"),
             max_archive_files=int(self.max_archive_var.get() or "500"),
             max_screenshot_files=int(self.max_screens_var.get() or "20"),
@@ -3686,6 +3852,8 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                             str(row["variables"].get("campaign_attempt", "1")),
                         )
                         direct_counts[group_key] = direct_counts.get(group_key, 0) + 1
+                elif package.runner == "dram_margin":
+                    fixture_required = True
                 self._require_topology_ready(
                     config,
                     node_id=target,
@@ -3824,11 +3992,16 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                 raise FtpSpoolError(
                     "직접 COM SEQ는 all로 전송할 수 없습니다. COM을 소유한 PC 하나를 지정하세요."
                 )
+        elif package.runner == "dram_margin" and "all" in targets:
+            raise FtpSpoolError(
+                "DRAM margin은 exact fixture/ADB identity를 사용하므로 PC 하나를 지정하세요."
+            )
         for target in targets:
             self._require_topology_ready(
                 config,
                 node_id=target,
-                require_fixture=sequence_backend == "serial",
+                require_fixture=sequence_backend == "serial"
+                or package.runner == "dram_margin",
             )
         job = SpoolJob.create(
             kind=package_job_kind(package),
@@ -5299,7 +5472,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         if package.variables:
             lines.extend(["", "PC별 입력값", *[f"- {key}: {value}" for key, value in package.variables.items()]])
         if package.details:
-            lines.extend(["", "SEQ 검증 정보"])
+            lines.extend(["", "패키지 검증 정보"])
             detail_labels = {
                 "bundle_id": "Bundle ID",
                 "recipe_name": "Recipe",
@@ -5325,6 +5498,16 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                 "repeat_count": "Repeat",
                 "preflight_ok": "AE Preflight",
                 "preflight_checked_at": "Preflight Time",
+                "target_id": "Margin Target",
+                "transport": "Transport",
+                "backend": "Margin Backend",
+                "execution_context": "Execution Context",
+                "soc_profile": "SoC Profile",
+                "adb_serial": "ADB Serial",
+                "sweep_count": "Sweeps",
+                "point_count": "Points",
+                "dq_count": "DQ Count",
+                "reference_profile": "PHY Reference",
             }
             for key, value in package.details.items():
                 if value not in ("", None, []):
@@ -5338,6 +5521,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         return {
             "workflow": "내장 워크플로 엔진",
             "sequence": "검증된 Rig SEQ + SK Commander 런처",
+            "dram_margin": "DRAM DQ 마진 캠페인",
             "python": "외부 Python",
         }.get(runner, runner)
 
@@ -5403,7 +5587,12 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         self.package_list.delete(0, "end")
         for package in packages:
             title = package.title or package.name
-            badge = {"sequence": "SEQ", "workflow": "FLOW", "python": "PY"}.get(package.runner, package.runner.upper())
+            badge = {
+                "sequence": "SEQ",
+                "workflow": "FLOW",
+                "dram_margin": "MARGIN",
+                "python": "PY",
+            }.get(package.runner, package.runner.upper())
             self.package_list.insert("end", f"[{badge}] {title}  [{package.name}]")
         if packages:
             self.package_list.selection_set(0)
@@ -5532,6 +5721,20 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             elif kind == "monitor_stopped":
                 self._monitor_stop = None
                 self._append_master_log(str(payload))
+            elif kind == "margin_bundle_ready":
+                path = str(payload.get("path") or "") if isinstance(payload, dict) else ""
+                dialog = payload.get("dialog") if isinstance(payload, dict) else None
+                self.package_file_var.set(path)
+                self.package_name_var.set(Path(path).name)
+                self.package_title_var.set(Path(path).name[: -len(".drammargin.zip")])
+                self.package_notes_text.delete("1.0", "end")
+                self.package_notes_text.insert(
+                    "1.0",
+                    "DQ margin campaign: nominal probe, sweep, physical-unit acceptance",
+                )
+                if dialog is not None and dialog.winfo_exists():
+                    dialog.destroy()
+                self._append_master_log(f"DRAM margin bundle 생성 완료: {path}")
             elif kind == "error":
                 self._show_error(payload)
         self.after(100, self._drain_queue)

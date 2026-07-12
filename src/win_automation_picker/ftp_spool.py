@@ -12,6 +12,7 @@ import platform
 import posixpath
 import random
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -23,6 +24,14 @@ from typing import Any, Callable, Iterable, Iterator, Protocol, Sequence
 
 from . import rig_cli
 from .exporter import parse_exported_workflow
+from .margin_bundle import (
+    CAMPAIGN_SCHEMA,
+    MarginBundleError,
+    build_margin_campaign_artifact,
+    parse_margin_remote_bundle,
+    prune_staged_margin_bundles,
+    stage_margin_remote_bundle,
+)
 from .recipe import AutomationRecipe, AutomationStep, ConditionResult, DataSet, monitor_only_recipe, run_recipe
 from .rig import RigConfigError, RigExecutionError, SerialPortConfig, powershell_argv
 from .run_artifacts import (
@@ -587,9 +596,11 @@ class FtpSpoolConfig:
     max_output_chars: int = 200_000
     max_run_log_bytes: int = 8 * 1024 * 1024
     max_artifact_upload_bytes: int = 16 * 1024 * 1024
+    max_margin_artifact_upload_bytes: int = 128 * 1024 * 1024
     max_result_files: int = 200
     max_log_files: int = 200
     max_local_run_files: int = 40
+    max_staged_margin_bundles: int = 10
     max_artifact_files: int = 40
     max_archive_files: int = 500
     max_screenshot_files: int = 20
@@ -636,6 +647,26 @@ class FtpSpoolConfig:
         )
         if max_artifact_files_value in {None, ""}:
             max_artifact_files_value = 40
+        max_margin_artifact_upload_bytes = int(
+            runtime_data.get(
+                "max_margin_artifact_upload_bytes",
+                data.get("max_margin_artifact_upload_bytes", 128 * 1024 * 1024),
+            )
+            or 128 * 1024 * 1024
+        )
+        if not 1024 * 1024 <= max_margin_artifact_upload_bytes <= 1024 * 1024 * 1024:
+            raise FtpSpoolError(
+                "runtime.max_margin_artifact_upload_bytes must be between 1 MiB and 1 GiB."
+            )
+        max_staged_margin_bundles = int(
+            runtime_data.get(
+                "max_staged_margin_bundles",
+                data.get("max_staged_margin_bundles", 10),
+            )
+            or 10
+        )
+        if not 1 <= max_staged_margin_bundles <= 50:
+            raise FtpSpoolError("runtime.max_staged_margin_bundles must be between 1 and 50.")
         return cls(
             master=MasterInfo.from_mapping(master_data if isinstance(master_data, dict) else {}),
             host=str(ftp_data.get("host", "") or ""),
@@ -681,11 +712,13 @@ class FtpSpoolConfig:
                 )
                 or 16 * 1024 * 1024
             ),
+            max_margin_artifact_upload_bytes=max_margin_artifact_upload_bytes,
             max_result_files=int(runtime_data.get("max_result_files", data.get("max_result_files", 200)) or 200),
             max_log_files=int(runtime_data.get("max_log_files", data.get("max_log_files", 200)) or 200),
             max_local_run_files=int(
                 runtime_data.get("max_local_run_files", data.get("max_local_run_files", 40)) or 40
             ),
+            max_staged_margin_bundles=max_staged_margin_bundles,
             max_artifact_files=max(0, int(max_artifact_files_value)),
             max_archive_files=int(runtime_data.get("max_archive_files", data.get("max_archive_files", 500)) or 500),
             max_screenshot_files=int(
@@ -736,9 +769,11 @@ class FtpSpoolConfig:
                 "max_output_chars": self.max_output_chars,
                 "max_run_log_bytes": self.max_run_log_bytes,
                 "max_artifact_upload_bytes": self.max_artifact_upload_bytes,
+                "max_margin_artifact_upload_bytes": self.max_margin_artifact_upload_bytes,
                 "max_result_files": self.max_result_files,
                 "max_log_files": self.max_log_files,
                 "max_local_run_files": self.max_local_run_files,
+                "max_staged_margin_bundles": self.max_staged_margin_bundles,
                 "max_artifact_files": self.max_artifact_files,
                 "max_archive_files": self.max_archive_files,
                 "max_screenshot_files": self.max_screenshot_files,
@@ -1265,9 +1300,16 @@ def deploy_package(
     resolved_runner = runner.strip().casefold() or "auto"
     resolved_variables = {str(key): str(value) for key, value in (variables or {}).items()}
     bundle = None
+    margin_bundle = None
     workflow_inspection: dict[str, Any] | None = None
     if resolved_runner == "auto":
-        if source_path.name.casefold().endswith(".rigseq.zip"):
+        if source_path.name.casefold().endswith(".drammargin.zip"):
+            try:
+                margin_bundle = parse_margin_remote_bundle(source_bytes)
+            except MarginBundleError as exc:
+                raise FtpSpoolError(str(exc)) from exc
+            resolved_runner = "dram_margin"
+        elif source_path.name.casefold().endswith(".rigseq.zip"):
             try:
                 bundle = parse_rig_sequence_bundle(source_bytes)
             except RigSequenceBundleError as exc:
@@ -1291,10 +1333,22 @@ def deploy_package(
             bundle = parse_rig_sequence_bundle(source_bytes)
         except RigSequenceBundleError as exc:
             raise FtpSpoolError(str(exc)) from exc
-    if resolved_runner not in {"python", "workflow", "sequence"}:
+    elif resolved_runner == "dram_margin":
+        try:
+            margin_bundle = parse_margin_remote_bundle(source_bytes)
+        except MarginBundleError as exc:
+            raise FtpSpoolError(str(exc)) from exc
+    if resolved_runner not in {"python", "workflow", "sequence", "dram_margin"}:
         raise FtpSpoolError(f"Unsupported package runner: {runner}")
     package_details: dict[str, Any] = {}
-    if bundle is not None:
+    if margin_bundle is not None:
+        resolved_variables = {
+            "channel": "",
+            "slot_id": "",
+            **resolved_variables,
+        }
+        package_details = margin_bundle.package_details()
+    elif bundle is not None:
         sequence_variables = {
             "channel": "",
             "slot_id": "",
@@ -1330,7 +1384,14 @@ def deploy_package(
     package = PackageInfo(
         name=safe_package_name,
         path=remote_path,
-        title=title or (bundle.recipe_name if bundle is not None else source_path.stem),
+        title=title
+        or (
+            bundle.recipe_name
+            if bundle is not None
+            else f"{package_details.get('target_id')} DRAM margin"
+            if margin_bundle is not None
+            else source_path.stem
+        ),
         notes=notes or (str(package_details.get("purpose") or "") if bundle is not None else ""),
         uploaded_at=_utc_now(),
         runner=resolved_runner,
@@ -1427,6 +1488,8 @@ def inspect_sk_commander_workflow(recipe: AutomationRecipe) -> dict[str, Any]:
 
 
 def package_job_kind(package: PackageInfo) -> str:
+    if package.runner == "dram_margin":
+        return "dram_margin"
     if package.runner == "workflow":
         return "workflow"
     if package.runner == "sequence":
@@ -1837,6 +1900,17 @@ def execute_job(
             )
         if job.kind == "sequence_batch":
             return _execute_sequence_batch(
+                backend,
+                config,
+                job,
+                variables,
+                timeout=timeout,
+                node_id=node_id,
+                started_at=started,
+                max_output_chars=config.max_output_chars,
+            )
+        if job.kind == "dram_margin":
+            return _execute_dram_margin(
                 backend,
                 config,
                 job,
@@ -2345,6 +2419,54 @@ def _update_channel_status(
                 },
             )
             channel["state"] = "pass" if result.ok else "error"
+            channel["updated_at"] = result.finished_at
+    elif job.kind == "dram_margin":
+        channel = upsert(job_channel, job_slot)
+        if channel is None:
+            channel = upsert(
+                str(details.get("channel_id") or ""),
+                str(details.get("slot_id") or ""),
+            )
+        if channel is not None:
+            _apply_nonempty_channel_values(
+                channel,
+                {
+                    "fixture_id": details.get("fixture_id", ""),
+                    "fixture_model": details.get("fixture_model", ""),
+                    "fixture_serial": details.get("fixture_serial", ""),
+                    "physical_location": details.get("physical_location", ""),
+                    "soc_vendor": details.get("soc_vendor", ""),
+                    "soc_model": details.get("soc_model", ""),
+                    "dram_part": details.get("dram_part", ""),
+                    "lot_id": details.get("lot_id", ""),
+                    "sample_id": details.get("sample_id", ""),
+                    "current_test": details.get("current_test", ""),
+                    "failure_class": details.get("failure_class", ""),
+                    "acceptance_result": details.get("acceptance_result", ""),
+                    "execution_route": details.get("execution_route", ""),
+                    "execution_origin": details.get("execution_origin", ""),
+                    "execution_phase": details.get("execution_phase", ""),
+                    "artifact_path": details.get("artifact_path", ""),
+                    "margin_status": details.get("margin_status", ""),
+                    "margin_result": details.get("margin_result", ""),
+                    "physical_unit_acceptance": details.get(
+                        "physical_unit_acceptance", ""
+                    ),
+                    "result_rows": details.get("result_rows", 0),
+                    "margin_bundle_id": details.get("margin_bundle_id", ""),
+                    "margin_target_id": details.get("margin_target_id", ""),
+                },
+            )
+            phase = str(details.get("execution_phase") or "").casefold()
+            channel["state"] = (
+                "pass"
+                if result.ok
+                else "stopped"
+                if result.returncode == 130 or phase == "stopped"
+                else "fail"
+                if details.get("acceptance_result") == "fail"
+                else "error"
+            )
             channel["updated_at"] = result.finished_at
     elif job.kind == "sequence_batch":
         batch_channels = details.get("channels") or []
@@ -4185,6 +4307,435 @@ def _execute_python(
         started_at=started_at,
         max_output_chars=max_output_chars,
     )
+
+
+def _execute_dram_margin(
+    backend: SpoolBackend,
+    config: FtpSpoolConfig,
+    job: SpoolJob,
+    variables: dict[str, str],
+    *,
+    timeout: float,
+    node_id: str,
+    started_at: str,
+    max_output_chars: int,
+) -> JobResult:
+    package = str(job.payload.get("package", "") or "")
+    if not package:
+        raise FtpSpoolError("DRAM margin job requires a package.")
+    package_name = _safe_name(_render_placeholders(package, variables))
+    try:
+        bundle = parse_margin_remote_bundle(backend.read_bytes(f"packages/{package_name}"))
+    except MarginBundleError as exc:
+        raise FtpSpoolError(str(exc)) from exc
+    target = bundle.manifest["target"]
+    channel = _resolve_margin_channel(config, node_id, target, job.variables)
+    work_dir = Path(_render_placeholders(config.work_dir, variables)).resolve()
+    stage_root = work_dir / "margin-bundles"
+    try:
+        staged = stage_margin_remote_bundle(bundle, stage_root)
+    except MarginBundleError as exc:
+        raise FtpSpoolError(str(exc)) from exc
+    prune_staged_margin_bundles(
+        stage_root,
+        preserve=bundle.bundle_id,
+        limit=config.max_staged_margin_bundles,
+    )
+    result_root = work_dir / "margin-runs"
+    result_root.mkdir(parents=True, exist_ok=True)
+    result_dir = result_root / _safe_name(job.job_id)
+    controller = staged.joinpath(*PurePosixPath(bundle.controller_path).parts)
+    plan = staged.joinpath(*PurePosixPath(bundle.plan_path).parts)
+    reference = staged.joinpath(*PurePosixPath(bundle.reference_path).parts)
+    probe_timeout = _bounded_margin_timeout(
+        job.payload.get("probe_timeout_seconds", 120.0),
+        label="probe_timeout_seconds",
+        minimum=1.0,
+        maximum=1800.0,
+    )
+    sweep_timeout = _bounded_margin_timeout(
+        job.payload.get("sweep_timeout_seconds", 3600.0),
+        label="sweep_timeout_seconds",
+        minimum=1.0,
+        maximum=86_400.0,
+    )
+    argv = [
+        str(controller),
+        "campaign",
+        str(plan),
+        str(reference),
+        "--output",
+        str(result_dir),
+        "--probe-timeout",
+        f"{probe_timeout:g}",
+        "--sweep-timeout",
+        f"{sweep_timeout:g}",
+    ]
+    artifact_build_error = ""
+    if result_dir.exists():
+        try:
+            artifact_bytes, members, campaign = build_margin_campaign_artifact(
+                result_dir,
+                max_uncompressed_bytes=config.max_margin_artifact_upload_bytes,
+            )
+        except MarginBundleError as exc:
+            raise FtpSpoolError(
+                f"Existing DRAM margin run folder is incomplete; evidence was preserved: {exc}"
+            ) from exc
+        code = int(campaign.get("returncode", 1))
+        stdout = "Recovered completed local DRAM margin evidence without rerunning the fixture."
+        stderr = ""
+    else:
+        code, stdout, stderr = _run_margin_controller_process(
+            backend,
+            argv,
+            cwd=staged,
+            timeout=timeout,
+            job=job,
+            node_id=node_id,
+        )
+        try:
+            artifact_bytes, members, campaign = build_margin_campaign_artifact(
+                result_dir,
+                max_uncompressed_bytes=config.max_margin_artifact_upload_bytes,
+            )
+        except MarginBundleError as exc:
+            campaign = {}
+            artifact_bytes = b""
+            members = []
+            artifact_build_error = str(exc)
+            stderr = "\n".join(
+                part
+                for part in (
+                    stderr,
+                    f"DRAM margin evidence upload unavailable; local files preserved: {exc}",
+                )
+                if part
+            )
+
+    details = _margin_result_details(bundle, campaign, channel, result_dir)
+    if artifact_build_error:
+        details["artifact_error"] = artifact_build_error
+    if artifact_bytes:
+        if len(artifact_bytes) > config.max_margin_artifact_upload_bytes:
+            details["artifact_error"] = (
+                f"Compressed DRAM margin artifact exceeds upload limit: {len(artifact_bytes)} bytes"
+            )
+        elif config.max_artifact_files <= 0:
+            details["artifact_error"] = "FTP artifact upload is disabled."
+        else:
+            artifact_path = (
+                f"artifacts/{_clean_node_id(node_id)}/{_safe_name(job.job_id)}-margin.zip"
+            )
+            try:
+                backend.write_bytes(artifact_path, artifact_bytes)
+            except Exception as exc:
+                details["artifact_error"] = f"DRAM margin artifact upload failed: {exc}"
+            else:
+                details.update(
+                    {
+                        "artifact_path": artifact_path,
+                        "artifact_members": members,
+                        "artifact_error": "",
+                    }
+                )
+    if details.get("artifact_error"):
+        details["failure_class"] = "infrastructure"
+        details["execution_phase"] = "evidence_upload_failed"
+    _prune_margin_run_dirs(
+        result_root,
+        preserve=result_dir,
+        limit=config.max_local_run_files,
+    )
+    manifest_code = campaign.get("returncode")
+    if isinstance(manifest_code, int) and code not in {124, 130} and code != manifest_code:
+        stderr = "\n".join(
+            part
+            for part in (
+                stderr,
+                f"Controller exit {code} differs from campaign manifest {manifest_code}.",
+            )
+            if part
+        )
+        code = 1
+    status = str(campaign.get("status") or "")
+    if code == 124:
+        details["failure_class"] = "timeout"
+    elif code == 130:
+        details["failure_class"] = "stopped"
+    ok = code == 0 and status == "pass" and not details.get("artifact_error")
+    return _limit_result(
+        JobResult(
+            job_id=job.job_id,
+            node_id=node_id,
+            kind=job.kind,
+            ok=ok,
+            returncode=code,
+            started_at=started_at,
+            finished_at=_utc_now(),
+            stdout=stdout.strip(),
+            stderr=stderr.strip(),
+            details=details,
+        ),
+        max_output_chars=max_output_chars,
+    )
+
+
+def _bounded_margin_timeout(
+    value: object,
+    *,
+    label: str,
+    minimum: float,
+    maximum: float,
+) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise FtpSpoolError(f"DRAM margin {label} must be numeric.") from exc
+    if not minimum <= parsed <= maximum:
+        raise FtpSpoolError(
+            f"DRAM margin {label} must be between {minimum:g} and {maximum:g} seconds."
+        )
+    return parsed
+
+
+def _resolve_margin_channel(
+    config: FtpSpoolConfig,
+    node_id: str,
+    target: dict[str, Any],
+    variables: dict[str, str],
+) -> ChannelInfo:
+    channels = _configured_channels(config, node_id)
+    if not channels:
+        raise FtpSpoolError(f"DRAM margin target PC has no configured fixtures: {node_id}")
+    node = _clean_node_id(node_id)
+    slave = next(
+        (
+            item
+            for item in config.slaves
+            if _clean_node_id(item.node_id).casefold() == node.casefold()
+        ),
+        None,
+    )
+    prefixes = {
+        value.strip().casefold()
+        for value in (
+            node_id,
+            slave.alias if slave else "",
+            slave.windows_name if slave else "",
+            slave.asset_id if slave else "",
+        )
+        if value.strip()
+    }
+    target_id = str(target.get("target_id") or "").strip()
+    requested = str(variables.get("channel") or variables.get("slot_id") or "").strip()
+
+    def identities(channel: ChannelInfo) -> set[str]:
+        base = {
+            value.strip().casefold()
+            for value in (
+                channel.channel_id,
+                channel.name,
+                channel.slot_id,
+                channel.fixture_id,
+                channel.fixture_serial,
+            )
+            if value.strip()
+        }
+        return base | {
+            f"{prefix}:{identity}" for prefix in prefixes for identity in base
+        }
+
+    candidates = [
+        channel
+        for channel in channels
+        if (requested and requested.casefold() in identities(channel))
+        or (not requested and target_id.casefold() in identities(channel))
+    ]
+    if len(candidates) != 1:
+        label = requested or target_id
+        raise FtpSpoolError(
+            f"DRAM margin fixture identity must resolve to exactly one configured CH: {label!r}"
+        )
+    channel = candidates[0]
+    if target_id.casefold() not in identities(channel):
+        raise FtpSpoolError(
+            f"DRAM margin plan target {target_id!r} does not match fixture {channel.label()!r}."
+        )
+    if target.get("transport") == "adb":
+        expected_serial = str(target.get("adb_serial") or "")
+        if not channel.adb_enabled or not channel.adb_serial:
+            raise FtpSpoolError(
+                f"Fixture {channel.label()} must enable ADB and configure an exact serial."
+            )
+        if expected_serial != channel.adb_serial:
+            raise FtpSpoolError(
+                f"DRAM margin ADB serial mismatch for {channel.label()}: "
+                f"plan={expected_serial!r}, config={channel.adb_serial!r}"
+            )
+    return channel
+
+
+def _run_margin_controller_process(
+    backend: SpoolBackend,
+    argv: list[str],
+    *,
+    cwd: Path,
+    timeout: float,
+    job: SpoolJob,
+    node_id: str,
+) -> tuple[int, str, str]:
+    options: dict[str, Any] = {
+        "cwd": str(cwd),
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+    }
+    if os.name == "nt":
+        options["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    process = subprocess.Popen(argv, **options)
+    deadline = time.monotonic() + timeout if timeout > 0 else None
+    last_stop_check = 0.0
+    stopped = False
+    timed_out = False
+    while process.poll() is None:
+        now = time.monotonic()
+        if now - last_stop_check >= 2.0:
+            last_stop_check = now
+            if stop_requested(backend, node_id, job_id=job.job_id):
+                stopped = True
+                break
+        if deadline is not None and now >= deadline:
+            timed_out = True
+            break
+        time.sleep(0.1)
+    if stopped or timed_out:
+        try:
+            if os.name == "nt" and hasattr(signal, "CTRL_BREAK_EVENT"):
+                process.send_signal(signal.CTRL_BREAK_EVENT)
+            else:
+                process.send_signal(signal.SIGTERM)
+        except OSError:
+            process.terminate()
+        try:
+            stdout, stderr = process.communicate(timeout=25)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            stdout, stderr = process.communicate()
+            stderr = "\n".join(
+                part
+                for part in (
+                    stderr.strip(),
+                    "DRAM margin controller was killed after nominal recovery did not finish in 25s.",
+                )
+                if part
+            )
+    else:
+        stdout, stderr = process.communicate()
+    code = int(process.returncode if process.returncode is not None else 1)
+    if stopped:
+        code = 130
+        stderr = "\n".join(
+            part for part in (stderr.strip(), "Stopped by master stop signal.") if part
+        )
+    elif timed_out:
+        code = 124
+        stderr = "\n".join(
+            part for part in (stderr.strip(), f"Timed out after {timeout:g}s.") if part
+        )
+    return code, stdout, stderr
+
+
+def _margin_result_details(
+    bundle,
+    campaign: dict[str, Any],
+    channel: ChannelInfo,
+    result_dir: Path,
+) -> dict[str, Any]:
+    status = str(campaign.get("status") or "execution-error")
+    acceptance = (
+        "pass"
+        if status == "pass"
+        else "stopped"
+        if status == "interrupted"
+        else "fail"
+    )
+    failure_class = (
+        ""
+        if status == "pass"
+        else "stopped"
+        if status == "interrupted"
+        else "test"
+        if status == "margin-failures"
+        else "setup"
+        if status == "physical-evidence-rejected"
+        else "automation"
+    )
+    target = bundle.manifest["target"]
+    return {
+        "channel_id": channel.channel_id or channel.name,
+        "slot_id": channel.slot_id,
+        "fixture_id": channel.fixture_id,
+        "fixture_model": channel.fixture_model,
+        "fixture_serial": channel.fixture_serial,
+        "physical_location": channel.physical_location,
+        "soc_vendor": channel.soc_vendor,
+        "soc_model": channel.soc_model,
+        "dram_part": channel.dram_part,
+        "lot_id": channel.lot_id,
+        "sample_id": channel.sample_id,
+        "current_test": f"DRAM margin: {target['backend']} / {target['execution_context']}",
+        "execution_route": "dram_margin",
+        "execution_origin": "master_remote",
+        "execution_phase": "stopped" if status == "interrupted" else "completed" if status == "pass" else "failed",
+        "acceptance_result": acceptance,
+        "failure_class": failure_class,
+        "margin_status": status,
+        "margin_result": str(campaign.get("margin_result") or "not-evaluated"),
+        "physical_unit_acceptance": str(
+            campaign.get("physical_unit_acceptance") or "not-evaluated"
+        ),
+        "result_rows": int(campaign.get("result_rows") or 0),
+        "margin_bundle_id": bundle.bundle_id,
+        "margin_target_id": target["target_id"],
+        "margin_plan_sha256": str(campaign.get("plan_sha256") or ""),
+        "local_result_dir": str(result_dir),
+        "artifact_path": "",
+        "artifact_error": "",
+    }
+
+
+def _prune_margin_run_dirs(root: Path, *, preserve: Path, limit: int) -> None:
+    if not root.is_dir() or root.is_symlink():
+        return
+    owned: list[Path] = []
+    for path in root.iterdir():
+        if not path.is_dir() or path.is_symlink():
+            continue
+        try:
+            manifest = json.loads(
+                (path / "campaign-manifest.json").read_text(encoding="utf-8")
+            )
+        except Exception:
+            continue
+        if isinstance(manifest, dict) and manifest.get("schema") == CAMPAIGN_SCHEMA:
+            owned.append(path)
+    owned.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    keep = max(1, int(limit))
+    removable = [path for path in owned if path.resolve() != preserve.resolve()]
+    for path in removable[max(0, keep - 1) :]:
+        _remove_owned_margin_run(path)
+
+
+def _remove_owned_margin_run(path: Path) -> None:
+    if path.is_symlink() or not path.is_dir():
+        return
+    for member in sorted(path.rglob("*"), key=lambda item: len(item.parts), reverse=True):
+        if member.is_symlink() or member.is_file():
+            member.unlink(missing_ok=True)
+        elif member.is_dir():
+            member.rmdir()
+    path.rmdir()
 
 
 def _execute_rig(
