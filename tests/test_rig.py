@@ -400,7 +400,19 @@ def test_firmware_runner_blocks_missing_tool_capability_and_reports_progress(
         output = "qdl 2.3" if command.endswith("version") else "--dry-run --storage"
         return CommandResult(target, True, 0, stdout=output, command=command)
 
+    def fake_local(tool, step, *, target, timeout, dry_run, cancel_callback=None):
+        return fake_run(
+            None,
+            "",
+            target=target,
+            timeout=timeout,
+            dry_run=dry_run,
+            command=f"firmware:{step.id}",
+            cancel_callback=cancel_callback,
+        )
+
     monkeypatch.setattr(rig_module, "run_powershell_for_host", fake_run)
+    monkeypatch.setattr(rig_module, "run_local_firmware_process", fake_local)
     progress: list[dict] = []
 
     result = run_firmware_execution_plan(
@@ -443,7 +455,19 @@ def test_firmware_runner_rejects_genio_zero_exit_error_output(tmp_path, monkeypa
     def fake_run(host, script, *, target, timeout, dry_run, command, cancel_callback=None):
         return CommandResult(target, True, 0, stderr="ERROR: No image found", command=command)
 
+    def fake_local(tool, step, *, target, timeout, dry_run, cancel_callback=None):
+        return fake_run(
+            None,
+            "",
+            target=target,
+            timeout=timeout,
+            dry_run=dry_run,
+            command=f"firmware:{step.id}",
+            cancel_callback=cancel_callback,
+        )
+
     monkeypatch.setattr(rig_module, "run_powershell_for_host", fake_run)
+    monkeypatch.setattr(rig_module, "run_local_firmware_process", fake_local)
 
     result = run_firmware_execution_plan(target, tool, plan)
 
@@ -532,7 +556,19 @@ def test_firmware_runner_rehashes_package_immediately_before_destructive_step(
         payload.write_bytes(b"boot-v2")
         return CommandResult(target, True, 0, stdout="validated", command=command)
 
+    def fake_local(tool, step, *, target, timeout, dry_run, cancel_callback=None):
+        return fake_run(
+            None,
+            "",
+            target=target,
+            timeout=timeout,
+            dry_run=dry_run,
+            command=f"firmware:{step.id}",
+            cancel_callback=cancel_callback,
+        )
+
     monkeypatch.setattr(rig_module, "run_powershell_for_host", fake_run)
+    monkeypatch.setattr(rig_module, "run_local_firmware_process", fake_local)
 
     result = run_firmware_execution_plan(target, tool, plan)
 
