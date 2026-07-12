@@ -15,6 +15,7 @@ from win_automation_picker.ftp_spool import (
     DeviceToolInfo,
     FtpSpoolConfig,
     FtpSpoolError,
+    JobResult,
     LocalSpoolBackend,
     RunProfile,
     SlaveInfo,
@@ -25,16 +26,20 @@ from win_automation_picker.ftp_spool import (
     cleanup_node_files,
     deploy_package,
     initialize_spool,
+    inspect_sk_commander_workflow,
     list_packages,
     list_results,
     list_screenshots,
     list_status,
+    publish_local_sequence_progress,
+    publish_local_sequence_result,
     request_stop,
     run_slave_once,
     save_triage_record,
     submit_job,
     _prune_staged_sequence_dirs,
     _monitor_grid_progress,
+    _update_channel_status,
 )
 from win_automation_picker.recipe import AutomationRecipe, AutomationStep
 from win_automation_picker.sequence_bundle import RigSequenceBundleError, read_rig_sequence_bundle
@@ -161,6 +166,18 @@ def test_config_supports_password_env(monkeypatch) -> None:
     assert config.password_env == "RIG_FTP_PASSWORD"
     assert config.to_mapping()["ftp"]["password"] == ""
     assert config.to_mapping()["ftp"]["password_env"] == "RIG_FTP_PASSWORD"
+
+
+def test_config_preserves_zero_artifact_retention_to_disable_uploads() -> None:
+    config = FtpSpoolConfig.from_mapping(
+        {
+            "ftp": {"host": "ftp.local"},
+            "runtime": {"max_artifact_files": 0},
+        }
+    )
+
+    assert config.max_artifact_files == 0
+    assert config.to_mapping()["runtime"]["max_artifact_files"] == 0
 
 
 def test_config_supports_slave_roster() -> None:
@@ -644,7 +661,268 @@ def test_slave_runs_rig_sequence_directly_over_configured_serial_port(tmp_path, 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["completed_commands"] == 3
     assert manifest["commands"][0]["command"] == "exit;"
+    assert manifest["schema"] == "rig-test-run/v2"
+    assert [row["name"] for row in manifest["grids"]] == ["#BOOT", "#RUN"]
+    assert all((manifest_path.parent / row["log_path"]).is_file() for row in manifest["grids"])
     assert "LK2]" in console_path.read_text(encoding="utf-8")
+    assert result.details["artifact_path"] == "artifacts/rig-pc-04/direct-serial-job.zip"
+    assert (tmp_path / "spool" / result.details["artifact_path"]).is_file()
+
+
+def test_sk_commander_control_profile_detects_required_and_optional_roles() -> None:
+    selector = UISelector(root=SelectorSegment(control_type="Window", name="SK Commander"))
+    recipe = AutomationRecipe(
+        steps=[
+            AutomationStep.type(selector, "${seq_path}", element_role="sk_seq_path"),
+            AutomationStep.click(selector, element_role="sk_load"),
+            AutomationStep.click(selector, element_role="sk_start"),
+            AutomationStep.click(selector, element_role="sk_stop"),
+            AutomationStep.monitor_text(
+                selector,
+                "GRID",
+                operator="contains",
+                element_role="sk_grid_status",
+            ),
+        ]
+    )
+
+    profile = inspect_sk_commander_workflow(recipe)
+
+    assert profile["ready_to_launch"] is True
+    assert profile["missing_required_roles"] == []
+    assert profile["can_stop"] is True
+    assert profile["can_monitor_grid"] is True
+
+    wrong_path = AutomationRecipe(
+        steps=[
+            AutomationStep.type(selector, "C:/fixed.seq", element_role="sk_seq_path"),
+            AutomationStep.click(selector, element_role="sk_load"),
+            AutomationStep.click(selector, element_role="sk_start"),
+        ]
+    )
+    wrong_profile = inspect_sk_commander_workflow(wrong_path)
+    assert wrong_profile["ready_to_launch"] is False
+    assert "${seq_path}" in wrong_profile["missing_required_roles"]
+
+
+def test_nested_sk_monitor_group_exposes_grid_progress() -> None:
+    progress = _monitor_grid_progress(
+        {
+            "label": "CH 식별 + PASS + Grid 진행",
+            "details": [
+                {
+                    "label": "Grid 진행",
+                    "actual": "7/12 GRID_08",
+                    "expected": "COMPLETE",
+                    "monitor_state": "RUNNING",
+                }
+            ],
+        }
+    )
+
+    assert progress == (7, 12)
+
+
+def test_local_sk_observer_does_not_relabel_active_master_run() -> None:
+    context = {
+        "channels": [
+            {
+                "channel_id": "CH11",
+                "state": "running",
+                "acceptance_result": "pending",
+                "execution_route": "sk_commander",
+                "execution_origin": "master_remote",
+                "execution_phase": "running_external",
+            }
+        ]
+    }
+    job = SpoolJob.create(kind="monitor", payload={}, job_id="local-watch")
+    result = JobResult(
+        job_id="local-watch",
+        node_id="rig-pc-04",
+        kind="monitor_local",
+        ok=True,
+        returncode=0,
+        started_at="2026-07-12T00:00:00Z",
+        finished_at="2026-07-12T00:00:10Z",
+        monitor_results=[
+            {
+                "kind": "monitor_text",
+                "ok": True,
+                "monitor_channel": "CH11",
+                "monitor_state": "RUNNING",
+                "actual": "7/12 GRID_08",
+                "expected": "RUNNING",
+                "label": "Grid progress",
+            }
+        ],
+        details={
+            "execution_route": "sk_commander",
+            "execution_origin": "local_fixture_pc",
+            "execution_phase": "observing",
+        },
+    )
+
+    _update_channel_status(context, job, result)
+
+    assert context["channels"][0]["execution_origin"] == "master_remote"
+    assert context["channels"][0]["execution_phase"] == "running_external"
+    assert context["channels"][0]["current_grid"] == "GRID_08"
+
+
+def test_agent_heartbeat_preserves_local_fixture_pc_sequence_status(tmp_path) -> None:
+    backend = LocalSpoolBackend(tmp_path / "spool")
+    config = FtpSpoolConfig(
+        node_id="rig-pc-04",
+        work_dir=str(tmp_path / "work"),
+        capture_on_error=False,
+        slaves=(
+            SlaveInfo(
+                node_id="rig-pc-04",
+                channels=(ChannelInfo(channel_id="CH11", slot_id="S3", com_port="COM7"),),
+            ),
+        ),
+    )
+    initialize_spool(backend, nodes=["rig-pc-04"])
+    publish_local_sequence_progress(
+        backend,
+        config,
+        "rig-pc-04",
+        {
+            "channel_id": "CH11",
+            "slot_id": "S3",
+            "state": "running",
+            "sequence_name": "local-smoke",
+            "current_grid": "#HH_105_0.99",
+            "completed_grids": 1,
+            "total_grids": 4,
+            "execution_route": "direct_serial",
+            "execution_origin": "local_fixture_pc",
+            "execution_phase": "running",
+        },
+        job_id="local-run-1",
+        message="local grid",
+    )
+
+    run_slave_once(backend, config)
+
+    active_status = list_status(backend)[0]
+    channel = active_status["channels"][0]
+    assert active_status["state"] == "running"
+    assert active_status["current_job"] == "local-run-1"
+    assert channel["execution_route"] == "direct_serial"
+    assert channel["execution_origin"] == "local_fixture_pc"
+    assert channel["current_grid"] == "#HH_105_0.99"
+    assert channel["completed_grids"] == 1
+
+    snapshot_path = tmp_path / "work" / "local-runs" / "rig-pc-04" / "channels" / "CH11.json"
+    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    snapshot["channel"]["updated_at"] = "2020-01-01T00:00:00Z"
+    snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+    run_slave_once(backend, config)
+
+    stale_status = list_status(backend)[0]
+    stale_channel = stale_status["channels"][0]
+    assert stale_status["state"] == "idle"
+    assert stale_channel["state"] == "stale"
+    assert stale_channel["execution_phase"] == "interrupted"
+
+
+def test_local_sequence_result_preserves_existing_status_context(tmp_path) -> None:
+    backend = LocalSpoolBackend(tmp_path / "spool")
+    config = FtpSpoolConfig(node_id="rig-pc-04", work_dir=str(tmp_path / "work"))
+    initialize_spool(backend, nodes=["rig-pc-04"])
+    backend.write_bytes(
+        "status/rig-pc-04.json",
+        json.dumps(
+            {
+                "node_id": "rig-pc-04",
+                "state": "idle",
+                "message": "waiting",
+                "current_job": "",
+                "updated_at": "2026-07-12T00:00:00Z",
+                "campaign_runs": [{"campaign_id": "KEEP-ME", "channel_id": "CH9"}],
+                "channels": [{"channel_id": "CH9", "state": "pass"}],
+            }
+        ).encode("utf-8"),
+    )
+    job = SpoolJob.create(
+        kind="sequence_local",
+        payload={"sequence_backend": "serial"},
+        variables={"channel": "CH11"},
+        job_id="local-result",
+    )
+    result = JobResult(
+        job_id="local-result",
+        node_id="rig-pc-04",
+        kind="sequence_local",
+        ok=True,
+        returncode=0,
+        started_at="2026-07-12T00:00:00Z",
+        finished_at="2026-07-12T00:01:00Z",
+        details={
+            "sequence_backend": "serial",
+            "execution_route": "direct_serial",
+            "execution_origin": "local_fixture_pc",
+            "execution_phase": "completed",
+            "channel_id": "CH11",
+            "sequence_name": "local-smoke",
+            "acceptance_result": "pass",
+            "completed_grids": 1,
+            "total_grids": 1,
+        },
+    )
+
+    publish_local_sequence_result(backend, config, job, result)
+
+    status = list_status(backend)[0]
+    assert status["campaign_runs"] == [{"campaign_id": "KEEP-ME", "channel_id": "CH9"}]
+    assert {row["channel_id"] for row in status["channels"]} == {"CH9", "CH11"}
+
+
+def test_local_sequence_result_can_disable_artifact_upload(tmp_path) -> None:
+    backend = LocalSpoolBackend(tmp_path / "spool")
+    result_dir = tmp_path / "work" / "serial-results" / "local-result"
+    result_dir.mkdir(parents=True)
+    (result_dir / "manifest.json").write_text(
+        json.dumps({"schema": "rig-test-run/v2"}),
+        encoding="utf-8",
+    )
+    config = FtpSpoolConfig(
+        node_id="rig-pc-04",
+        work_dir=str(tmp_path / "work"),
+        max_artifact_files=0,
+    )
+    initialize_spool(backend, nodes=["rig-pc-04"])
+    job = SpoolJob.create(
+        kind="sequence_local",
+        payload={"sequence_backend": "serial"},
+        variables={"channel": "CH11"},
+        job_id="local-result",
+    )
+    result = JobResult(
+        job_id="local-result",
+        node_id="rig-pc-04",
+        kind="sequence_local",
+        ok=True,
+        returncode=0,
+        started_at="2026-07-12T00:00:00Z",
+        finished_at="2026-07-12T00:01:00Z",
+        details={
+            "execution_route": "direct_serial",
+            "execution_origin": "local_fixture_pc",
+            "execution_phase": "completed",
+            "channel_id": "CH11",
+            "result_dir": str(result_dir),
+        },
+    )
+
+    published = publish_local_sequence_result(backend, config, job, result)
+
+    assert published.details.get("artifact_path", "") == ""
+    assert "disabled" in published.details["artifact_error"]
+    assert backend.list_files("artifacts/rig-pc-04") == []
+    assert backend.list_files("results/rig-pc-04")
 
 
 def test_slave_runs_direct_serial_batch_concurrently_and_updates_each_channel(tmp_path, monkeypatch) -> None:
@@ -746,6 +1024,7 @@ def test_slave_runs_direct_serial_batch_concurrently_and_updates_each_channel(tm
     assert result.details["passed_channels"] == 2
     assert max_active == 2
     assert {item["channel_id"] for item in result.details["channels"]} == {"CH11", "CH12"}
+    assert len(result.details["artifact_paths"]) == 2
     assert len(list((work_dir / "serial-results").glob("*/manifest.json"))) == 2
     status = list_status(backend)[0]
     assert {item["channel_id"] for item in status["channels"]} == {"CH11", "CH12"}

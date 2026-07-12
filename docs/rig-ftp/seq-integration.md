@@ -67,8 +67,13 @@ Win Automation Picker에서 실제 업무를 한 번 녹화합니다.
 4. SK Commander에서 최종 `시작` 버튼까지 누릅니다.
 5. Picker로 돌아와 `녹화 정지`를 누릅니다.
 6. 파일 경로를 입력하는 블록의 실제 경로를 `${seq_path}`로 바꿉니다.
-7. 같은 제목의 창이 여러 개면 창 구분 component의 marker를 `${channel}`로 바꿉니다.
-8. `선택 블록 시험`과 전체 `실행`으로 확인한 뒤 Python workflow를 내보냅니다.
+7. `유형 / 역할`을 경로 칸 `sk_seq_path`, Load `sk_load`, Start `sk_start`로 지정합니다.
+8. 같은 제목의 창이 여러 개면 창 구분 component의 marker를 `${channel}`로 바꿉니다.
+9. `선택 블록 시험`과 전체 `실행`으로 확인한 뒤 Python workflow를 내보냅니다.
+
+Stop, Reset, Power Reset은 각각 `sk_stop`, `sk_reset`, `sk_power_reset` 역할의 별도
+workflow로 만듭니다. 전체 역할과 현장 수동 실행 감시는
+[SK Commander 연동과 직접 COM 운용](execution-routes.md)을 따릅니다.
 
 `channel=CH11`인 실행 행에서는 selector의 root 이름, AutomationId, class, 창 marker에 포함된 `${channel}`이 모두 `CH11`로 치환됩니다. 모니터 보드의 tab/channel/state 이름도 같은 변수를 사용할 수 있습니다.
 
@@ -107,8 +112,8 @@ Campaign repeat가 2라면 CH마다 attempt 1과 2가 만들어져 네 CH 기준
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 체크 | rig-pc-04 | four-corner.rigseq.zip | CH9 | S1 | 직접 COM | COM11 | 115200 |
 | 체크 | rig-pc-04 | four-corner.rigseq.zip | CH10 | S2 | 직접 COM | COM12 | 115200 |
-| 체크 | rig-pc-04 | row-hammer.rigseq.zip | CH11 | S3 | 직접 COM | COM13 | 115200 |
-| 체크 | rig-pc-04 | aging.rigseq.zip | CH12 | S4 | 직접 COM | COM14 | 115200 |
+| 체크 | rig-pc-04 | row-hammer.rigseq.zip | CH11 | S3 | SK Commander | COM13 | 115200 |
+| 체크 | rig-pc-04 | aging.rigseq.zip | CH12 | S4 | SK Commander | COM14 | 115200 |
 
 같은 Node ID를 여러 행에 사용하는 것이 정상입니다. 같은 Campaign/attempt의 직접 COM 행은
 최대 네 개가 한 batch job이 되어 동시에 실행됩니다. attempt가 다르면 다음 batch로 분리됩니다.
@@ -134,8 +139,10 @@ Slave는 job을 받으면 다음 순서로 처리합니다.
 
 - 각 CH는 독립 serial session과 thread를 사용합니다.
 - 한 CH의 command 오류는 그 CH를 FAIL 처리하지만 다른 CH의 결과 확정은 계속합니다.
-- Grid, command, timeout, 제한된 response를 CH별 manifest에 기록합니다.
-- `work_dir/serial-results/{job-CH}/console.log`에 해당 CH의 TX/RX를 저장합니다.
+- Grid, command, timeout, response와 Temp/VDD 조건을 CH별 manifest에 기록합니다.
+- `work_dir/serial-results/{job-CH}/grids/*.log`와 `console.log`를 저장합니다.
+- 완료 시 manifest/Grid/console을 용량 제한 ZIP으로 한 번만 FTP에 올립니다.
+- Master 결과 행의 `선택 결과 증거 ZIP 저장`으로 내려받습니다.
 - Master 긴급 중단은 batch job ID로 네 CH에 전달되어 다음 stop 확인 시 멈춥니다.
 
 ### SK Commander 런처 변수

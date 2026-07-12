@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from dataclasses import replace
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,7 @@ import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any, Callable
+from zipfile import ZIP_STORED, ZipFile
 
 from .binary_exchange import read_binary_release_metadata
 from .device_ui import DeviceWorkspaceMixin
@@ -37,6 +39,7 @@ from .ftp_spool import (
     cleanup_node_files,
     clear_stop,
     deploy_package,
+    execute_job,
     example_spool_config,
     initialize_spool,
     list_packages,
@@ -44,6 +47,7 @@ from .ftp_spool import (
     list_screenshots,
     list_status,
     package_job_kind,
+    publish_local_monitor_result,
     request_stop,
     run_slave_once,
     save_triage_record,
@@ -661,8 +665,12 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         self.work_dir_var = tk.StringVar(value="rig-ftp-work")
         self.python_var = tk.StringVar(value=sys.executable)
         self.capture_error_var = tk.BooleanVar(value=True)
+        self.max_run_log_mb_var = tk.StringVar(value="8")
+        self.max_artifact_mb_var = tk.StringVar(value="16")
         self.max_results_var = tk.StringVar(value="200")
         self.max_logs_var = tk.StringVar(value="200")
+        self.max_local_runs_var = tk.StringVar(value="40")
+        self.max_artifacts_var = tk.StringVar(value="40")
         self.max_archive_var = tk.StringVar(value="500")
         self.max_screens_var = tk.StringVar(value="20")
 
@@ -841,11 +849,27 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             "화면 보관 개수",
             self.max_screens_var,
         )
+        self._entry_row(
+            advanced_page,
+            5,
+            "실행 로그 상한(MB)",
+            self.max_run_log_mb_var,
+            "증거 ZIP 상한(MB)",
+            self.max_artifact_mb_var,
+        )
+        self._entry_row(
+            advanced_page,
+            6,
+            "로컬 실행 보관 개수",
+            self.max_local_runs_var,
+            "FTP 증거 ZIP 보관 개수",
+            self.max_artifacts_var,
+        )
         ttk.Checkbutton(
             advanced_page,
             text="오류 발생 시 전체 화면 저장",
             variable=self.capture_error_var,
-        ).grid(row=5, column=1, sticky="w", pady=(8, 0))
+        ).grid(row=7, column=1, sticky="w", pady=(8, 0))
 
     def _build_topology_settings(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -1998,6 +2022,10 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             state="readonly",
         )
         self.sequence_launcher_combo.grid(row=2, column=1, sticky="ew", pady=3)
+        self.sequence_launcher_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._update_sequence_route_readiness(),
+        )
         ttk.Label(jobs, text="고급 인자").grid(row=3, column=0, sticky="w", padx=(0, 6), pady=3)
         self.job_args_var = tk.StringVar(value="")
         ttk.Entry(jobs, textvariable=self.job_args_var).grid(row=3, column=1, sticky="ew", pady=3)
@@ -2070,6 +2098,12 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             command=self._submit_run_profiles,
             style="Primary.TButton",
         ).grid(row=0, column=5)
+        self.run_route_readiness_var = tk.StringVar(value="직접 COM: CH별 COM/baud를 확인하세요.")
+        ttk.Label(
+            profile_toolbar,
+            textvariable=self.run_route_readiness_var,
+            style="Muted.TLabel",
+        ).grid(row=1, column=0, columnspan=6, sticky="w", pady=(6, 0))
         self.run_profile_tree = ttk.Treeview(profiles, show="headings", height=8, selectmode="extended")
         self.run_profile_tree.grid(row=1, column=0, sticky="nsew")
         run_profile_scroll = ttk.Scrollbar(profiles, orient="vertical", command=self.run_profile_tree.yview)
@@ -2138,6 +2172,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         monitor_more.add_separator()
         monitor_more.add_command(label="선택 작업 긴급 중단", command=self._stop_selected_job)
         monitor_more.add_command(label="선택 결과 분류", command=self._triage_selected_result)
+        monitor_more.add_command(label="선택 결과 증거 ZIP 저장", command=self._save_selected_result_artifact)
         monitor_more.add_command(label="Excel 내보내기", command=self._export_state_excel)
         monitor_more.add_command(label="오래된 파일 정리", command=self._cleanup_node)
         monitor_more_button["menu"] = monitor_more
@@ -2203,6 +2238,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             "test",
             "sequence",
             "campaign",
+            "route",
             "state",
             "grid",
             "acceptance",
@@ -2227,6 +2263,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             "test": "현재 Test",
             "sequence": "SEQ",
             "campaign": "캠페인 / 시도",
+            "route": "운용 / 시작",
             "state": "상태",
             "grid": "Grid 진행",
             "acceptance": "판정",
@@ -2245,6 +2282,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             "test": 130,
             "sequence": 160,
             "campaign": 180,
+            "route": 130,
             "state": 85,
             "grid": 150,
             "acceptance": 80,
@@ -2423,6 +2461,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             "soc",
             "binary",
             "attempt",
+            "route",
             "state",
             "grid",
             "acceptance",
@@ -2438,6 +2477,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             "soc": "SoC",
             "binary": "Binary",
             "attempt": "시도",
+            "route": "운용 / 시작",
             "state": "실행 상태",
             "grid": "Grid 진행",
             "acceptance": "판정",
@@ -2452,6 +2492,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             "soc": 145,
             "binary": 115,
             "attempt": 45,
+            "route": 125,
             "state": 75,
             "grid": 120,
             "acceptance": 70,
@@ -2481,6 +2522,8 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         parent.rowconfigure(1, weight=1)
 
         self.slave_state_var = tk.StringVar(value="Stopped")
+        self._local_sk_observer_stop: threading.Event | None = None
+        self.local_sk_observer_state_var = tk.StringVar(value="감시 중지")
         control = ttk.Labelframe(parent, text="Agent 제어", padding=10)
         control.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         control.columnconfigure(1, weight=1)
@@ -2508,6 +2551,42 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         agent_more.add_command(label="한 번 확인", command=self._poll_slave_once)
         agent_more.add_command(label="중단 신호 해제", command=self._clear_my_stop)
         agent_more_button["menu"] = agent_more
+
+        observer = ttk.Frame(control)
+        observer.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(10, 0))
+        observer.columnconfigure(1, weight=1)
+        ttk.Label(observer, text="현장 SK 감시").grid(row=0, column=0, padx=(0, 6))
+        self.local_sk_observer_package_var = tk.StringVar(value="")
+        self.local_sk_observer_package_combo = ttk.Combobox(
+            observer,
+            textvariable=self.local_sk_observer_package_var,
+            state="readonly",
+        )
+        self.local_sk_observer_package_combo.grid(row=0, column=1, sticky="ew", padx=(0, 8))
+        ttk.Label(observer, text="간격 초").grid(row=0, column=2, padx=(0, 5))
+        self.local_sk_observer_interval_var = tk.StringVar(value="15")
+        ttk.Spinbox(
+            observer,
+            from_=5,
+            to=600,
+            increment=5,
+            width=6,
+            textvariable=self.local_sk_observer_interval_var,
+        ).grid(row=0, column=3, padx=(0, 8))
+        ttk.Button(
+            observer,
+            text="감시 시작",
+            command=self._start_local_sk_observer,
+            style="Primary.TButton",
+        ).grid(row=0, column=4, padx=(0, 5))
+        ttk.Button(
+            observer,
+            text="감시 중지",
+            command=self._stop_local_sk_observer,
+        ).grid(row=0, column=5, padx=(0, 8))
+        ttk.Label(observer, textvariable=self.local_sk_observer_state_var).grid(
+            row=0, column=6, sticky="e"
+        )
 
         log_frame = ttk.Labelframe(parent, text="Agent 로그", padding=10)
         log_frame.grid(row=1, column=0, sticky="nsew")
@@ -2700,8 +2779,12 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         self.work_dir_var.set(config.work_dir)
         self.python_var.set(config.python_executable)
         self.capture_error_var.set(config.capture_on_error)
+        self.max_run_log_mb_var.set(f"{config.max_run_log_bytes / (1024 * 1024):g}")
+        self.max_artifact_mb_var.set(f"{config.max_artifact_upload_bytes / (1024 * 1024):g}")
         self.max_results_var.set(str(config.max_result_files))
         self.max_logs_var.set(str(config.max_log_files))
+        self.max_local_runs_var.set(str(config.max_local_run_files))
+        self.max_artifacts_var.set(str(config.max_artifact_files))
         self.max_archive_var.set(str(config.max_archive_files))
         self.max_screens_var.set(str(config.max_screenshot_files))
         self._settings_variables = dict(config.variables)
@@ -2747,8 +2830,18 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             work_dir=self.work_dir_var.get().strip() or "rig-ftp-work",
             python_executable=self.python_var.get().strip() or sys.executable,
             capture_on_error=bool(self.capture_error_var.get()),
+            max_run_log_bytes=max(
+                4096,
+                int(float(self.max_run_log_mb_var.get() or "8") * 1024 * 1024),
+            ),
+            max_artifact_upload_bytes=max(
+                4096,
+                int(float(self.max_artifact_mb_var.get() or "16") * 1024 * 1024),
+            ),
             max_result_files=int(self.max_results_var.get() or "200"),
             max_log_files=int(self.max_logs_var.get() or "200"),
+            max_local_run_files=int(self.max_local_runs_var.get() or "40"),
+            max_artifact_files=int(self.max_artifacts_var.get() or "40"),
             max_archive_files=int(self.max_archive_var.get() or "500"),
             max_screenshot_files=int(self.max_screens_var.get() or "20"),
             variables=dict(self._settings_variables),
@@ -3141,6 +3234,64 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             changed += 1
         if changed:
             self._refresh_run_profile_columns()
+        self._update_sequence_route_readiness()
+
+    def _update_sequence_route_readiness(self) -> None:
+        if not hasattr(self, "run_route_readiness_var"):
+            return
+        row_modes = {
+            str(row.get("variables", {}).get("sequence_backend") or "").strip().casefold()
+            for row in self._run_profiles
+            if isinstance(row.get("variables"), dict)
+            and str(row.get("variables", {}).get("sequence_backend") or "").strip()
+        }
+        if any(value in {"serial", "direct_com", "direct"} for value in row_modes) and any(
+            value in {"sk_commander", "sk commander", "sk"} for value in row_modes
+        ):
+            self.run_route_readiness_var.set(
+                "혼합 운용: 표의 각 행에서 직접 COM/SK Commander와 런처를 최종 확인하세요."
+            )
+            return
+        try:
+            mode = self._normalize_sequence_backend(self.run_sequence_backend_var.get())
+        except FtpSpoolError as exc:
+            self.run_route_readiness_var.set(str(exc))
+            return
+        if mode in {"serial", "auto"}:
+            self.run_route_readiness_var.set(
+                "직접 COM · Master 원격: CH별 COM/baud 확인 후 Grid 로그와 최종 증거 ZIP을 자동 저장합니다."
+            )
+            return
+        launcher_name = self.sequence_launcher_var.get().strip()
+        launcher = next((item for item in self._packages if item.name == launcher_name), None)
+        if launcher is None:
+            self.run_route_readiness_var.set("SK Commander: 런처 workflow를 선택하세요.")
+            return
+        profile = launcher.details.get("sk_commander") if isinstance(launcher.details, dict) else {}
+        if not isinstance(profile, dict) or not profile:
+            self.run_route_readiness_var.set(
+                "SK Commander · 호환 모드: 다시 업로드하면 SEQ/Load/Start 역할을 자동 점검합니다."
+            )
+            return
+        missing = [str(value) for value in profile.get("missing_required_roles", [])]
+        if missing:
+            self.run_route_readiness_var.set(
+                "SK Commander · 준비 미완료: " + ", ".join(missing)
+            )
+            return
+        controls = [
+            label
+            for key, label in (
+                ("can_stop", "Stop"),
+                ("can_reset", "Reset"),
+                ("can_power_reset", "Power Reset"),
+                ("can_monitor_grid", "Grid 감시"),
+                ("can_monitor_serial", "Serial 감시"),
+            )
+            if profile.get(key)
+        ]
+        suffix = f" · 추가 역할: {', '.join(controls)}" if controls else ""
+        self.run_route_readiness_var.set(f"SK Commander · SEQ/Load/Start 준비 완료{suffix}")
 
     def _prepare_sequence_execution(self, variables: dict[str, str]) -> tuple[str, str]:
         launcher_name = str(variables.get("launcher_package", "")).strip()
@@ -3166,6 +3317,13 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             raise FtpSpoolError(f"SK Commander 런처를 찾을 수 없습니다: {launcher_name or '(미선택)'}")
         if launcher.runner != "workflow":
             raise FtpSpoolError("SK Commander 런처는 Picker에서 export한 workflow여야 합니다.")
+        profile = launcher.details.get("sk_commander") if isinstance(launcher.details, dict) else {}
+        if isinstance(profile, dict) and profile.get("explicit_roles"):
+            missing = [str(value) for value in profile.get("missing_required_roles", [])]
+            if missing:
+                raise FtpSpoolError(
+                    "SK Commander 런처 역할이 빠졌습니다: " + ", ".join(missing)
+                )
         return launcher
 
     def _apply_campaign_package_variables(
@@ -3828,6 +3986,10 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                     if part
                 ),
                 "attempt": attempt,
+                "route": self._execution_route_label(
+                    variables.get("sequence_backend", ""),
+                    "master_remote",
+                ),
                 "state": "planned",
                 "grid": "-",
                 "acceptance": "pending",
@@ -3871,6 +4033,11 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                     "channel": channel or existing.get("channel", "-"),
                     "slot": slot or existing.get("slot", ""),
                     "attempt": attempt,
+                    "route": self._execution_route_label(
+                        run.get("execution_route", ""),
+                        run.get("execution_origin", ""),
+                    )
+                    or existing.get("route", ""),
                     "state": state,
                     "grid": progress,
                     "acceptance": run.get("acceptance_result", "pending"),
@@ -3935,6 +4102,11 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                     )
                     or existing.get("binary", ""),
                     "attempt": attempt,
+                    "route": self._execution_route_label(
+                        channel_row.get("execution_route", ""),
+                        channel_row.get("execution_origin", ""),
+                    )
+                    or existing.get("route", ""),
                     "state": state,
                     "grid": progress,
                     "acceptance": channel_row.get("acceptance_result", "pending"),
@@ -3962,6 +4134,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                     "soc",
                     "binary",
                     "attempt",
+                    "route",
                     "state",
                     "grid",
                     "acceptance",
@@ -4146,6 +4319,10 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                     channel.get("current_test", ""),
                     channel.get("sequence_name", ""),
                     campaign,
+                    self._execution_route_label(
+                        channel.get("execution_route", ""),
+                        channel.get("execution_origin", ""),
+                    ),
                     state,
                     progress,
                     channel.get("acceptance_result", ""),
@@ -4159,6 +4336,23 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                     values=values,
                     tags=(tag,),
                 )
+
+    @staticmethod
+    def _execution_route_label(route: object, origin: object) -> str:
+        normalized_route = str(route or "").strip().casefold()
+        route_label = {
+            "serial": "직접 COM",
+            "direct_serial": "직접 COM",
+            "direct_com": "직접 COM",
+            "sk_commander": "SK Commander",
+        }.get(normalized_route, str(route or "").strip())
+        normalized_origin = str(origin or "").strip().casefold()
+        origin_label = {
+            "master_remote": "Master",
+            "local_fixture_pc": "현장 PC",
+            "local_manual": "현장 PC",
+        }.get(normalized_origin, str(origin or "").strip())
+        return " · ".join(part for part in (route_label, origin_label) if part)
 
     def _channel_state_tag(self, state: str, parent_health: str) -> str:
         if parent_health == "offline":
@@ -4255,12 +4449,16 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                 "Campaign ID",
                 "Campaign Title",
                 "Campaign Attempt",
+                "Execution Route",
+                "Execution Origin",
+                "Execution Phase",
                 "State",
                 "Current Grid",
                 "Completed Grids",
                 "Total Grids",
                 "Acceptance",
                 "Failure Class",
+                "Artifact Path",
                 "Channel Updated",
                 "Notes",
             ]
@@ -4328,12 +4526,16 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                         channel.get("campaign_id", ""),
                         channel.get("campaign_title", ""),
                         channel.get("campaign_attempt", 0),
+                        channel.get("execution_route", ""),
+                        channel.get("execution_origin", ""),
+                        channel.get("execution_phase", ""),
                         channel.get("state", ""),
                         channel.get("current_grid", ""),
                         channel.get("completed_grids", 0),
                         channel.get("total_grids", 0),
                         channel.get("acceptance_result", ""),
                         channel.get("failure_class", ""),
+                        channel.get("artifact_path", ""),
                         channel.get("updated_at", ""),
                         channel.get("notes", ""),
                     ]
@@ -4530,6 +4732,54 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         text_widget.pack(fill="both", expand=True)
         text_widget.insert("1.0", json.dumps(row, indent=2, ensure_ascii=False))
         text_widget.configure(state="disabled")
+
+    def _save_selected_result_artifact(self) -> None:
+        row = self._selected_result_row()
+        if row is None:
+            self._show_error(FtpSpoolError("증거 파일을 받을 결과 행을 먼저 선택하세요."))
+            return
+        details = row.get("details") if isinstance(row.get("details"), dict) else {}
+        remote_paths = [str(details.get("artifact_path") or "")]
+        if isinstance(details.get("artifact_paths"), list):
+            remote_paths.extend(str(value or "") for value in details["artifact_paths"])
+        if isinstance(details.get("channels"), list):
+            remote_paths.extend(
+                str(item.get("artifact_path") or "")
+                for item in details["channels"]
+                if isinstance(item, dict)
+            )
+        remote_paths = list(dict.fromkeys(path for path in remote_paths if path))
+        if not remote_paths:
+            self._show_error(
+                FtpSpoolError("이 결과에는 원격 증거 ZIP이 없습니다. 기존 작업 또는 업로드 실패 결과일 수 있습니다.")
+            )
+            return
+        target = filedialog.asksaveasfilename(
+            title="Grid/console 증거 ZIP 저장",
+            defaultextension=".zip",
+            initialfile=f"{row.get('job_id') or 'run-artifact'}.zip",
+            filetypes=[("ZIP archive", "*.zip"), ("All files", "*.*")],
+        )
+        if not target:
+            return
+        try:
+            _config, backend, _local_root = self._snapshot_backend()
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+
+        def worker() -> None:
+            if len(remote_paths) == 1:
+                Path(target).write_bytes(backend.read_bytes(remote_paths[0]))
+            else:
+                with ZipFile(target, "w", compression=ZIP_STORED) as archive:
+                    for remote_path in remote_paths:
+                        archive.writestr(Path(remote_path).name, backend.read_bytes(remote_path))
+            self._queue.put(
+                ("log", f"실행 증거 ZIP 저장: {target} ({len(remote_paths)} CH)")
+            )
+
+        self._start_worker("Downloading run artifact", worker)
 
     def _triage_selected_result(self) -> None:
         row = self._selected_result_row()
@@ -4728,6 +4978,110 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             self._queue.put(("log", f"Cleaned retained files for {node}."))
 
         self._start_worker("Cleaning node files", worker)
+
+    def _start_local_sk_observer(self) -> None:
+        if self._local_sk_observer_stop is not None:
+            self._append_slave_log("현장 SK Commander 감시가 이미 실행 중입니다.")
+            return
+        try:
+            config, backend, _local_root = self._snapshot_backend()
+            node = self.node_id_var.get().strip() or config.node_id
+            package_name = self.local_sk_observer_package_var.get().strip()
+            package = next((item for item in self._packages if item.name == package_name), None)
+            if not node:
+                raise FtpSpoolError("현장 감시에는 이 PC Node ID가 필요합니다.")
+            if package is None or package.runner != "workflow":
+                raise FtpSpoolError("현장 감시에 사용할 monitor workflow를 선택하세요.")
+            interval = max(5.0, float(self.local_sk_observer_interval_var.get() or "15"))
+        except BaseException as exc:
+            self._show_error(exc)
+            return
+
+        stop_event = threading.Event()
+        self._local_sk_observer_stop = stop_event
+        self.local_sk_observer_state_var.set(f"감시 중: {node}")
+
+        def worker() -> None:
+            last_signature = ""
+            last_status_publish = 0.0
+            cycle = 0
+            self._queue.put(
+                ("slave_log", f"현장 SK Commander 감시 시작: {package_name} / {interval:g}초")
+            )
+            try:
+                while not stop_event.is_set():
+                    cycle += 1
+                    job = SpoolJob.create(
+                        kind="monitor",
+                        payload={"package": package_name, "timeout_seconds": max(30.0, interval)},
+                        variables={
+                            **config.variables,
+                            "execution_route": "sk_commander",
+                            "execution_origin": "local_fixture_pc",
+                        },
+                        job_id=(
+                            f"local-sk-watch-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-"
+                            f"{cycle:04d}"
+                        ),
+                        origin={
+                            "controller_id": node,
+                            "alias": "현장 PC",
+                            "windows_name": platform.node(),
+                        },
+                    )
+                    result = execute_job(backend, config, job, node_id=node)
+                    signature = json.dumps(
+                        {
+                            "ok": result.ok,
+                            "stderr": result.stderr,
+                            "monitor_results": result.monitor_results,
+                        },
+                        sort_keys=True,
+                        ensure_ascii=True,
+                    )
+                    now = time.monotonic()
+                    changed = signature != last_signature
+                    heartbeat_due = now - last_status_publish >= 60.0
+                    if changed or heartbeat_due:
+                        publish_local_monitor_result(
+                            backend,
+                            config,
+                            job,
+                            result,
+                            publish_history=changed,
+                        )
+                        last_status_publish = now
+                    if changed:
+                        passed = sum(
+                            1
+                            for item in result.monitor_results
+                            if isinstance(item, dict) and item.get("ok")
+                        )
+                        self._queue.put(
+                            (
+                                "slave_log",
+                                f"현장 SK 상태 변경: {passed}/{len(result.monitor_results)} 규칙 통과"
+                                + (f" / {result.stderr}" if result.stderr else ""),
+                            )
+                        )
+                    last_signature = signature
+                    if stop_event.wait(interval):
+                        break
+            except BaseException as exc:
+                self._queue.put(("error", exc))
+                self._queue.put(("slave_log", f"현장 SK 감시 오류: {exc}"))
+            finally:
+                self._queue.put(("local_sk_observer_stopped", "감시 중지"))
+                self._queue.put(("slave_log", "현장 SK Commander 감시를 중지했습니다."))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _stop_local_sk_observer(self) -> None:
+        if self._local_sk_observer_stop is None:
+            self._append_slave_log("현장 SK Commander 감시는 실행 중이 아닙니다.")
+            return
+        self._local_sk_observer_stop.set()
+        self.local_sk_observer_state_var.set("감시 중지 중...")
 
     def _start_slave_loop(self) -> None:
         if self._slave_stop is not None:
@@ -4946,6 +5300,34 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             self.sequence_launcher_var.set(launchers[0])
         else:
             self.sequence_launcher_var.set("")
+        if hasattr(self, "local_sk_observer_package_combo"):
+            observer_names = sorted(
+                launchers,
+                key=lambda name: (
+                    not bool(
+                        next(
+                            (
+                                item.details.get("sk_commander", {}).get("can_monitor_grid")
+                                or item.details.get("sk_commander", {}).get("can_monitor_serial")
+                                for item in packages
+                                if item.name == name and isinstance(item.details.get("sk_commander"), dict)
+                            ),
+                            False,
+                        )
+                    ),
+                    name.casefold(),
+                ),
+            )
+            current_observer = self.local_sk_observer_package_var.get().strip()
+            self.local_sk_observer_package_combo.configure(values=observer_names)
+            self.local_sk_observer_package_var.set(
+                current_observer
+                if current_observer in observer_names
+                else observer_names[0]
+                if observer_names
+                else ""
+            )
+        self._update_sequence_route_readiness()
         self.package_list.delete(0, "end")
         for package in packages:
             title = package.title or package.name
@@ -5072,6 +5454,9 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                 self.slave_state_var.set(str(payload))
             elif kind == "slave_state":
                 self.slave_state_var.set(str(payload))
+            elif kind == "local_sk_observer_stopped":
+                self._local_sk_observer_stop = None
+                self.local_sk_observer_state_var.set(str(payload))
             elif kind == "monitor_stopped":
                 self._monitor_stop = None
                 self._append_master_log(str(payload))

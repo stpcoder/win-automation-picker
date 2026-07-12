@@ -432,7 +432,7 @@ class PickerApp(tk.Toplevel):
             row=0, column=1, sticky="ew", padx=(0, 10)
         )
 
-        ttk.Label(agent_toolbar, text="유형", style="Panel.TLabel").grid(row=0, column=2, padx=(0, 6))
+        ttk.Label(agent_toolbar, text="유형 / 역할", style="Panel.TLabel").grid(row=0, column=2, padx=(0, 6))
         self.element_role_var = tk.StringVar(value="auto")
         self.element_role_combo = ttk.Combobox(
             agent_toolbar,
@@ -449,9 +449,17 @@ class PickerApp(tk.Toplevel):
                 "text",
                 "window",
                 "hotkey",
+                "sk_seq_path",
+                "sk_load",
+                "sk_start",
+                "sk_stop",
+                "sk_reset",
+                "sk_power_reset",
+                "sk_serial_monitor",
+                "sk_grid_status",
                 "other",
             ),
-            width=12,
+            width=17,
             state="readonly",
         )
         self.element_role_combo.grid(row=0, column=3, padx=(0, 10))

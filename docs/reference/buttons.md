@@ -52,6 +52,7 @@
 | `전송` | 선택 CH에 출력 가능한 ASCII와 Enter 전송 |
 | `제어 키` | Enter, Ctrl+C/0x03, Ctrl+V/0x16 또는 검증된 ASCII 붙여넣기 |
 | `동시 실행` | 선택한 최대 4개 CH에서 `.seq`를 병렬 실행 |
+| `Master 상태 공유` | 현장 직접 COM 실행의 Grid/결과를 Master heartbeat에 반영 |
 | `정지` | 직접 SEQ의 다음 command 전송 중단 |
 | `PC 환경` | 원격 Windows/PowerShell/pyserial 점검 요청 |
 | `통신 점검` | 원격 COM/ADB 상태 점검 요청 |
@@ -110,6 +111,7 @@
 | `실장기 연결 PC` | `서버 폴더 준비` | PC별 FTP spool 폴더 생성 |
 | `실장기 연결 PC` | `Slave 설정 내보내기` | 각 PC용 `rig-ftp.info`와 `rig-commander.config.json` 생성 |
 | `이 PC Agent` | `Agent 시작` / `Agent 중지` | slave polling 시작·중지 |
+| `이 PC Agent` | `현장 SK 감시 시작/중지` | 현장에서 직접 시작한 SK Commander를 읽기 전용 workflow로 감시 |
 | `Agent 더보기` | `한 번 확인` | pending job 1회 확인 |
 | `Agent 더보기` | `중단 신호 해제` | 이 PC stop signal 제거 |
 
@@ -122,5 +124,6 @@
 | `모니터 보드` | workflow의 구조화된 텍스트·색상 판정 표시 |
 | `더보기 > 선택 작업 긴급 중단` | 선택 PC의 현재 job만 중단 |
 | `더보기 > 선택 결과 분류` | failure class, 조치, 담당자와 근거 기록 |
+| `더보기 > 선택 결과 증거 ZIP 저장` | 직접 COM manifest, Grid log와 console 증거 다운로드 |
 | `더보기 > Excel 내보내기` | PC State와 CH Inventory workbook 생성 |
 | `자동 상태 조회 시작/중지` | heartbeat와 결과 파일 주기 조회 |

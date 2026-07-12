@@ -43,6 +43,14 @@ class RigSequenceBundle:
     def command_set(self) -> str:
         return str((self.manifest.get("recipe") or {}).get("command_set") or "")
 
+    @property
+    def recipe(self) -> dict[str, Any]:
+        try:
+            value = json.loads(self.recipe_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
     def package_details(self) -> dict[str, Any]:
         compatibility = self.manifest.get("compatibility") or {}
         coverage = self.manifest.get("coverage") or {}

@@ -203,6 +203,9 @@ class SerialConsoleSession:
         self._connection_factory = connection_factory or _default_connection_factory
         self._output_callback = output_callback or (lambda _channel, _text: None)
         self._state_callback = state_callback or (lambda _channel, _state: None)
+        self._output_taps: dict[int, OutputCallback] = {}
+        self._output_taps_lock = threading.Lock()
+        self._next_output_tap = 1
         self._max_buffer_chars = max(4096, int(max_buffer_chars))
         self._connection: SerialConnection | None = None
         self._reader: threading.Thread | None = None
@@ -210,6 +213,7 @@ class SerialConsoleSession:
         self._write_lock = threading.Lock()
         self._condition = threading.Condition()
         self._history = ""
+        self._history_offset = 0
         self._last_rx_at = 0.0
         self._state = "DISCONNECTED"
         self._keepalive_interval = 0.0
@@ -227,6 +231,17 @@ class SerialConsoleSession:
     def history(self) -> str:
         with self._condition:
             return self._history
+
+    def add_output_tap(self, callback: OutputCallback) -> int:
+        with self._output_taps_lock:
+            token = self._next_output_tap
+            self._next_output_tap += 1
+            self._output_taps[token] = callback
+        return token
+
+    def remove_output_tap(self, token: int) -> None:
+        with self._output_taps_lock:
+            self._output_taps.pop(int(token), None)
 
     def connect(self) -> None:
         if self.connected:
@@ -321,7 +336,7 @@ class SerialConsoleSession:
         stop = stop_event or threading.Event()
         progress = progress_callback or (lambda _message: None)
         results: list[SerialCommandResult] = []
-        for block in blocks:
+        for block_index, block in enumerate(blocks, start=1):
             progress(f"GRID {block.name}")
             for command in block.commands:
                 if stop.is_set():
@@ -372,6 +387,7 @@ class SerialConsoleSession:
                         total_commands=total,
                         commands=tuple(results),
                     )
+            progress(f"GRID_DONE {block_index}/{len(blocks)} {block.name}")
         return SerialSequenceResult(
             channel=self.config.id,
             ok=True,
@@ -391,7 +407,7 @@ class SerialConsoleSession:
         stop_event: threading.Event | None = None,
     ) -> tuple[str, bool]:
         with self._condition:
-            start = len(self._history)
+            start = self._history_offset + len(self._history)
             before_rx = self._last_rx_at
         self.send_ascii(
             command,
@@ -411,7 +427,11 @@ class SerialConsoleSession:
                     break
                 if not self.connected:
                     break
-            response = self._history[start:]
+            relative_start = start - self._history_offset
+            if relative_start < 0:
+                response = "[RESPONSE TRUNCATED TO CONSOLE BUFFER]\n" + self._history
+            else:
+                response = self._history[relative_start:]
         return response, not seen_response
 
     def _write(self, data: bytes) -> int:
@@ -451,7 +471,11 @@ class SerialConsoleSession:
 
     def _receive(self, text: str) -> None:
         with self._condition:
-            self._history = (self._history + text)[-self._max_buffer_chars :]
+            combined = self._history + text
+            overflow = max(0, len(combined) - self._max_buffer_chars)
+            if overflow:
+                self._history_offset += overflow
+            self._history = combined[-self._max_buffer_chars :]
             self._last_rx_at = time.monotonic()
             state = detect_boot_state(self._history)
             self._condition.notify_all()
@@ -469,6 +493,13 @@ class SerialConsoleSession:
 
     def _emit(self, text: str) -> None:
         self._output_callback(self.config.id, text)
+        with self._output_taps_lock:
+            taps = tuple(self._output_taps.values())
+        for callback in taps:
+            try:
+                callback(self.config.id, text)
+            except Exception:
+                continue
 
     def _set_state(self, state: str) -> None:
         self._state = state

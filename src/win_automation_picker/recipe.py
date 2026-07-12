@@ -45,6 +45,7 @@ class ConditionResult:
     def to_mapping(self) -> dict[str, Any]:
         return {
             "label": self.label,
+            "block_name": self.label,
             "kind": self.kind,
             "ok": self.ok,
             "actual": self.actual,
