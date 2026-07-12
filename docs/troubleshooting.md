@@ -147,7 +147,8 @@ Manager에서 실제 중복 프로세스를 확인하고 하나만 남깁니다.
 
 ## 결과 증거 ZIP이 없음
 
-- 새 직접 COM 실행만 Grid/console 증거 ZIP을 생성합니다. 이전 버전 결과에는 없습니다.
+- 새 직접 COM 실행은 Grid/console 증거 ZIP을 만들고, Binary 실행은 preloader/EDL 탐지,
+  firmware step과 사후 ADB 로그가 들어 있는 device-update 증거 ZIP을 만듭니다.
 - 결과 상세의 `artifact_error`를 확인합니다.
 - FTP 업로드가 실패해도 Slave의 `work_dir/serial-results/{job_id}` 원본은 유지됩니다.
 - ZIP 상한보다 큰 경우 `고급 정책 > 증거 ZIP 상한(MB)`을 검토하되 FTP 정책보다 크게 올리지 않습니다.

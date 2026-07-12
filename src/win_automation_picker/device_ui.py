@@ -1728,29 +1728,8 @@ class DeviceWorkspaceMixin:
     def _submit_device_update(self) -> None:
         try:
             node, args = self._device_update_args("update")
-            mode = self.device_binary_mode_var.get()
             _slave, channel = self._selected_binary_channel()
-            tool = next(
-                (
-                    row
-                    for row in self._settings_device_tools
-                    if str(row.get("id") or "").casefold()
-                    == channel.firmware_tool_id.casefold()
-                ),
-                None,
-            )
-            adapter_kind = str((tool or {}).get("adapter_kind") or "generic")
-            staged_generic_download = (
-                adapter_kind == "generic"
-                and mode == "download-only"
-                and bool((tool or {}).get("download_arguments"))
-            )
-            requires_confirmation = (
-                adapter_kind != "generic"
-                or staged_generic_download
-                or mode in {"format-all-download", "provision-only"}
-            )
-            if requires_confirmation and not self.device_format_confirmation_var.get().strip():
+            if not self.device_format_confirmation_var.get().strip():
                 raise FtpSpoolError("원격 사전점검 결과에 표시된 확인문을 입력하세요.")
             if not messagebox.askyesno(
                 "Binary 업데이트",

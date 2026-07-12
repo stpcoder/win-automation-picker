@@ -118,3 +118,41 @@ def test_artifact_archive_compacts_large_manifest_without_corrupting_json(tmp_pa
         manifest = json.loads(archive.read("manifest.json"))
     assert manifest["artifact_manifest_compacted"] is True
     assert all("response" not in row for row in manifest["commands"])
+
+
+def test_device_update_archive_includes_transition_and_nested_firmware_evidence(
+    tmp_path,
+) -> None:
+    write_json_atomic(
+        tmp_path / "manifest.json",
+        {"schema": "rig-device-update-run/v1", "target": "PC04:CH9"},
+    )
+    (tmp_path / "01-preloader-transition.log").write_text(
+        "[TRANSITION_OK] writes=2 marker=LK2]\n",
+        encoding="utf-8",
+    )
+    firmware = tmp_path / "firmware" / "run-001"
+    firmware.mkdir(parents=True)
+    write_json_atomic(
+        firmware / "manifest.json",
+        {"schema": "rig-firmware-run/v1", "ok": True},
+    )
+    (firmware / "01-vendor-format.log").write_text("FORMAT PASS\n", encoding="utf-8")
+    (firmware / "payload.bin").write_bytes(b"must-not-upload")
+
+    archive_bytes, members = build_artifact_zip_bytes(
+        tmp_path,
+        max_uncompressed_bytes=8192,
+    )
+    archive_path = tmp_path / "device-update.zip"
+    archive_path.write_bytes(archive_bytes)
+
+    assert members == [
+        "manifest.json",
+        "01-preloader-transition.log",
+        "firmware/run-001/01-vendor-format.log",
+        "firmware/run-001/manifest.json",
+    ]
+    with ZipFile(archive_path) as archive:
+        assert "payload.bin" not in archive.namelist()
+        assert b"TRANSITION_OK" in archive.read("01-preloader-transition.log")

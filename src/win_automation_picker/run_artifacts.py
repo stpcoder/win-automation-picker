@@ -208,13 +208,19 @@ def build_artifact_zip_bytes(
     root = Path(result_dir)
     ordered: list[Path] = []
     manifest = root / "manifest.json"
+    manifest_data: dict[str, Any] = {}
     if manifest.is_file():
         ordered.append(manifest)
         try:
-            manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
+            parsed_manifest = json.loads(manifest.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-            manifest_data = {}
-        if isinstance(manifest_data, dict) and manifest_data.get("schema") == "rig-firmware-run/v1":
+            parsed_manifest = {}
+        if isinstance(parsed_manifest, dict):
+            manifest_data = parsed_manifest
+        if manifest_data.get("schema") in {
+            "rig-firmware-run/v1",
+            "rig-device-update-run/v1",
+        }:
             ordered.extend(
                 sorted(
                     path
@@ -222,6 +228,10 @@ def build_artifact_zip_bytes(
                     if path.is_file() and not path.is_symlink()
                 )
             )
+        if manifest_data.get("schema") == "rig-device-update-run/v1":
+            firmware_root = root / "firmware"
+            if firmware_root.is_dir() and not firmware_root.is_symlink():
+                ordered.extend(_owned_journal_evidence_files(firmware_root))
     grid_dir = root / "grids"
     if grid_dir.is_dir():
         ordered.extend(sorted(path for path in grid_dir.iterdir() if path.is_file() and not path.is_symlink()))
@@ -259,6 +269,23 @@ def build_artifact_zip_bytes(
             + "\n",
         )
     return buffer.getvalue(), included
+
+
+def _owned_journal_evidence_files(root: Path) -> list[Path]:
+    files: list[Path] = []
+    pending = [root]
+    while pending:
+        directory = pending.pop()
+        for member in directory.iterdir():
+            if member.is_symlink():
+                continue
+            if member.is_dir():
+                pending.append(member)
+            elif member.is_file() and (
+                member.name == "manifest.json" or member.suffix.casefold() == ".log"
+            ):
+                files.append(member)
+    return sorted(files)
 
 
 def _compact_manifest_for_archive(data: bytes, limit: int) -> bytes:
