@@ -57,10 +57,22 @@ release runner는 이 backend를 포함하지 않으므로 이름만 SM8850/MTK2
 PHY reference는 plan의 모든 dimension 순서와 일치해야 하며 각 dimension에 raw-code
 conversion이 있어야 합니다. 이 conversion으로 결과의 실제 mV/ps 값까지 다시 계산합니다.
 
+GUI에서는 `마진 번들 만들기 > PHY 기준 준비 · 승인`을 사용합니다.
+
+1. `Worksheet 준비`에서 준비자, Ticket, SoC profile과 온도·주파수 같은 조건을 입력합니다.
+2. read-only nominal probe가 있으면 선택할 수 있지만 값은 `observed_probe`에만 기록됩니다.
+3. 생성된 UNAPPROVED worksheet의 null nominal/conversion 칸을 승인 PHY 문서 값으로 채웁니다.
+4. `독립 승인`에서 준비자와 다른 승인자가 worksheet의 전체 plan SHA-256을 직접 입력합니다.
+5. plan/profile/spec/DQ-map/dimension/unit/offset이 바뀌지 않았을 때만 v2 reference가 생성됩니다.
+6. 승인 결과 경로는 원래 마진 번들 화면의 `PHY reference` 칸에 자동 반영됩니다.
+
+Worksheet 자체는 schema가 달라 원격 번들에 넣을 수 없습니다. 승인 reference에는 worksheet와
+plan SHA-256, 준비자·승인자, 시각과 Ticket이 고정되며 기존 파일을 덮어쓰지 않습니다.
+
 ## 3. 원격 번들 만들기
 
-GUI에서는 `오늘 작업 > 운영 도구 열기 > 마진 번들 만들기`를 누르고 Controller, Plan, PHY
-reference와 출력 위치를 선택합니다. 생성이 끝나면 결과 파일이 패키지 등록 칸에 자동으로
+GUI에서는 `오늘 작업 > 운영 도구 열기 > 마진 번들 만들기`를 누르고 Controller, Plan, 승인된
+PHY reference와 출력 위치를 선택합니다. 생성이 끝나면 결과 파일이 패키지 등록 칸에 자동으로
 채워집니다.
 
 같은 작업을 PowerShell에서 실행할 수도 있습니다.

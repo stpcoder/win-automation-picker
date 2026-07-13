@@ -14,6 +14,11 @@ from typing import Any
 
 from .binary_exchange import BinaryReleaseMetadata, read_binary_release_metadata
 from .device_acceptance import write_device_acceptance_report
+from .device_qualification import (
+    approve_device_qualification_candidate,
+    load_device_qualification_candidate,
+    write_device_qualification_candidate,
+)
 from .firmware_plan import FirmwarePlanError, inspect_firmware_package
 from .ftp_spool import (
     ChannelInfo,
@@ -359,6 +364,10 @@ class DeviceWorkspaceMixin:
         advanced = ttk.Menubutton(actions, text="고급 작업")
         advanced.grid(row=0, column=3, padx=(6, 0))
         advanced_menu = tk.Menu(advanced, tearoff=False)
+        advanced_menu.add_command(
+            label="실기 Qualification 준비 · 승인",
+            command=self._open_device_qualification_dialog,
+        )
         advanced_menu.add_command(
             label="완료 저널 · 실기 증거 검증",
             command=self._verify_device_field_evidence,
@@ -1806,6 +1815,262 @@ class DeviceWorkspaceMixin:
 
         self._run_background(worker, "실기 증거 검증 중")
 
+    def _open_device_qualification_dialog(self) -> None:
+        dialog = tk.Toplevel(self)
+        dialog.title("Binary 실기 Qualification")
+        dialog.transient(self)
+        dialog.configure(background="#f1f5f9")
+        dialog.geometry("840x590")
+        dialog.minsize(760, 520)
+        dialog.columnconfigure(0, weight=1)
+        dialog.rowconfigure(1, weight=1)
+
+        intro = ttk.Frame(dialog, padding=(14, 12), style="Panel.TFrame")
+        intro.grid(row=0, column=0, sticky="ew")
+        intro.columnconfigure(0, weight=1)
+        ttk.Label(
+            intro,
+            text="성공 증거를 먼저 UNAPPROVED 후보로 만들고 다른 검토자가 승인합니다.",
+            style="PanelTitle.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            intro,
+            text="승인 단계는 같은 증거를 다시 검증하며 준비자와 승인자가 같으면 차단됩니다.",
+            style="Muted.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+
+        tabs = ttk.Notebook(dialog)
+        tabs.grid(row=1, column=0, sticky="nsew", padx=12, pady=12)
+        prepare = ttk.Frame(tabs, padding=14)
+        approve = ttk.Frame(tabs, padding=14)
+        tabs.add(prepare, text="1  후보 준비")
+        tabs.add(approve, text="2  독립 승인")
+        for page in (prepare, approve):
+            page.columnconfigure(1, weight=1)
+
+        def select_evidence(variable: tk.StringVar) -> None:
+            selection = filedialog.askopenfilename(
+                title="업데이트 evidence ZIP 또는 manifest.json",
+                filetypes=[("Evidence", "*.zip manifest.json"), ("All files", "*.*")],
+                parent=dialog,
+            )
+            if not selection:
+                return
+            path = Path(selection)
+            variable.set(str(path.parent if path.name.casefold() == "manifest.json" else path))
+
+        def evidence_row(
+            page: ttk.Frame,
+            row: int,
+            variable: tk.StringVar,
+        ) -> None:
+            ttk.Label(page, text="실행 증거").grid(row=row, column=0, sticky="w", padx=(0, 8))
+            ttk.Entry(page, textvariable=variable, state="readonly").grid(
+                row=row, column=1, sticky="ew"
+            )
+            ttk.Button(
+                page,
+                text="선택",
+                command=lambda: select_evidence(variable),
+            ).grid(row=row, column=2, padx=(7, 0))
+
+        prepare_evidence_var = tk.StringVar(value="")
+        prepare_by_var = tk.StringVar(value="")
+        prepare_ticket_var = tk.StringVar(value="")
+        prepare_output_var = tk.StringVar(value="")
+        evidence_row(prepare, 0, prepare_evidence_var)
+        ttk.Label(prepare, text="준비자").grid(row=1, column=0, sticky="w", pady=(9, 0))
+        ttk.Entry(prepare, textvariable=prepare_by_var).grid(
+            row=1, column=1, columnspan=2, sticky="ew", pady=(9, 0)
+        )
+        ttk.Label(prepare, text="사내 Ticket").grid(row=2, column=0, sticky="w", pady=(9, 0))
+        ttk.Entry(prepare, textvariable=prepare_ticket_var).grid(
+            row=2, column=1, columnspan=2, sticky="ew", pady=(9, 0)
+        )
+        ttk.Label(prepare, text="후보 파일").grid(row=3, column=0, sticky="w", pady=(9, 0))
+        ttk.Entry(prepare, textvariable=prepare_output_var, state="readonly").grid(
+            row=3, column=1, sticky="ew", pady=(9, 0)
+        )
+
+        def select_prepare_output() -> None:
+            output = filedialog.asksaveasfilename(
+                title="UNAPPROVED qualification 후보 저장",
+                defaultextension=".json",
+                initialfile="device-qualification-candidate.json",
+                filetypes=[("JSON", "*.json")],
+                parent=dialog,
+            )
+            if output:
+                prepare_output_var.set(output)
+
+        ttk.Button(prepare, text="선택", command=select_prepare_output).grid(
+            row=3, column=2, padx=(7, 0), pady=(9, 0)
+        )
+        prepare_status_var = tk.StringVar(
+            value="후보는 승인 reference로 사용할 수 없으며 원본 증거 SHA를 고정합니다."
+        )
+        ttk.Label(
+            prepare,
+            textvariable=prepare_status_var,
+            style="Muted.TLabel",
+            wraplength=690,
+        ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(14, 0))
+
+        def submit_prepare() -> None:
+            evidence = prepare_evidence_var.get().strip()
+            output = prepare_output_var.get().strip()
+            prepared_by = prepare_by_var.get().strip()
+            source_ticket = prepare_ticket_var.get().strip()
+            if not evidence or not output or not prepared_by or not source_ticket:
+                messagebox.showerror(
+                    "Qualification 후보",
+                    "실행 증거, 준비자, Ticket과 후보 파일을 모두 입력하세요.",
+                    parent=dialog,
+                )
+                return
+
+            def worker() -> None:
+                candidate = write_device_qualification_candidate(
+                    evidence,
+                    output,
+                    prepared_by=prepared_by,
+                    source_ticket=source_ticket,
+                )
+                self._queue.put(
+                    (
+                        "device_qualification",
+                        f"UNAPPROVED 후보 생성 · {candidate['reference_draft']['target']} · {output}",
+                    )
+                )
+
+            dialog.destroy()
+            self._run_background(worker, "Qualification 후보 검증 중")
+
+        ttk.Button(
+            prepare,
+            text="UNAPPROVED 후보 만들기",
+            command=submit_prepare,
+            style="Primary.TButton",
+        ).grid(row=5, column=0, columnspan=3, sticky="e", pady=(18, 0))
+
+        approve_candidate_var = tk.StringVar(value="")
+        approve_evidence_var = tk.StringVar(value="")
+        qualification_id_var = tk.StringVar(value="")
+        reviewer_var = tk.StringVar(value="")
+        expected_sha_var = tk.StringVar(value="후보를 선택하면 표시됩니다.")
+        confirm_sha_var = tk.StringVar(value="")
+        approve_output_var = tk.StringVar(value="")
+        ttk.Label(approve, text="후보 파일").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        ttk.Entry(approve, textvariable=approve_candidate_var, state="readonly").grid(
+            row=0, column=1, sticky="ew"
+        )
+
+        def select_candidate() -> None:
+            path = filedialog.askopenfilename(
+                title="UNAPPROVED qualification 후보",
+                filetypes=[("JSON", "*.json")],
+                parent=dialog,
+            )
+            if not path:
+                return
+            try:
+                candidate = load_device_qualification_candidate(path)
+            except BaseException as exc:
+                messagebox.showerror("Qualification 후보", str(exc), parent=dialog)
+                return
+            approve_candidate_var.set(path)
+            expected_sha_var.set(str(candidate["evidence"]["sha256"]))
+            confirm_sha_var.set("")
+
+        ttk.Button(approve, text="선택", command=select_candidate).grid(
+            row=0, column=2, padx=(7, 0)
+        )
+        evidence_row(approve, 1, approve_evidence_var)
+        ttk.Label(approve, text="Qualification ID").grid(
+            row=2, column=0, sticky="w", pady=(9, 0)
+        )
+        ttk.Entry(approve, textvariable=qualification_id_var).grid(
+            row=2, column=1, columnspan=2, sticky="ew", pady=(9, 0)
+        )
+        ttk.Label(approve, text="승인자").grid(row=3, column=0, sticky="w", pady=(9, 0))
+        ttk.Entry(approve, textvariable=reviewer_var).grid(
+            row=3, column=1, columnspan=2, sticky="ew", pady=(9, 0)
+        )
+        ttk.Label(approve, text="기대 Evidence SHA").grid(
+            row=4, column=0, sticky="w", pady=(9, 0)
+        )
+        ttk.Label(approve, textvariable=expected_sha_var, style="Muted.TLabel").grid(
+            row=4, column=1, columnspan=2, sticky="w", pady=(9, 0)
+        )
+        ttk.Label(approve, text="SHA 직접 확인 입력").grid(
+            row=5, column=0, sticky="w", pady=(9, 0)
+        )
+        ttk.Entry(approve, textvariable=confirm_sha_var).grid(
+            row=5, column=1, columnspan=2, sticky="ew", pady=(9, 0)
+        )
+        ttk.Label(approve, text="승인 Reference").grid(
+            row=6, column=0, sticky="w", pady=(9, 0)
+        )
+        ttk.Entry(approve, textvariable=approve_output_var, state="readonly").grid(
+            row=6, column=1, sticky="ew", pady=(9, 0)
+        )
+
+        def select_approve_output() -> None:
+            output = filedialog.asksaveasfilename(
+                title="승인된 v2 reference 저장",
+                defaultextension=".json",
+                initialfile="device-field-reference-v2.json",
+                filetypes=[("JSON", "*.json")],
+                parent=dialog,
+            )
+            if output:
+                approve_output_var.set(output)
+
+        ttk.Button(approve, text="선택", command=select_approve_output).grid(
+            row=6, column=2, padx=(7, 0), pady=(9, 0)
+        )
+
+        def submit_approve() -> None:
+            required = (
+                approve_candidate_var.get().strip(),
+                approve_evidence_var.get().strip(),
+                qualification_id_var.get().strip(),
+                reviewer_var.get().strip(),
+                confirm_sha_var.get().strip(),
+                approve_output_var.get().strip(),
+            )
+            if not all(required):
+                messagebox.showerror("Qualification 승인", "모든 승인 항목을 입력하세요.", parent=dialog)
+                return
+
+            def worker() -> None:
+                reference = approve_device_qualification_candidate(
+                    required[0],
+                    required[1],
+                    required[5],
+                    qualification_id=required[2],
+                    approved_by=required[3],
+                    confirm_evidence_sha256=required[4],
+                )
+                self._queue.put(
+                    (
+                        "device_qualification",
+                        f"Qualification 승인 · {reference['qualification_id']} · {required[5]}",
+                    )
+                )
+
+            dialog.destroy()
+            self._run_background(worker, "Qualification 독립 승인 검증 중")
+
+        ttk.Button(
+            approve,
+            text="v2 Reference 승인",
+            command=submit_approve,
+            style="Primary.TButton",
+        ).grid(row=7, column=0, columnspan=3, sticky="e", pady=(18, 0))
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
+        dialog.grab_set()
+
     def _open_qdl_raw_write_dialog(self) -> None:
         try:
             slave, channel = self._selected_binary_channel()
@@ -2114,6 +2379,13 @@ class DeviceWorkspaceMixin:
             if failed:
                 message += "\n실패 항목: " + ", ".join(failed)
             self.device_binary_state_var.set(f"실기 증거 검증 {state}")
+            self.device_binary_log.insert("end", f"\n{message}\n")
+            self.device_binary_log.see("end")
+            self._append_master_log(message)
+            return True
+        if kind == "device_qualification":
+            message = str(payload)
+            self.device_binary_state_var.set(message.split(" · ", 1)[0])
             self.device_binary_log.insert("end", f"\n{message}\n")
             self.device_binary_log.see("end")
             self._append_master_log(message)

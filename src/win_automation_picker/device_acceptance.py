@@ -13,6 +13,7 @@ from zipfile import BadZipFile, ZipFile
 
 
 REFERENCE_SCHEMA = "rig-device-field-reference/v1"
+REFERENCE_SCHEMA_V2 = "rig-device-field-reference/v2"
 ACCEPTANCE_SCHEMA = "rig-device-field-acceptance/v1"
 DEVICE_RUN_SCHEMA = "rig-device-update-run/v1"
 FIRMWARE_RUN_SCHEMA = "rig-firmware-run/v1"
@@ -98,7 +99,7 @@ def load_device_field_reference(path: str | Path) -> DeviceFieldReference:
         raise DeviceAcceptanceError(
             f"Cannot read device field reference: {source}"
         ) from exc
-    if data.get("schema") != REFERENCE_SCHEMA:
+    if data.get("schema") not in {REFERENCE_SCHEMA, REFERENCE_SCHEMA_V2}:
         raise DeviceAcceptanceError("Unsupported device field reference schema")
     required_text = (
         "qualification_id",
@@ -256,6 +257,47 @@ def load_device_field_reference(path: str | Path) -> DeviceFieldReference:
         raise DeviceAcceptanceError("require_post_adb must be true or false")
     if data["require_post_adb"] and not fixture["adb_serial"].strip():
         raise DeviceAcceptanceError("Post-update ADB qualification requires adb_serial")
+    if data["schema"] == REFERENCE_SCHEMA_V2:
+        approval = data.get("approval")
+        if not isinstance(approval, dict):
+            raise DeviceAcceptanceError(
+                "Device v2 reference requires approval metadata"
+            )
+        required_approval_text = (
+            "candidate_sha256",
+            "evidence_sha256",
+            "prepared_by",
+            "prepared_at",
+            "approved_by",
+            "approved_at",
+        )
+        if (
+            approval.get("state") != "approved"
+            or any(
+                not isinstance(approval.get(key), str) or not approval[key].strip()
+                for key in required_approval_text
+            )
+            or _SHA256.fullmatch(approval["candidate_sha256"]) is None
+            or _SHA256.fullmatch(approval["evidence_sha256"]) is None
+            or approval["approved_by"] != data["approved_by"]
+            or approval["approved_at"] != data["approved_at"]
+            or approval["prepared_by"].strip().casefold()
+            == approval["approved_by"].strip().casefold()
+        ):
+            raise DeviceAcceptanceError(
+                "Device v2 approval metadata is invalid or lacks reviewer separation"
+            )
+        for key in ("prepared_at", "approved_at"):
+            try:
+                timestamp = datetime.fromisoformat(approval[key].replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise DeviceAcceptanceError(
+                    f"Device approval {key} must be an ISO-8601 timestamp"
+                ) from exc
+            if timestamp.tzinfo is None:
+                raise DeviceAcceptanceError(
+                    f"Device approval {key} must include a timezone"
+                )
     return DeviceFieldReference(source, data, _digest(payload))
 
 
@@ -378,6 +420,15 @@ def build_device_acceptance_report(
         and manifest["result"].get("dry_run") is False,
         "Device update completed successfully as a non-dry-run operation.",
     )
+    if approved.get("schema") == REFERENCE_SCHEMA_V2:
+        approval = approved["approval"]
+        add(
+            "approval-evidence-binding",
+            approval.get("evidence_sha256") == evidence.source_sha256,
+            "The reviewed qualification reference binds this exact evidence snapshot.",
+            expected=approval.get("evidence_sha256"),
+            observed=evidence.source_sha256,
+        )
     for key in ("target", "vendor", "soc_model", "mode"):
         add(
             key,
@@ -569,6 +620,7 @@ def build_device_acceptance_report(
         "created_at": datetime.now(timezone.utc).isoformat(),
         "ok": all(check["ok"] for check in checks),
         "qualification_id": reference.qualification_id,
+        "reference_schema": approved.get("schema"),
         "approved_by": approved["approved_by"],
         "approved_at": approved["approved_at"],
         "source_ticket": approved["source_ticket"],

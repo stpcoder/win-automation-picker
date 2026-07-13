@@ -2857,12 +2857,350 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         actions = ttk.Frame(dialog)
         actions.grid(row=4, column=2, sticky="e", padx=12, pady=(8, 12))
         ttk.Button(actions, text="취소", command=dialog.destroy).pack(side="left", padx=(0, 6))
+        ttk.Button(
+            actions,
+            text="PHY 기준 준비 · 승인",
+            command=lambda: self._open_margin_reference_dialog(
+                dialog,
+                controller_var,
+                plan_var,
+                reference_var,
+            ),
+        ).pack(side="left", padx=(0, 6))
         ttk.Button(actions, text="만들기", command=create, style="Primary.TButton").pack(
             side="left"
         )
         dialog.grab_set()
         dialog.wait_visibility()
         dialog.focus_set()
+
+    def _open_margin_reference_dialog(
+        self,
+        bundle_dialog: tk.Toplevel,
+        controller_var: tk.StringVar,
+        plan_var: tk.StringVar,
+        reference_var: tk.StringVar,
+    ) -> None:
+        controller = Path(controller_var.get().strip())
+        plan = Path(plan_var.get().strip())
+        if not controller.is_file() or not plan.is_file():
+            self._show_error(
+                FtpSpoolError("먼저 Controller와 margin plan 파일을 선택하세요.")
+            )
+            return
+        dialog = tk.Toplevel(self)
+        dialog.title("DRAM PHY 기준 준비 · 승인")
+        dialog.transient(bundle_dialog)
+        dialog.geometry("850x610")
+        dialog.minsize(760, 540)
+        dialog.columnconfigure(0, weight=1)
+        dialog.rowconfigure(1, weight=1)
+        intro = ttk.Frame(dialog, padding=(14, 12), style="Panel.TFrame")
+        intro.grid(row=0, column=0, sticky="ew")
+        intro.columnconfigure(0, weight=1)
+        ttk.Label(
+            intro,
+            text="관측 probe와 승인 PHY 값을 분리한 worksheet workflow",
+            style="PanelTitle.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            intro,
+            text=f"Plan: {plan.name}",
+            style="Muted.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+        tabs = ttk.Notebook(dialog)
+        tabs.grid(row=1, column=0, sticky="nsew", padx=12, pady=12)
+        prepare = ttk.Frame(tabs, padding=14)
+        approve = ttk.Frame(tabs, padding=14)
+        tabs.add(prepare, text="1  Worksheet 준비")
+        tabs.add(approve, text="2  독립 승인")
+        for page in (prepare, approve):
+            page.columnconfigure(1, weight=1)
+
+        prepared_by_var = tk.StringVar(value="")
+        ticket_var = tk.StringVar(value="")
+        profile_var = tk.StringVar(value="")
+        probe_var = tk.StringVar(value="")
+        conditions_var = tk.StringVar(value="temperature_c=25")
+        worksheet_output_var = tk.StringVar(value="")
+        prepare_fields = (
+            ("준비자", prepared_by_var),
+            ("사내 Ticket", ticket_var),
+            ("SoC Profile", profile_var),
+            ("조건 KEY=VALUE", conditions_var),
+        )
+        for row, (label, variable) in enumerate(prepare_fields):
+            ttk.Label(prepare, text=label).grid(
+                row=row, column=0, sticky="w", padx=(0, 8), pady=6
+            )
+            ttk.Entry(prepare, textvariable=variable).grid(
+                row=row, column=1, columnspan=2, sticky="ew", pady=6
+            )
+        ttk.Label(prepare, text="관측 Probe (선택)").grid(
+            row=4, column=0, sticky="w", padx=(0, 8), pady=6
+        )
+        ttk.Entry(prepare, textvariable=probe_var, state="readonly").grid(
+            row=4, column=1, sticky="ew", pady=6
+        )
+
+        def select_probe() -> None:
+            path = filedialog.askopenfilename(
+                title="Read-only nominal probe envelope",
+                filetypes=[("JSON", "*.json")],
+                parent=dialog,
+            )
+            if path:
+                probe_var.set(path)
+
+        ttk.Button(prepare, text="선택", command=select_probe).grid(
+            row=4, column=2, padx=(7, 0), pady=6
+        )
+        ttk.Label(prepare, text="Worksheet").grid(
+            row=5, column=0, sticky="w", padx=(0, 8), pady=6
+        )
+        ttk.Entry(prepare, textvariable=worksheet_output_var, state="readonly").grid(
+            row=5, column=1, sticky="ew", pady=6
+        )
+
+        def select_worksheet_output() -> None:
+            path = filedialog.asksaveasfilename(
+                title="UNAPPROVED PHY worksheet 저장",
+                defaultextension=".json",
+                initialfile=f"{plan.stem}-phy-worksheet.json",
+                filetypes=[("JSON", "*.json")],
+                parent=dialog,
+            )
+            if path:
+                worksheet_output_var.set(path)
+
+        ttk.Button(prepare, text="선택", command=select_worksheet_output).grid(
+            row=5, column=2, padx=(7, 0), pady=6
+        )
+        ttk.Label(
+            prepare,
+            text="Probe는 observed_probe에만 들어가며 nominal/conversion 승인 칸은 null로 남습니다.",
+            style="Muted.TLabel",
+            wraplength=700,
+        ).grid(row=6, column=0, columnspan=3, sticky="w", pady=(10, 0))
+
+        def controller_options() -> dict[str, Any]:
+            options: dict[str, Any] = {
+                "check": False,
+                "capture_output": True,
+                "text": True,
+                "timeout": 120,
+            }
+            if os.name == "nt":
+                options["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            return options
+
+        def prepare_worksheet() -> None:
+            prepared_by = prepared_by_var.get().strip()
+            ticket = ticket_var.get().strip()
+            profile = profile_var.get().strip()
+            probe = probe_var.get().strip()
+            output = worksheet_output_var.get().strip()
+            condition_rows = [
+                row.strip()
+                for row in conditions_var.get().replace(";", "\n").splitlines()
+                if row.strip()
+            ]
+            if not prepared_by or not ticket or not profile or not output:
+                self._show_error(
+                    FtpSpoolError("준비자, Ticket, SoC Profile과 Worksheet 출력을 입력하세요.")
+                )
+                return
+            arguments = [
+                str(controller),
+                "reference",
+                "prepare",
+                str(plan),
+                "--output",
+                output,
+                "--prepared-by",
+                prepared_by,
+                "--source-ticket",
+                ticket,
+                "--profile-id",
+                profile,
+            ]
+            if probe:
+                arguments.extend(["--probe", probe])
+            for condition in condition_rows:
+                arguments.extend(["--condition", condition])
+
+            def worker() -> None:
+                completed = subprocess.run(arguments, **controller_options())
+                if completed.returncode != 0:
+                    raise FtpSpoolError(
+                        completed.stderr.strip()
+                        or completed.stdout.strip()
+                        or f"Margin controller exited {completed.returncode}."
+                    )
+                self._queue.put(
+                    (
+                        "margin_reference_ready",
+                        {
+                            "action": "worksheet",
+                            "path": str(Path(output).resolve()),
+                            "dialog": dialog,
+                            "parent": bundle_dialog,
+                        },
+                    )
+                )
+
+            self._start_worker("PHY worksheet 생성", worker)
+
+        ttk.Button(
+            prepare,
+            text="UNAPPROVED Worksheet 만들기",
+            command=prepare_worksheet,
+            style="Primary.TButton",
+        ).grid(row=7, column=0, columnspan=3, sticky="e", pady=(18, 0))
+
+        worksheet_var = tk.StringVar(value="")
+        reviewer_var = tk.StringVar(value="")
+        expected_plan_sha_var = tk.StringVar(value="Worksheet를 선택하면 표시됩니다.")
+        confirm_plan_sha_var = tk.StringVar(value="")
+        approved_output_var = tk.StringVar(value="")
+        ttk.Label(approve, text="작성 완료 Worksheet").grid(
+            row=0, column=0, sticky="w", padx=(0, 8), pady=6
+        )
+        ttk.Entry(approve, textvariable=worksheet_var, state="readonly").grid(
+            row=0, column=1, sticky="ew", pady=6
+        )
+
+        def select_worksheet() -> None:
+            path = filedialog.askopenfilename(
+                title="값을 채운 PHY worksheet",
+                filetypes=[("JSON", "*.json")],
+                parent=dialog,
+            )
+            if not path:
+                return
+            try:
+                payload = Path(path).read_bytes()
+                if len(payload) > 1024 * 1024:
+                    raise ValueError("Worksheet exceeds 1 MiB.")
+                data = json.loads(payload.decode("utf-8"))
+                plan_sha = str(data.get("plan", {}).get("sha256") or "")
+                if re.fullmatch(r"[0-9a-f]{64}", plan_sha) is None:
+                    raise ValueError("Worksheet plan SHA-256 is invalid.")
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+                self._show_error(FtpSpoolError(str(exc)))
+                return
+            worksheet_var.set(path)
+            expected_plan_sha_var.set(plan_sha)
+            confirm_plan_sha_var.set("")
+
+        ttk.Button(approve, text="선택", command=select_worksheet).grid(
+            row=0, column=2, padx=(7, 0), pady=6
+        )
+        ttk.Label(approve, text="승인자").grid(
+            row=1, column=0, sticky="w", padx=(0, 8), pady=6
+        )
+        ttk.Entry(approve, textvariable=reviewer_var).grid(
+            row=1, column=1, columnspan=2, sticky="ew", pady=6
+        )
+        ttk.Label(approve, text="기대 Plan SHA").grid(
+            row=2, column=0, sticky="w", padx=(0, 8), pady=6
+        )
+        ttk.Label(
+            approve,
+            textvariable=expected_plan_sha_var,
+            style="Muted.TLabel",
+        ).grid(row=2, column=1, columnspan=2, sticky="w", pady=6)
+        ttk.Label(approve, text="SHA 직접 확인 입력").grid(
+            row=3, column=0, sticky="w", padx=(0, 8), pady=6
+        )
+        ttk.Entry(approve, textvariable=confirm_plan_sha_var).grid(
+            row=3, column=1, columnspan=2, sticky="ew", pady=6
+        )
+        ttk.Label(approve, text="승인 Reference").grid(
+            row=4, column=0, sticky="w", padx=(0, 8), pady=6
+        )
+        ttk.Entry(approve, textvariable=approved_output_var, state="readonly").grid(
+            row=4, column=1, sticky="ew", pady=6
+        )
+
+        def select_approved_output() -> None:
+            path = filedialog.asksaveasfilename(
+                title="승인된 PHY v2 reference 저장",
+                defaultextension=".json",
+                initialfile=f"{plan.stem}-phy-reference-v2.json",
+                filetypes=[("JSON", "*.json")],
+                parent=dialog,
+            )
+            if path:
+                approved_output_var.set(path)
+
+        ttk.Button(approve, text="선택", command=select_approved_output).grid(
+            row=4, column=2, padx=(7, 0), pady=6
+        )
+
+        def approve_reference() -> None:
+            worksheet = worksheet_var.get().strip()
+            reviewer = reviewer_var.get().strip()
+            confirmation = confirm_plan_sha_var.get().strip()
+            output = approved_output_var.get().strip()
+            if not worksheet or not reviewer or not confirmation or not output:
+                self._show_error(
+                    FtpSpoolError("Worksheet, 승인자, SHA 확인값과 출력 파일을 입력하세요.")
+                )
+                return
+            arguments = [
+                str(controller),
+                "reference",
+                "approve",
+                str(plan),
+                "--worksheet",
+                worksheet,
+                "--output",
+                output,
+                "--approved-by",
+                reviewer,
+                "--confirm-plan-sha256",
+                confirmation,
+            ]
+
+            def worker() -> None:
+                completed = subprocess.run(arguments, **controller_options())
+                if completed.returncode != 0:
+                    raise FtpSpoolError(
+                        completed.stderr.strip()
+                        or completed.stdout.strip()
+                        or f"Margin controller exited {completed.returncode}."
+                    )
+                self._queue.put(
+                    (
+                        "margin_reference_ready",
+                        {
+                            "action": "reference",
+                            "path": str(Path(output).resolve()),
+                            "dialog": dialog,
+                            "parent": bundle_dialog,
+                            "reference_var": reference_var,
+                        },
+                    )
+                )
+
+            self._start_worker("PHY reference 독립 승인", worker)
+
+        ttk.Button(
+            approve,
+            text="v2 Reference 승인",
+            command=approve_reference,
+            style="Primary.TButton",
+        ).grid(row=5, column=0, columnspan=3, sticky="e", pady=(18, 0))
+        def close_dialog() -> None:
+            dialog.destroy()
+            if bundle_dialog.winfo_exists():
+                bundle_dialog.grab_set()
+                bundle_dialog.focus_set()
+
+        dialog.protocol("WM_DELETE_WINDOW", close_dialog)
+        dialog.bind("<Escape>", lambda _event: close_dialog())
+        dialog.grab_set()
 
     @staticmethod
     def _default_margin_controller_path() -> str:
@@ -5735,6 +6073,21 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                 if dialog is not None and dialog.winfo_exists():
                     dialog.destroy()
                 self._append_master_log(f"DRAM margin bundle 생성 완료: {path}")
+            elif kind == "margin_reference_ready":
+                path = str(payload.get("path") or "") if isinstance(payload, dict) else ""
+                action = str(payload.get("action") or "") if isinstance(payload, dict) else ""
+                dialog = payload.get("dialog") if isinstance(payload, dict) else None
+                parent = payload.get("parent") if isinstance(payload, dict) else None
+                target_var = payload.get("reference_var") if isinstance(payload, dict) else None
+                if action == "reference" and isinstance(target_var, tk.StringVar):
+                    target_var.set(path)
+                if dialog is not None and dialog.winfo_exists():
+                    dialog.destroy()
+                if parent is not None and parent.winfo_exists():
+                    parent.grab_set()
+                    parent.focus_set()
+                label = "PHY v2 reference 승인" if action == "reference" else "PHY worksheet 생성"
+                self._append_master_log(f"{label} 완료: {path}")
             elif kind == "error":
                 self._show_error(payload)
         self.after(100, self._drain_queue)

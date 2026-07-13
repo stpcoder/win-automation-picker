@@ -209,3 +209,14 @@ FAIL 보고서를 PASS로 만들기 위해 reference를 현재 결과에 맞춰 
 바로잡거나, tool/package/fixture 변경이 의도된 경우 별도 실기 qualification 후 새 ID로
 승인합니다. ZIP이 잘렸거나 경로를 벗어나는 member, symlink, 중복 member가 있으면 결과 FAIL이
 아니라 형식 오류 종료코드 `2`로 차단됩니다.
+
+## Qualification 후보 또는 승인이 차단됨
+
+- 후보 생성의 `Evidence is not qualification-ready`는 성공 저널이라도 version log,
+  destructive 확인문, exact Download/ADB ID 또는 MTK 전환 증거가 빠졌다는 뜻입니다.
+- 후보 JSON은 `UNAPPROVED` schema이므로 `device accept --reference`에 직접 넣을 수 없습니다.
+- 승인 시에는 후보를 만든 것과 동일한 ZIP/저널을 다시 선택하고 화면에 표시된 evidence
+  SHA-256 전체를 직접 입력합니다.
+- `preparer and approver must be different`이면 준비자와 다른 현장 검토자가 승인해야 합니다.
+- 후보 작성 뒤 로그, manifest 또는 ZIP이 바뀌면 새 evidence로 후보부터 다시 만듭니다.
+- 승인된 v2 reference의 `approval`에서 candidate/evidence SHA, 준비자·승인자와 Ticket을 확인합니다.
