@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
+from .device_acceptance import DeviceAcceptanceError, write_device_acceptance_report
 from .rig import (
     CommandResult,
     RigConfig,
@@ -225,6 +226,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     device_update.set_defaults(func=_cmd_device_update)
 
+    device_accept = device_subparsers.add_parser(
+        "accept",
+        help="Verify a completed device-update journal or FTP artifact against a field reference.",
+    )
+    device_accept.add_argument("--evidence", required=True, help="Journal folder or artifact ZIP.")
+    device_accept.add_argument("--reference", required=True, help="Approved field reference JSON.")
+    device_accept.add_argument("--output", required=True, help="Acceptance report JSON path.")
+    device_accept.add_argument("--json", action="store_true", help="Print the full report.")
+    device_accept.set_defaults(func=_cmd_device_accept)
+
     device_raw_write = device_subparsers.add_parser(
         "raw-write",
         help="Write one checksummed image to an explicit bounded QDL P/S+L sector range.",
@@ -272,7 +283,7 @@ def run_command(
     args.cancel_callback = cancel_callback
     try:
         return int(args.func(args) or 0)
-    except (RigConfigError, RigExecutionError) as exc:
+    except (RigConfigError, RigExecutionError, DeviceAcceptanceError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
@@ -713,6 +724,26 @@ def _cmd_device_update(args: argparse.Namespace) -> int:
     )
     _print_results([result], as_json=bool(args.json))
     return 0 if result.ok else 1
+
+
+def _cmd_device_accept(args: argparse.Namespace) -> int:
+    report = write_device_acceptance_report(
+        args.evidence,
+        args.reference,
+        args.output,
+    )
+    if args.json:
+        print(json.dumps(report, indent=2, ensure_ascii=True))
+    else:
+        state = "PASS" if report["ok"] else "FAIL"
+        failed = [check["id"] for check in report["checks"] if not check["ok"]]
+        print(f"Device field acceptance: {state}")
+        print(f"Qualification: {report['qualification_id']}")
+        print(f"Target: {report['target']}")
+        print(f"Report: {Path(args.output).expanduser().resolve()}")
+        if failed:
+            print("Failed checks: " + ", ".join(failed))
+    return 0 if report["ok"] else 1
 
 
 def _cmd_device_raw_write(args: argparse.Namespace) -> int:
