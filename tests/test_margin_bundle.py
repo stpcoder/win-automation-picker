@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import platform
 import struct
+from typing import Any, Callable
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
@@ -24,6 +25,7 @@ from win_automation_picker.ftp_spool import (
     run_slave_once,
     submit_job,
 )
+from win_automation_picker.ftp_app import _package_detail_value
 from win_automation_picker.margin_bundle import (
     MarginBundleError,
     build_margin_campaign_artifact,
@@ -58,6 +60,8 @@ def _margin_bundle_bytes(
     *,
     target_id: str = "PC04:CH11",
     adb_serial: str = "",
+    v06: bool = False,
+    reference_v2: bool = False,
 ) -> bytes:
     controller = _pe_x64(b"controller")
     runner = _elf_arm64() if adb_serial else _pe_x64(b"runner")
@@ -84,6 +88,30 @@ def _margin_bundle_bytes(
     runner_member = (
         "runner/dram-margin-runner" if adb_serial else "runner/dram-margin-runner.exe"
     )
+    if v06:
+        plan_target["operating_conditions"] = {
+            "data_rate_mtps": 6400,
+            "frequency_set_point": "FSP1",
+            "temperature_c": 25.0,
+            "rails_mv": {"VDDQ": 500.0, "VDD2": 1100.0},
+        }
+    sweep = {
+        "name": "fixed",
+        "mode": "fixed-stress",
+        "x": {
+            "dimension": "fixed",
+            "unit": "none",
+            "start": 0,
+            "stop": 0,
+            "step": 1,
+        },
+    }
+    if v06:
+        sweep["signal_target"] = {
+            "kind": "all",
+            "physical_index": 0,
+            "label": "ALL",
+        }
     plan = (
         json.dumps(
             {
@@ -105,57 +133,68 @@ def _margin_bundle_bytes(
                         "source_sha256": "",
                     },
                 },
-                "sweeps": [
-                    {
-                        "name": "fixed",
-                        "mode": "fixed-stress",
-                        "x": {
-                            "dimension": "fixed",
-                            "unit": "none",
-                            "start": 0,
-                            "stop": 0,
-                            "step": 1,
-                        },
-                    }
-                ],
+                "sweeps": [sweep],
                 "safety": {},
             },
             sort_keys=True,
         )
         + "\n"
     ).encode()
-    reference = (
-        json.dumps(
+    reference_payload = {
+        "schema": (
+            "dram-margin-phy-reference/v2"
+            if reference_v2
+            else "dram-margin-phy-reference/v1"
+        ),
+        "backend": "fixed",
+        "profile_id": "fixed/v1",
+        "approved_spec_sha256": "",
+        "dq_mapping_sha256": "",
+        "conditions": {},
+        "dimensions": [
             {
-                "schema": "dram-margin-phy-reference/v1",
-                "backend": "fixed",
-                "profile_id": "fixed/v1",
-                "approved_spec_sha256": "",
-                "dq_mapping_sha256": "",
-                "conditions": {},
-                "dimensions": [
-                    {
-                        "dimension": "fixed",
-                        "unit": "none",
-                        "nominal": {
-                            "physical": 0,
-                            "physical_tolerance": 0,
-                            "raw_code": 0,
-                            "raw_code_tolerance": 0,
-                        },
-                        "required_requested_offsets": [0],
-                        "conversion": {
-                            "kind": "table",
-                            "physical_tolerance": 0,
-                            "points": [{"raw_code": 0, "physical": 0}],
-                        },
-                    }
-                ],
-            },
-            sort_keys=True,
+                "dimension": "fixed",
+                "unit": "none",
+                "nominal": {
+                    "physical": 0,
+                    "physical_tolerance": 0,
+                    "raw_code": 0,
+                    "raw_code_tolerance": 0,
+                },
+                "required_requested_offsets": [0],
+                "conversion": {
+                    "kind": "table",
+                    "physical_tolerance": 0,
+                    "points": [{"raw_code": 0, "physical": 0}],
+                },
+            }
+        ],
+    }
+    if v06:
+        reference_payload["signal_target"] = {
+            "kind": "all",
+            "physical_index": 0,
+            "label": "ALL",
+        }
+    if reference_v2:
+        reference_payload.update(
+            {
+                "approved_by": "reviewer-b",
+                "approved_at": "2026-07-13T10:00:00+00:00",
+                "source_ticket": "AE-001",
+                "approval": {
+                    "state": "approved",
+                    "worksheet_sha256": "b" * 64,
+                    "plan_sha256": "a" * 64,
+                    "prepared_by": "operator-a",
+                    "prepared_at": "2026-07-13T09:00:00+00:00",
+                    "approved_by": "reviewer-b",
+                    "approved_at": "2026-07-13T10:00:00+00:00",
+                    "source_ticket": "AE-001",
+                },
+            }
         )
-        + "\n"
-    ).encode()
+    reference = (json.dumps(reference_payload, sort_keys=True) + "\n").encode()
     artifacts = {
         "plan": {"path": "plan.json", "size": len(plan), "sha256": _digest(plan)},
         "reference": {
@@ -195,6 +234,26 @@ def _margin_bundle_bytes(
         "runner_format": "android-arm64-elf" if adb_serial else "windows-x64-pe",
         "artifacts": artifacts,
     }
+    if v06:
+        manifest["target"].update(
+            {
+                "signal_target": {
+                    "kind": "all",
+                    "physical_index": 0,
+                    "label": "ALL",
+                },
+                "operating_conditions": {
+                    "declared": True,
+                    "data_rate": {"value": 6400, "unit": "MT/s"},
+                    "frequency_set_point": "FSP1",
+                    "temperature": {"value": 25.0, "unit": "C"},
+                    "rails": [
+                        {"name": "VDDQ", "value": 500.0, "unit": "mV"},
+                        {"name": "VDD2", "value": 1100.0, "unit": "mV"},
+                    ],
+                },
+            }
+        )
     buffer = io.BytesIO()
     with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
         archive.writestr("manifest.json", json.dumps(manifest))
@@ -205,7 +264,36 @@ def _margin_bundle_bytes(
     return buffer.getvalue()
 
 
-def _write_campaign(result_dir: Path, *, status: str = "pass", returncode: int = 0) -> None:
+def _rewrite_margin_bundle(
+    source: bytes,
+    mutate: Callable[[dict[str, Any], dict[str, bytes]], None],
+) -> bytes:
+    with ZipFile(io.BytesIO(source), "r") as original:
+        names = original.namelist()
+        members = {
+            name: original.read(name) for name in names if name != "manifest.json"
+        }
+        manifest = json.loads(original.read("manifest.json"))
+    mutate(manifest, members)
+    artifacts = manifest["artifacts"]
+    for metadata in artifacts.values():
+        member = members[metadata["path"]]
+        metadata["size"] = len(member)
+        metadata["sha256"] = _digest(member)
+    identity = "".join(artifacts[key]["sha256"] for key in sorted(artifacts))
+    manifest["bundle_id"] = _digest(identity.encode())[:20]
+    buffer = io.BytesIO()
+    with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
+        archive.writestr("manifest.json", json.dumps(manifest))
+        for name in names:
+            if name != "manifest.json":
+                archive.writestr(name, members[name])
+    return buffer.getvalue()
+
+
+def _write_campaign(
+    result_dir: Path, *, status: str = "pass", returncode: int = 0
+) -> None:
     files = {
         "nominal-probe.json": b'{"schema":"dram-margin-probe/v1"}\n',
         "run/01-fixed.jsonl": b'{"schema":"dram-margin-result/v3"}\n',
@@ -273,7 +361,79 @@ def test_margin_bundle_rejects_manifest_count_tampering() -> None:
         parse_margin_remote_bundle(buffer.getvalue())
 
 
-def test_ftp_margin_job_runs_exact_fixture_and_uploads_artifact(tmp_path, monkeypatch) -> None:
+def test_margin_bundle_accepts_v06_physical_contract_and_v2_approval() -> None:
+    bundle = parse_margin_remote_bundle(
+        _margin_bundle_bytes(v06=True, reference_v2=True)
+    )
+
+    details = bundle.package_details()
+    assert details["signal_target"] == {
+        "kind": "all",
+        "physical_index": 0,
+        "label": "ALL",
+    }
+    assert details["operating_conditions"]["data_rate"] == {
+        "value": 6400,
+        "unit": "MT/s",
+    }
+    assert details["operating_conditions"]["temperature"] == {
+        "value": 25.0,
+        "unit": "C",
+    }
+    assert {rail["name"] for rail in details["operating_conditions"]["rails"]} == {
+        "VDD2",
+        "VDDQ",
+    }
+    assert _package_detail_value("signal_target", details["signal_target"]) == "ALL"
+    rendered_conditions = _package_detail_value(
+        "operating_conditions", details["operating_conditions"]
+    )
+    assert "6400 MT/s" in rendered_conditions
+    assert "FSP1" in rendered_conditions
+    assert "VDDQ 500.0 mV" in rendered_conditions
+
+
+def test_margin_bundle_rejects_v06_signal_or_physical_unit_tampering() -> None:
+    source = _margin_bundle_bytes(v06=True, reference_v2=True)
+
+    def change_signal(manifest, _members) -> None:
+        manifest["target"]["signal_target"]["label"] = "DQ0"
+
+    with pytest.raises(MarginBundleError, match="signal target"):
+        parse_margin_remote_bundle(_rewrite_margin_bundle(source, change_signal))
+
+    def change_rail_unit(manifest, _members) -> None:
+        manifest["target"]["operating_conditions"]["rails"][0]["unit"] = "V"
+
+    with pytest.raises(MarginBundleError, match="operating-condition rail"):
+        parse_margin_remote_bundle(_rewrite_margin_bundle(source, change_rail_unit))
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("prepared_by", "reviewer-b"),
+        ("plan_sha256", "c" * 64),
+        ("prepared_at", "2026-07-13T09:00:00"),
+    ],
+)
+def test_margin_bundle_rejects_invalid_v2_approval(field: str, value: str) -> None:
+    source = _margin_bundle_bytes(v06=True, reference_v2=True)
+
+    def change_approval(_manifest, members) -> None:
+        reference = json.loads(members["phy-reference.json"])
+        reference["approval"][field] = value
+        members["phy-reference.json"] = (
+            json.dumps(reference, sort_keys=True) + "\n"
+        ).encode()
+
+    with pytest.raises(MarginBundleError, match="approval"):
+        parse_margin_remote_bundle(_rewrite_margin_bundle(source, change_approval))
+
+
+def test_ftp_margin_job_runs_exact_fixture_and_uploads_artifact(
+    tmp_path, monkeypatch
+) -> None:
     spool = LocalSpoolBackend(tmp_path / "spool")
     package_path = tmp_path / "fixed.drammargin.zip"
     package_path.write_bytes(_margin_bundle_bytes())
@@ -358,9 +518,7 @@ def test_ftp_margin_job_runs_exact_fixture_and_uploads_artifact(tmp_path, monkey
 def test_ftp_margin_job_rejects_wrong_exact_adb_serial(tmp_path) -> None:
     spool = LocalSpoolBackend(tmp_path / "spool")
     package_path = tmp_path / "android.drammargin.zip"
-    package_path.write_bytes(
-        _margin_bundle_bytes(adb_serial="RIG-PC04-CH11-ADB")
-    )
+    package_path.write_bytes(_margin_bundle_bytes(adb_serial="RIG-PC04-CH11-ADB"))
     deploy_package(spool, package_path)
     package = list_packages(spool)[0]
     config = FtpSpoolConfig(

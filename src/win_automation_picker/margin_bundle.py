@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from hashlib import sha256
 import io
 import json
+import math
 import os
 from pathlib import Path, PurePosixPath
 import re
@@ -24,6 +26,47 @@ MAX_BUNDLE_MEMBERS = 5
 MAX_CAMPAIGN_FILES = 256
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _SAFE_ID = re.compile(r"[A-Za-z0-9_.:-]{1,96}")
+_REFERENCE_SCHEMAS = {
+    "dram-margin-phy-reference/v1",
+    "dram-margin-phy-reference/v2",
+}
+_LEGACY_TARGET_KEYS = {
+    "target_id",
+    "transport",
+    "backend",
+    "execution_context",
+    "soc_profile",
+    "adb_serial",
+    "sweep_count",
+    "point_count",
+    "dq_count",
+}
+_V06_TARGET_KEYS = _LEGACY_TARGET_KEYS | {"signal_target", "operating_conditions"}
+_DIMENSION_UNITS = {
+    "fixed": "none",
+    "cbt-vref": "mV",
+    "cbt-timing": "ps",
+    "read-vref": "mV",
+    "read-timing": "ps",
+    "write-vref": "mV",
+    "write-timing": "ps",
+    "vperi": "mV",
+}
+_TWO_DIMENSION_MODES = {
+    "cbt-eye": ("cbt-timing", "cbt-vref"),
+    "read-eye": ("read-timing", "read-vref"),
+    "write-eye": ("write-timing", "write-vref"),
+    "vperi-cbt": ("cbt-timing", "vperi"),
+    "vperi-read": ("read-timing", "vperi"),
+    "vperi-write": ("write-timing", "vperi"),
+}
+_ONE_DIMENSION_MODES = {
+    "fixed-stress": {"fixed"},
+    "cbt-1d": {"cbt-vref", "cbt-timing"},
+    "read-1d": {"read-vref", "read-timing"},
+    "write-1d": {"write-vref", "write-timing"},
+    "vperi-1d": {"vperi"},
+}
 
 
 class MarginBundleError(ValueError):
@@ -61,6 +104,19 @@ class MarginRemoteBundle:
             "backend": target["backend"],
             "execution_context": target["execution_context"],
             "soc_profile": target["soc_profile"],
+            "signal_target": target.get(
+                "signal_target", {"kind": "all", "physical_index": 0, "label": "ALL"}
+            ),
+            "operating_conditions": target.get(
+                "operating_conditions",
+                {
+                    "declared": False,
+                    "data_rate": None,
+                    "frequency_set_point": None,
+                    "temperature": None,
+                    "rails": [],
+                },
+            ),
             "adb_serial": target["adb_serial"],
             "sweep_count": target["sweep_count"],
             "point_count": target["point_count"],
@@ -111,7 +167,10 @@ def _axis_values(axis: object, label: str) -> tuple[int, ...]:
     start = axis.get("start")
     stop = axis.get("stop")
     step = axis.get("step")
-    if any(not isinstance(value, int) or isinstance(value, bool) for value in (start, stop, step)):
+    if any(
+        not isinstance(value, int) or isinstance(value, bool)
+        for value in (start, stop, step)
+    ):
         raise MarginBundleError(f"DRAM margin {label} axis bounds are invalid")
     if step == 0 or (start < stop and step < 0) or (start > stop and step > 0):
         raise MarginBundleError(f"DRAM margin {label} axis direction is invalid")
@@ -119,6 +178,258 @@ def _axis_values(axis: object, label: str) -> tuple[int, ...]:
     if not values or values[-1] != stop or len(values) > 2048:
         raise MarginBundleError(f"DRAM margin {label} axis point count is invalid")
     return values
+
+
+def _signal_target(value: object, label: str) -> dict[str, Any]:
+    if value is None:
+        return {"kind": "all", "physical_index": 0, "label": "ALL"}
+    if not isinstance(value, dict) or set(value) != {"kind", "physical_index", "label"}:
+        raise MarginBundleError(f"DRAM margin {label} signal target is invalid")
+    kind = value.get("kind")
+    physical_index = value.get("physical_index")
+    signal_label = value.get("label")
+    if (
+        kind not in {"all", "ca", "dq"}
+        or not isinstance(physical_index, int)
+        or isinstance(physical_index, bool)
+        or not 0 <= physical_index < 64
+        or not isinstance(signal_label, str)
+        or _SAFE_ID.fullmatch(signal_label) is None
+        or (kind == "all" and (physical_index != 0 or signal_label != "ALL"))
+    ):
+        raise MarginBundleError(f"DRAM margin {label} signal target is invalid")
+    return {
+        "kind": kind,
+        "physical_index": physical_index,
+        "label": signal_label,
+    }
+
+
+def _number(value: object) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+    )
+
+
+def _sort_rails(rails: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(rails, key=lambda item: (item["name"].casefold(), item["name"]))
+
+
+def _plan_operating_conditions(value: object) -> dict[str, Any]:
+    if value is None:
+        return {
+            "declared": False,
+            "data_rate": None,
+            "frequency_set_point": None,
+            "temperature": None,
+            "rails": [],
+        }
+    if not isinstance(value, dict):
+        raise MarginBundleError("DRAM margin plan operating conditions are invalid")
+    data_rate = value.get("data_rate_mtps")
+    frequency_set_point = value.get("frequency_set_point")
+    temperature = value.get("temperature_c")
+    rails = value.get("rails_mv")
+    if (
+        not isinstance(data_rate, int)
+        or isinstance(data_rate, bool)
+        or not 1 <= data_rate <= 20000
+        or not isinstance(frequency_set_point, str)
+        or _SAFE_ID.fullmatch(frequency_set_point) is None
+        or not _number(temperature)
+        or not -100 <= float(temperature) <= 200
+        or not isinstance(rails, dict)
+        or not 1 <= len(rails) <= 16
+    ):
+        raise MarginBundleError("DRAM margin plan operating conditions are invalid")
+    normalized_rails: list[dict[str, Any]] = []
+    names: set[str] = set()
+    for name, millivolts in rails.items():
+        if (
+            not isinstance(name, str)
+            or _SAFE_ID.fullmatch(name) is None
+            or name.casefold() in names
+            or not _number(millivolts)
+            or not 0 < float(millivolts) <= 5000
+        ):
+            raise MarginBundleError(
+                "DRAM margin plan operating-condition rail is invalid"
+            )
+        names.add(name.casefold())
+        normalized_rails.append(
+            {"name": name, "value": float(millivolts), "unit": "mV"}
+        )
+    return {
+        "declared": True,
+        "data_rate": {"value": data_rate, "unit": "MT/s"},
+        "frequency_set_point": frequency_set_point,
+        "temperature": {"value": float(temperature), "unit": "C"},
+        "rails": _sort_rails(normalized_rails),
+    }
+
+
+def _manifest_operating_conditions(value: object) -> dict[str, Any]:
+    keys = {"declared", "data_rate", "frequency_set_point", "temperature", "rails"}
+    if (
+        not isinstance(value, dict)
+        or set(value) != keys
+        or not isinstance(value["declared"], bool)
+    ):
+        raise MarginBundleError("DRAM margin manifest operating conditions are invalid")
+    if not value["declared"]:
+        expected = {
+            "declared": False,
+            "data_rate": None,
+            "frequency_set_point": None,
+            "temperature": None,
+            "rails": [],
+        }
+        if value != expected:
+            raise MarginBundleError(
+                "DRAM margin undeclared operating conditions are invalid"
+            )
+        return expected
+    data_rate = value["data_rate"]
+    temperature = value["temperature"]
+    frequency_set_point = value["frequency_set_point"]
+    rails = value["rails"]
+    if (
+        not isinstance(data_rate, dict)
+        or set(data_rate) != {"value", "unit"}
+        or not isinstance(data_rate["value"], int)
+        or isinstance(data_rate["value"], bool)
+        or not 1 <= data_rate["value"] <= 20000
+        or data_rate["unit"] != "MT/s"
+        or not isinstance(frequency_set_point, str)
+        or _SAFE_ID.fullmatch(frequency_set_point) is None
+        or not isinstance(temperature, dict)
+        or set(temperature) != {"value", "unit"}
+        or not _number(temperature["value"])
+        or not -100 <= float(temperature["value"]) <= 200
+        or temperature["unit"] != "C"
+        or not isinstance(rails, list)
+        or not 1 <= len(rails) <= 16
+    ):
+        raise MarginBundleError("DRAM margin manifest operating conditions are invalid")
+    normalized_rails: list[dict[str, Any]] = []
+    names: set[str] = set()
+    for rail in rails:
+        if not isinstance(rail, dict) or set(rail) != {"name", "value", "unit"}:
+            raise MarginBundleError(
+                "DRAM margin manifest operating-condition rail is invalid"
+            )
+        name = rail["name"]
+        millivolts = rail["value"]
+        if (
+            not isinstance(name, str)
+            or _SAFE_ID.fullmatch(name) is None
+            or name.casefold() in names
+            or not _number(millivolts)
+            or not 0 < float(millivolts) <= 5000
+            or rail["unit"] != "mV"
+        ):
+            raise MarginBundleError(
+                "DRAM margin manifest operating-condition rail is invalid"
+            )
+        names.add(name.casefold())
+        normalized_rails.append(
+            {"name": name, "value": float(millivolts), "unit": "mV"}
+        )
+    return {
+        "declared": True,
+        "data_rate": {"value": data_rate["value"], "unit": "MT/s"},
+        "frequency_set_point": frequency_set_point,
+        "temperature": {"value": float(temperature["value"]), "unit": "C"},
+        "rails": _sort_rails(normalized_rails),
+    }
+
+
+def _validate_v2_reference_approval(
+    reference: dict[str, Any], manifest: dict[str, Any]
+) -> None:
+    if reference.get("schema") != "dram-margin-phy-reference/v2":
+        return
+    approval = reference.get("approval")
+    required = {
+        "state",
+        "worksheet_sha256",
+        "plan_sha256",
+        "prepared_by",
+        "prepared_at",
+        "approved_by",
+        "approved_at",
+        "source_ticket",
+    }
+    if (
+        not isinstance(approval, dict)
+        or set(approval) != required
+        or approval.get("state") != "approved"
+        or any(
+            not isinstance(approval.get(key), str) or not approval[key].strip()
+            for key in required - {"state"}
+        )
+        or _SHA256.fullmatch(approval["worksheet_sha256"]) is None
+        or approval.get("plan_sha256") != manifest.get("source_plan_sha256")
+        or approval["prepared_by"].strip().casefold()
+        == approval["approved_by"].strip().casefold()
+        or reference.get("approved_by") != approval["approved_by"]
+        or reference.get("approved_at") != approval["approved_at"]
+        or reference.get("source_ticket") != approval["source_ticket"]
+    ):
+        raise MarginBundleError("DRAM margin PHY reference v2 approval is invalid")
+    for key in ("prepared_at", "approved_at"):
+        try:
+            timestamp = datetime.fromisoformat(approval[key].replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise MarginBundleError(
+                "DRAM margin PHY reference v2 approval time is invalid"
+            ) from exc
+        if timestamp.tzinfo is None:
+            raise MarginBundleError(
+                "DRAM margin PHY reference v2 approval time requires a timezone"
+            )
+
+
+def _validate_signal_binding(
+    signal_target: dict[str, Any],
+    memory: dict[str, Any],
+    mode: object,
+    label: str,
+) -> None:
+    kind = signal_target["kind"]
+    labels = (
+        ["ALL"]
+        if kind == "all"
+        else memory.get("ca_labels") or []
+        if kind == "ca"
+        else memory.get("dq_labels") or []
+    )
+    index = signal_target["physical_index"]
+    if index >= len(labels) or signal_target["label"] != labels[index]:
+        raise MarginBundleError(
+            f"DRAM margin {label} signal target is not physically declared"
+        )
+    if not isinstance(mode, str):
+        raise MarginBundleError(f"DRAM margin {label} mode is invalid")
+    if (mode.startswith("cbt") or mode == "vperi-cbt") and kind not in {"all", "ca"}:
+        raise MarginBundleError(
+            f"DRAM margin {label} signal target does not match its mode"
+        )
+    elif (
+        mode.startswith(("read", "write")) or mode in {"vperi-read", "vperi-write"}
+    ) and kind not in {
+        "all",
+        "dq",
+    }:
+        raise MarginBundleError(
+            f"DRAM margin {label} signal target does not match its mode"
+        )
+    elif kind != "all":
+        raise MarginBundleError(
+            f"DRAM margin {label} signal target does not match its mode"
+        )
 
 
 def _validate_plan_reference_contract(
@@ -135,7 +446,8 @@ def _validate_plan_reference_contract(
         or plan_target.get("target_id") != target["target_id"]
         or plan_target.get("transport", "local") != target["transport"]
         or plan_target.get("backend", "fixed") != target["backend"]
-        or plan_target.get("execution_context", "live-os") != target["execution_context"]
+        or plan_target.get("execution_context", "live-os")
+        != target["execution_context"]
         or plan_target.get("soc_profile", "") != target["soc_profile"]
         or plan_target.get("adb_serial", "") != target["adb_serial"]
         or plan_target.get(
@@ -156,29 +468,82 @@ def _validate_plan_reference_contract(
         raise MarginBundleError("DRAM margin plan memory/sweep contract is invalid")
     dq_count = memory.get("bus_width_bits")
     labels = memory.get("dq_labels")
+    ca_labels = memory.get("ca_labels") or []
     mapping = memory.get("dq_mapping") or {}
     if (
         dq_count not in {8, 16, 32, 64}
         or not isinstance(labels, list)
         or len(labels) != dq_count
+        or any(
+            not isinstance(item, str) or _SAFE_ID.fullmatch(item) is None
+            for item in labels
+        )
+        or len({item.casefold() for item in labels}) != len(labels)
+        or not isinstance(ca_labels, list)
+        or len(ca_labels) > 64
+        or any(
+            not isinstance(item, str) or _SAFE_ID.fullmatch(item) is None
+            for item in ca_labels
+        )
+        or len({item.casefold() for item in ca_labels}) != len(ca_labels)
         or not isinstance(mapping, dict)
     ):
         raise MarginBundleError("DRAM margin DQ contract is invalid")
     point_count = 0
     dimensions: list[str] = []
+    signal_target: dict[str, Any] | None = None
     for index, sweep in enumerate(sweeps):
         if not isinstance(sweep, dict):
             raise MarginBundleError(f"DRAM margin sweep {index + 1} is invalid")
+        mode = sweep.get("mode")
         x = sweep.get("x")
         y = sweep.get("y")
         x_values = _axis_values(x, f"sweep {index + 1} X")
         y_values = _axis_values(y, f"sweep {index + 1} Y") if y is not None else (0,)
+        x_dimension = x.get("dimension") if isinstance(x, dict) else None
+        y_dimension = y.get("dimension") if isinstance(y, dict) else None
+        if mode in _TWO_DIMENSION_MODES:
+            if y is None or (x_dimension, y_dimension) != _TWO_DIMENSION_MODES[mode]:
+                raise MarginBundleError(
+                    f"DRAM margin sweep {index + 1} mode/axes are invalid"
+                )
+        elif mode in _ONE_DIMENSION_MODES:
+            if y is not None or x_dimension not in _ONE_DIMENSION_MODES[mode]:
+                raise MarginBundleError(
+                    f"DRAM margin sweep {index + 1} mode/axes are invalid"
+                )
+        else:
+            raise MarginBundleError(f"DRAM margin sweep {index + 1} mode is invalid")
+        if len(x_values) * len(y_values) > 8192:
+            raise MarginBundleError(
+                f"DRAM margin sweep {index + 1} has too many points"
+            )
+        if mode == "fixed-stress" and x_values != (0,):
+            raise MarginBundleError("DRAM margin fixed-stress sweep must be fixed=0")
+        if mode != "fixed-stress" and (
+            0 not in x_values or (y is not None and 0 not in y_values)
+        ):
+            raise MarginBundleError(
+                f"DRAM margin sweep {index + 1} must contain nominal zero"
+            )
         point_count += len(x_values) * len(y_values)
+        sweep_target = _signal_target(sweep.get("signal_target"), f"sweep {index + 1}")
+        _validate_signal_binding(sweep_target, memory, mode, f"sweep {index + 1}")
+        if signal_target is None:
+            signal_target = sweep_target
+        elif sweep_target != signal_target:
+            raise MarginBundleError("DRAM margin sweeps use different signal targets")
         for axis in (x, y):
             if isinstance(axis, dict):
                 dimension = axis.get("dimension")
-                if not isinstance(dimension, str) or not dimension:
-                    raise MarginBundleError("DRAM margin axis dimension is invalid")
+                if (
+                    not isinstance(dimension, str)
+                    or dimension not in _DIMENSION_UNITS
+                    or axis.get("unit") != _DIMENSION_UNITS[dimension]
+                ):
+                    raise MarginBundleError(
+                        "DRAM margin axis dimension/unit is invalid"
+                    )
                 if dimension not in dimensions:
                     dimensions.append(dimension)
     if (
@@ -187,9 +552,28 @@ def _validate_plan_reference_contract(
         or target["dq_count"] != dq_count
     ):
         raise MarginBundleError("DRAM margin plan counts do not match its manifest")
+    expected_conditions = _plan_operating_conditions(
+        plan_target.get("operating_conditions")
+    )
+    expected_signal_target = signal_target or {
+        "kind": "all",
+        "physical_index": 0,
+        "label": "ALL",
+    }
+    if "signal_target" in target and target["signal_target"] != expected_signal_target:
+        raise MarginBundleError(
+            "DRAM margin manifest signal target differs from its plan"
+        )
+    if "operating_conditions" in target and (
+        _manifest_operating_conditions(target["operating_conditions"])
+        != expected_conditions
+    ):
+        raise MarginBundleError(
+            "DRAM margin manifest operating conditions differ from its plan"
+        )
     if (
         not isinstance(reference, dict)
-        or reference.get("schema") != "dram-margin-phy-reference/v1"
+        or reference.get("schema") not in _REFERENCE_SCHEMAS
         or reference.get("backend") != target["backend"]
         or reference.get("profile_id") != manifest.get("reference_profile")
     ):
@@ -204,7 +588,17 @@ def _validate_plan_reference_contract(
             and reference.get("profile_id") != target["soc_profile"]
         )
     ):
-        raise MarginBundleError("DRAM margin reference provenance does not match its plan")
+        raise MarginBundleError(
+            "DRAM margin reference provenance does not match its plan"
+        )
+    reference_signal_target = _signal_target(
+        reference.get("signal_target"), "PHY reference"
+    )
+    if reference_signal_target != expected_signal_target:
+        raise MarginBundleError(
+            "DRAM margin PHY reference signal target differs from its plan"
+        )
+    _validate_v2_reference_approval(reference, manifest)
     reference_dimensions = reference.get("dimensions")
     if (
         not isinstance(reference_dimensions, list)
@@ -214,13 +608,17 @@ def _validate_plan_reference_contract(
         ]
         != dimensions
     ):
-        raise MarginBundleError("DRAM margin reference dimensions do not match its plan")
+        raise MarginBundleError(
+            "DRAM margin reference dimensions do not match its plan"
+        )
     if any(
-        not isinstance(item, dict) or not isinstance(item.get("conversion"), dict)
+        not isinstance(item, dict)
+        or item.get("unit") != _DIMENSION_UNITS.get(item.get("dimension"))
+        or not isinstance(item.get("conversion"), dict)
         for item in reference_dimensions
     ):
         raise MarginBundleError(
-            "DRAM margin remote reference requires conversion for every dimension"
+            "DRAM margin remote reference requires matching units and conversion for every dimension"
         )
 
 
@@ -247,7 +645,9 @@ def parse_margin_remote_bundle(data: bytes) -> MarginRemoteBundle:
                     or info.file_size <= 0
                     or info.file_size > MAX_MEMBER_BYTES
                 ):
-                    raise MarginBundleError(f"Unsafe DRAM margin bundle member: {info.filename}")
+                    raise MarginBundleError(
+                        f"Unsafe DRAM margin bundle member: {info.filename}"
+                    )
                 if path in {"manifest.json", "plan.json", "phy-reference.json"} and (
                     info.file_size > MAX_JSON_BYTES
                 ):
@@ -255,7 +655,10 @@ def parse_margin_remote_bundle(data: bytes) -> MarginRemoteBundle:
                         f"DRAM margin JSON member exceeds 1 MiB: {info.filename}"
                     )
             manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
-            if not isinstance(manifest, dict) or manifest.get("schema") != BUNDLE_SCHEMA:
+            if (
+                not isinstance(manifest, dict)
+                or manifest.get("schema") != BUNDLE_SCHEMA
+            ):
                 raise MarginBundleError("DRAM margin bundle manifest schema is invalid")
             artifacts = manifest.get("artifacts")
             if not isinstance(artifacts, dict) or set(artifacts) != {
@@ -264,7 +667,9 @@ def parse_margin_remote_bundle(data: bytes) -> MarginRemoteBundle:
                 "controller",
                 "runner",
             }:
-                raise MarginBundleError("DRAM margin bundle artifact contract is invalid")
+                raise MarginBundleError(
+                    "DRAM margin bundle artifact contract is invalid"
+                )
             expected_names = {"manifest.json"}
             members = {"manifest.json": archive.read("manifest.json")}
             identity_parts: list[str] = []
@@ -295,7 +700,10 @@ def parse_margin_remote_bundle(data: bytes) -> MarginRemoteBundle:
     except (BadZipFile, KeyError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise MarginBundleError(f"Cannot parse DRAM margin bundle: {exc}") from exc
 
-    if manifest.get("bundle_id") != _digest("".join(identity_parts).encode("ascii"))[:20]:
+    if (
+        manifest.get("bundle_id")
+        != _digest("".join(identity_parts).encode("ascii"))[:20]
+    ):
         raise MarginBundleError("DRAM margin bundle id does not match its artifacts")
     if (
         not isinstance(manifest.get("source_plan_sha256"), str)
@@ -305,16 +713,10 @@ def parse_margin_remote_bundle(data: bytes) -> MarginRemoteBundle:
     ):
         raise MarginBundleError("DRAM margin source/reference provenance is invalid")
     target = manifest.get("target")
-    if not isinstance(target, dict) or set(target) != {
-        "target_id",
-        "transport",
-        "backend",
-        "execution_context",
-        "soc_profile",
-        "adb_serial",
-        "sweep_count",
-        "point_count",
-        "dq_count",
+    target_keys = frozenset(target) if isinstance(target, dict) else frozenset()
+    if not isinstance(target, dict) or target_keys not in {
+        frozenset(_LEGACY_TARGET_KEYS),
+        frozenset(_V06_TARGET_KEYS),
     }:
         raise MarginBundleError("DRAM margin target metadata is invalid")
     sweep_count = target.get("sweep_count")
@@ -341,6 +743,9 @@ def parse_margin_remote_bundle(data: bytes) -> MarginRemoteBundle:
         or dq_count not in {8, 16, 32, 64}
     ):
         raise MarginBundleError("DRAM margin target metadata values are invalid")
+    if target_keys == frozenset(_V06_TARGET_KEYS):
+        _signal_target(target["signal_target"], "manifest")
+        _manifest_operating_conditions(target["operating_conditions"])
     artifacts = manifest["artifacts"]
     plan_path = str(artifacts["plan"]["path"])
     reference_path = str(artifacts["reference"]["path"])
@@ -357,9 +762,13 @@ def parse_margin_remote_bundle(data: bytes) -> MarginRemoteBundle:
         plan = json.loads(members[plan_path].decode("utf-8"))
         reference = json.loads(members[reference_path].decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise MarginBundleError(f"DRAM margin plan/reference JSON is invalid: {exc}") from exc
+        raise MarginBundleError(
+            f"DRAM margin plan/reference JSON is invalid: {exc}"
+        ) from exc
     _validate_plan_reference_contract(plan, reference, target, manifest, runner_path)
-    controller_format = _binary_format(members[controller_path], "DRAM margin controller")
+    controller_format = _binary_format(
+        members[controller_path], "DRAM margin controller"
+    )
     runner_format = _binary_format(members[runner_path], "DRAM margin runner")
     expected_runner_format = (
         "android-arm64-elf" if target["transport"] == "adb" else "windows-x64-pe"
@@ -405,13 +814,18 @@ def _verify_staged_bundle(bundle: MarginRemoteBundle, destination: Path) -> None
     actual: set[str] = set()
     for path in destination.rglob("*"):
         if path.is_symlink() or (not path.is_file() and not path.is_dir()):
-            raise MarginBundleError("Staged DRAM margin bundle contains an unsafe member")
+            raise MarginBundleError(
+                "Staged DRAM margin bundle contains an unsafe member"
+            )
         if path.is_file():
             actual.add(path.relative_to(destination).as_posix())
     if actual != set(bundle.members):
         raise MarginBundleError("Staged DRAM margin bundle member set changed")
     for relative, expected in bundle.members.items():
-        if destination.joinpath(*PurePosixPath(relative).parts).read_bytes() != expected:
+        if (
+            destination.joinpath(*PurePosixPath(relative).parts).read_bytes()
+            != expected
+        ):
             raise MarginBundleError(f"Staged DRAM margin member changed: {relative}")
 
 
@@ -426,7 +840,9 @@ def build_margin_campaign_artifact(
         manifest_data = manifest_path.read_bytes()
         manifest = json.loads(manifest_data.decode("utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise MarginBundleError(f"Cannot read DRAM margin campaign manifest: {exc}") from exc
+        raise MarginBundleError(
+            f"Cannot read DRAM margin campaign manifest: {exc}"
+        ) from exc
     files = manifest.get("files") if isinstance(manifest, dict) else None
     if manifest.get("schema") != CAMPAIGN_SCHEMA or not isinstance(files, list):
         raise MarginBundleError("DRAM margin campaign manifest schema is invalid")
@@ -479,7 +895,9 @@ def build_margin_campaign_artifact(
             raise MarginBundleError(f"DRAM margin campaign file is invalid: {relative}")
         data = path.read_bytes()
         if len(data) != size or _digest(data) != digest:
-            raise MarginBundleError(f"DRAM margin campaign checksum mismatch: {relative}")
+            raise MarginBundleError(
+                f"DRAM margin campaign checksum mismatch: {relative}"
+            )
         expected_paths.add(relative)
         ordered.append((relative, data))
         total += len(data)

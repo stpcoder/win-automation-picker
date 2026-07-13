@@ -77,6 +77,38 @@ def natural_label_key(value: object) -> tuple[tuple[int, object], ...]:
     )
 
 
+def _package_detail_value(key: str, value: Any) -> str:
+    if key == "signal_target" and isinstance(value, dict):
+        kind = str(value.get("kind") or "").upper()
+        label = str(value.get("label") or "")
+        index = value.get("physical_index")
+        return "ALL" if kind == "ALL" else f"{label} ({kind} physical index {index})"
+    if key == "operating_conditions" and isinstance(value, dict):
+        if value.get("declared") is not True:
+            return "미지정"
+        data_rate = value.get("data_rate") or {}
+        temperature = value.get("temperature") or {}
+        pieces = [
+            f"{data_rate.get('value')} {data_rate.get('unit')}",
+            str(value.get("frequency_set_point") or ""),
+            f"{temperature.get('value')} {temperature.get('unit')}",
+        ]
+        rails = value.get("rails") or []
+        rail_text = ", ".join(
+            f"{rail.get('name')} {rail.get('value')} {rail.get('unit')}"
+            for rail in rails
+            if isinstance(rail, dict)
+        )
+        if rail_text:
+            pieces.append(rail_text)
+        return " · ".join(piece for piece in pieces if piece.strip())
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value)
+    if isinstance(value, dict):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return str(value)
+
+
 class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -2735,7 +2767,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                     notes = str(details.get("purpose") or details.get("product") or "")
             elif Path(path).name.casefold().endswith(".drammargin.zip"):
                 title = Path(path).name[: -len(".drammargin.zip")]
-                notes = "DQ margin campaign: nominal probe, sweep, physical-unit acceptance"
+                notes = "CA/DQ margin campaign: nominal probe, sweep, physical-unit acceptance"
             self.package_title_var.set(title)
             self.package_notes_text.delete("1.0", "end")
             if notes:
@@ -5841,6 +5873,8 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                 "backend": "Margin Backend",
                 "execution_context": "Execution Context",
                 "soc_profile": "SoC Profile",
+                "signal_target": "Signal Target",
+                "operating_conditions": "Operating Conditions",
                 "adb_serial": "ADB Serial",
                 "sweep_count": "Sweeps",
                 "point_count": "Points",
@@ -5849,7 +5883,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
             }
             for key, value in package.details.items():
                 if value not in ("", None, []):
-                    rendered = ", ".join(value) if isinstance(value, list) else value
+                    rendered = _package_detail_value(key, value)
                     lines.append(f"- {detail_labels.get(key, key)}: {rendered}")
         self.package_detail_text.insert("1.0", "\n".join(lines))
         self._refresh_run_profile_columns()
@@ -5859,7 +5893,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
         return {
             "workflow": "내장 워크플로 엔진",
             "sequence": "검증된 Rig SEQ + SK Commander 런처",
-            "dram_margin": "DRAM DQ 마진 캠페인",
+            "dram_margin": "DRAM CA/DQ 마진 캠페인",
             "python": "외부 Python",
         }.get(runner, runner)
 
@@ -6068,7 +6102,7 @@ class RigFtpApp(DeviceWorkspaceMixin, AEWorkbenchMixin, tk.Tk):
                 self.package_notes_text.delete("1.0", "end")
                 self.package_notes_text.insert(
                     "1.0",
-                    "DQ margin campaign: nominal probe, sweep, physical-unit acceptance",
+                    "CA/DQ margin campaign: nominal probe, sweep, physical-unit acceptance",
                 )
                 if dialog is not None and dialog.winfo_exists():
                     dialog.destroy()
