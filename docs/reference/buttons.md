@@ -62,7 +62,7 @@
 | `전원` | CH별 ON/OFF/cycle 명령 요청 |
 | `원격 사전점검` | Tool/XML hash/USB identity/Vendor gate 검사 |
 | `Binary 업데이트 시작` | 사전점검을 다시 수행한 뒤 한 CH Downloader 실행 |
-| `고급 작업 > 실기 Qualification 준비 · 승인` | 성공 증거로 UNAPPROVED 후보를 만들고 다른 검토자가 SHA 확인 후 v2 기준 승인 |
+| `고급 작업 > 실기 Qualification 준비 · 승인` | 성공 ZIP 3개 이상으로 반복 후보를 만들고 다른 검토자가 set SHA 확인 후 v3 기준 승인 |
 | `고급 작업 > 완료 저널 · 실기 증거 검증` | 승인 기준과 완료 ZIP/저널의 fixture/tool/단계/해시를 대조 |
 
 ## Scratch 상단과 녹화

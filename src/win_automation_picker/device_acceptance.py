@@ -14,6 +14,7 @@ from zipfile import BadZipFile, ZipFile
 
 REFERENCE_SCHEMA = "rig-device-field-reference/v1"
 REFERENCE_SCHEMA_V2 = "rig-device-field-reference/v2"
+REFERENCE_SCHEMA_V3 = "rig-device-field-reference/v3"
 ACCEPTANCE_SCHEMA = "rig-device-field-acceptance/v1"
 DEVICE_RUN_SCHEMA = "rig-device-update-run/v1"
 FIRMWARE_RUN_SCHEMA = "rig-firmware-run/v1"
@@ -99,7 +100,11 @@ def load_device_field_reference(path: str | Path) -> DeviceFieldReference:
         raise DeviceAcceptanceError(
             f"Cannot read device field reference: {source}"
         ) from exc
-    if data.get("schema") not in {REFERENCE_SCHEMA, REFERENCE_SCHEMA_V2}:
+    if data.get("schema") not in {
+        REFERENCE_SCHEMA,
+        REFERENCE_SCHEMA_V2,
+        REFERENCE_SCHEMA_V3,
+    }:
         raise DeviceAcceptanceError("Unsupported device field reference schema")
     required_text = (
         "qualification_id",
@@ -298,6 +303,74 @@ def load_device_field_reference(path: str | Path) -> DeviceFieldReference:
                 raise DeviceAcceptanceError(
                     f"Device approval {key} must include a timezone"
                 )
+    if data["schema"] == REFERENCE_SCHEMA_V3:
+        approval = data.get("approval")
+        if not isinstance(approval, dict):
+            raise DeviceAcceptanceError(
+                "Device v3 reference requires approval metadata"
+            )
+        evidence_rows = approval.get("qualification_evidence")
+        minimum_runs = approval.get("minimum_successful_runs")
+        if (
+            approval.get("state") != "approved"
+            or not isinstance(minimum_runs, int)
+            or isinstance(minimum_runs, bool)
+            or not 3 <= minimum_runs <= 20
+            or not isinstance(evidence_rows, list)
+            or len(evidence_rows) < minimum_runs
+            or len(evidence_rows) > 20
+        ):
+            raise DeviceAcceptanceError(
+                "Device v3 repeated qualification metadata is invalid"
+            )
+        evidence_hashes = [
+            str(item.get("sha256") or "")
+            for item in evidence_rows
+            if isinstance(item, dict)
+        ]
+        required_approval_text = (
+            "candidate_sha256",
+            "evidence_set_sha256",
+            "prepared_by",
+            "prepared_at",
+            "approved_by",
+            "approved_at",
+        )
+        canonical_set = _digest(
+            json.dumps(
+                sorted(evidence_hashes),
+                separators=(",", ":"),
+            ).encode("ascii")
+        )
+        if (
+            len(evidence_hashes) != len(evidence_rows)
+            or len(set(evidence_hashes)) != len(evidence_hashes)
+            or any(_SHA256.fullmatch(value) is None for value in evidence_hashes)
+            or any(
+                not isinstance(approval.get(key), str) or not approval[key].strip()
+                for key in required_approval_text
+            )
+            or _SHA256.fullmatch(approval["candidate_sha256"]) is None
+            or approval["evidence_set_sha256"] != canonical_set
+            or approval["approved_by"] != data["approved_by"]
+            or approval["approved_at"] != data["approved_at"]
+            or approval["prepared_by"].strip().casefold()
+            == approval["approved_by"].strip().casefold()
+        ):
+            raise DeviceAcceptanceError(
+                "Device v3 evidence set or reviewer separation is invalid"
+            )
+        for key in ("prepared_at", "approved_at"):
+            try:
+                timestamp = datetime.fromisoformat(approval[key].replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise DeviceAcceptanceError(
+                    f"Device repeated approval {key} must be ISO-8601"
+                ) from exc
+            if timestamp.tzinfo is None:
+                raise DeviceAcceptanceError(
+                    f"Device repeated approval {key} must include a timezone"
+                )
     return DeviceFieldReference(source, data, _digest(payload))
 
 
@@ -423,11 +496,23 @@ def build_device_acceptance_report(
     if approved.get("schema") == REFERENCE_SCHEMA_V2:
         approval = approved["approval"]
         add(
-            "approval-evidence-binding",
-            approval.get("evidence_sha256") == evidence.source_sha256,
-            "The reviewed qualification reference binds this exact evidence snapshot.",
-            expected=approval.get("evidence_sha256"),
-            observed=evidence.source_sha256,
+            "approval-provenance",
+            True,
+            "Qualification provenance is retained separately from the evaluated run evidence.",
+            qualification_evidence_sha256=approval.get("evidence_sha256"),
+            evaluated_evidence_sha256=evidence.source_sha256,
+        )
+    if approved.get("schema") == REFERENCE_SCHEMA_V3:
+        approval = approved["approval"]
+        add(
+            "repeated-qualification-provenance",
+            len(approval["qualification_evidence"])
+            >= approval["minimum_successful_runs"],
+            "Reference was approved from multiple unique successful qualification runs.",
+            successful_runs=len(approval["qualification_evidence"]),
+            minimum_successful_runs=approval["minimum_successful_runs"],
+            qualification_evidence_set_sha256=approval["evidence_set_sha256"],
+            evaluated_evidence_sha256=evidence.source_sha256,
         )
     for key in ("target", "vendor", "soc_model", "mode"):
         add(
