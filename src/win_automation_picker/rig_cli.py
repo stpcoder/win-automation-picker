@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from .device_acceptance import DeviceAcceptanceError, write_device_acceptance_report
+from .device_qualification import (
+    approve_device_qualification_candidate,
+    write_device_qualification_candidate,
+)
 from .rig import (
     CommandResult,
     RigConfig,
@@ -225,6 +229,37 @@ def build_parser() -> argparse.ArgumentParser:
         help="Folder for per-step firmware manifests and logs.",
     )
     device_update.set_defaults(func=_cmd_device_update)
+
+    device_qualify = device_subparsers.add_parser(
+        "qualify",
+        help="Prepare and independently approve a field qualification reference.",
+    )
+    qualification_subparsers = device_qualify.add_subparsers(
+        dest="qualification_command",
+        required=True,
+    )
+    qualification_prepare = qualification_subparsers.add_parser(
+        "prepare",
+        help="Create an explicitly unapproved candidate from successful device evidence.",
+    )
+    qualification_prepare.add_argument("--evidence", required=True)
+    qualification_prepare.add_argument("--prepared-by", required=True)
+    qualification_prepare.add_argument("--source-ticket", required=True)
+    qualification_prepare.add_argument("--output", required=True)
+    qualification_prepare.add_argument("--json", action="store_true")
+    qualification_prepare.set_defaults(func=_cmd_device_qualification_prepare)
+    qualification_approve = qualification_subparsers.add_parser(
+        "approve",
+        help="Revalidate candidate evidence and create a reviewer-separated v2 reference.",
+    )
+    qualification_approve.add_argument("--candidate", required=True)
+    qualification_approve.add_argument("--evidence", required=True)
+    qualification_approve.add_argument("--qualification-id", required=True)
+    qualification_approve.add_argument("--approved-by", required=True)
+    qualification_approve.add_argument("--confirm-evidence-sha256", required=True)
+    qualification_approve.add_argument("--output", required=True)
+    qualification_approve.add_argument("--json", action="store_true")
+    qualification_approve.set_defaults(func=_cmd_device_qualification_approve)
 
     device_accept = device_subparsers.add_parser(
         "accept",
@@ -724,6 +759,42 @@ def _cmd_device_update(args: argparse.Namespace) -> int:
     )
     _print_results([result], as_json=bool(args.json))
     return 0 if result.ok else 1
+
+
+def _cmd_device_qualification_prepare(args: argparse.Namespace) -> int:
+    candidate = write_device_qualification_candidate(
+        args.evidence,
+        args.output,
+        prepared_by=args.prepared_by,
+        source_ticket=args.source_ticket,
+    )
+    if args.json:
+        print(json.dumps(candidate, indent=2, ensure_ascii=True))
+    else:
+        print("Device qualification candidate: UNAPPROVED")
+        print(f"Target: {candidate['reference_draft']['target']}")
+        print(f"Evidence SHA-256: {candidate['evidence']['sha256']}")
+        print(f"Candidate: {Path(args.output).expanduser().resolve()}")
+    return 0
+
+
+def _cmd_device_qualification_approve(args: argparse.Namespace) -> int:
+    reference = approve_device_qualification_candidate(
+        args.candidate,
+        args.evidence,
+        args.output,
+        qualification_id=args.qualification_id,
+        approved_by=args.approved_by,
+        confirm_evidence_sha256=args.confirm_evidence_sha256,
+    )
+    if args.json:
+        print(json.dumps(reference, indent=2, ensure_ascii=True))
+    else:
+        print("Device qualification reference: APPROVED")
+        print(f"Qualification: {reference['qualification_id']}")
+        print(f"Target: {reference['target']}")
+        print(f"Reference: {Path(args.output).expanduser().resolve()}")
+    return 0
 
 
 def _cmd_device_accept(args: argparse.Namespace) -> int:

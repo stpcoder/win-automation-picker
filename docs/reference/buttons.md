@@ -24,6 +24,7 @@
 | `운영 도구 열기` | raw 패키지 등록과 단일 PC 고급 실행 표시 |
 | `[MARGIN]` 패키지 실행 | exact PC/CH에서 nominal probe, DQ sweep, 물리 단위 acceptance를 한 작업으로 실행 |
 | `마진 번들 만들기` | Windows controller, plan, PHY reference를 checksummed `*.drammargin.zip`으로 생성 |
+| `마진 번들 > PHY 기준 준비 · 승인` | null 승인 칸 worksheet 생성, 별도 검토자의 plan SHA 확인과 v2 reference 승인 |
 | `Scratch 수정` | 선택한 서버 FLOW를 source project로 안전하게 복원 |
 
 ## 자동화 준비
@@ -61,6 +62,8 @@
 | `전원` | CH별 ON/OFF/cycle 명령 요청 |
 | `원격 사전점검` | Tool/XML hash/USB identity/Vendor gate 검사 |
 | `Binary 업데이트 시작` | 사전점검을 다시 수행한 뒤 한 CH Downloader 실행 |
+| `고급 작업 > 실기 Qualification 준비 · 승인` | 성공 증거로 UNAPPROVED 후보를 만들고 다른 검토자가 SHA 확인 후 v2 기준 승인 |
+| `고급 작업 > 완료 저널 · 실기 증거 검증` | 승인 기준과 완료 ZIP/저널의 fixture/tool/단계/해시를 대조 |
 
 ## Scratch 상단과 녹화
 

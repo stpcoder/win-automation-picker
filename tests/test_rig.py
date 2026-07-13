@@ -889,7 +889,7 @@ def test_device_update_journal_captures_probe_firmware_and_postcheck(
     manifest = json.loads((journal / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["schema"] == "rig-device-update-run/v1"
     assert manifest["ok"] is True
-    assert manifest["application_version"] == "1.11.0"
+    assert manifest["application_version"] == "1.12.0"
     assert manifest["fixture"]["fixture_id"] == "FIXTURE-04"
     assert manifest["fixture"]["fixture_serial"] == "FX04-2026-001"
     assert manifest["fixture"]["channel_id"] == "CH1"

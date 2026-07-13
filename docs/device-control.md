@@ -264,14 +264,21 @@ Slave는 이 전체 폴더에서 manifest와 로그만 골라 FTP 증거 ZIP에 
 
 ## 실기 Qualification 증거 검증
 
-소프트웨어 테스트의 PASS와 실제 장비에서 승인된 조합의 PASS는 구분합니다. 먼저 담당자가
-고정 fixture, CH, Downloader 버전, package와 실행 계획을 한 번 실기 qualification하고
-`rig-device-field-reference/v1` JSON에 승인합니다. 실행 결과로 기준 파일을 자동 생성하지
-않습니다. 실행 결과를 그대로 기준으로 만들면 잘못된 target이나 단계도 스스로 승인할 수 있기
-때문입니다.
+소프트웨어 테스트의 PASS와 실제 장비에서 승인된 조합의 PASS는 구분합니다. 담당자가 고정
+fixture에서 한 번 실기 qualification한 성공 증거로 먼저 `UNAPPROVED` 후보를 만들고, 다른
+검토자가 같은 증거와 SHA-256을 다시 대조해 `rig-device-field-reference/v2`로 승인합니다.
+후보 파일은 schema가 달라 검증 기준으로 직접 사용할 수 없습니다.
 
-기준 파일은 [QDL 예제](reference/device-field-reference-qdl.json)를 복사해 다음 값을 실제
-승인 기록으로 교체합니다.
+Master GUI에서는 `Binary 업데이트 > 고급 작업 > 실기 Qualification 준비 · 승인`을 엽니다.
+
+1. `후보 준비`에서 FTP artifact ZIP 또는 Slave 저널의 `manifest.json`, 준비자와 사내 Ticket을 입력합니다.
+2. 후보 생성기가 QDL 물리 스위치, MTK exit 순서 또는 Genio FTDI binding을 포함한 전체 증거를 다시 검증합니다.
+3. 생성된 후보의 target, fixture/tool/step과 evidence SHA-256을 외부 작업 기록과 대조합니다.
+4. `독립 승인`에서 후보와 같은 원본 증거를 다시 선택하고 준비자와 다른 승인자를 입력합니다.
+5. 화면의 evidence SHA-256을 원본과 대조한 뒤 `SHA 직접 확인 입력`에 전체 값을 입력합니다.
+6. 승인된 v2 reference를 저장하고 이후 `완료 저널 · 실기 증거 검증`에 사용합니다.
+
+후보에는 다음 값이 자동 전사되지만 승인 상태는 부여되지 않습니다.
 
 - qualification ID, 승인자, 승인 시각과 사내 ticket
 - 정확한 `PC:CH`, Vendor, SoC, fixture ID/serial, COM, EDL/ADB serial
@@ -279,6 +286,27 @@ Slave는 이 전체 폴더에서 manifest와 로그만 골라 FTP 증거 ZIP에 
 - 승인된 Downloader version 정규식과 firmware step 순서
 - qualification에서 반드시 통과한 preflight check ID
 - QC 물리 스위치, MTK serial exit 또는 MTK board-control 중 실제 전환 방식
+
+CLI에서도 같은 준비자/승인자 분리와 재검증을 사용합니다.
+
+```powershell
+RigCommander.exe device qualify prepare `
+  --evidence artifacts\PC04\job-id.zip `
+  --prepared-by operator-a --source-ticket AE-2026-1001 `
+  --output approvals\PC04-CH9-candidate.json
+
+RigCommander.exe device qualify approve `
+  --candidate approvals\PC04-CH9-candidate.json `
+  --evidence artifacts\PC04\job-id.zip `
+  --qualification-id QUAL-SM8850-PC04-CH9-01 `
+  --approved-by reviewer-b --confirm-evidence-sha256 FULL_SHA256 `
+  --output approvals\PC04-CH9-SM8850.json
+```
+
+승인 단계는 후보 작성 후 evidence 파일 하나라도 바뀌거나, SHA 확인값이 다르거나, 준비자와
+승인자가 같으면 차단합니다. v2 reference에는 후보 파일 SHA, 원본 evidence SHA, 준비자와
+승인자, 양쪽 시각과 Ticket이 들어갑니다. 기존 수동 v1 기준은 계속 읽을 수 있으며
+[QDL 예제](reference/device-field-reference-qdl.json)는 legacy 구조 참고용입니다.
 
 Master GUI에서는 `Binary 업데이트 > 고급 작업 > 완료 저널 · 실기 증거 검증`을 누릅니다.
 FTP에서 받은 artifact ZIP 또는 Slave 저널의 `manifest.json`, 별도 승인 기준 JSON, 출력 보고서
@@ -290,7 +318,7 @@ FTP에서 받은 artifact ZIP 또는 Slave 저널의 `manifest.json`, 별도 승
 4. Downloader ID, Adapter, version, package/실행 지문과 단계 순서가 일치함
 5. 모든 단계 로그와 checksum이 있는 package integrity 목록이 존재함
 
-CLI에서도 같은 검증기를 사용합니다.
+완료된 작업은 CLI에서도 같은 검증기로 판정합니다.
 
 ```powershell
 RigCommander.exe device accept `
