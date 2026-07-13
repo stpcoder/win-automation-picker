@@ -220,3 +220,9 @@ FAIL 보고서를 PASS로 만들기 위해 reference를 현재 결과에 맞춰 
 - `preparer and approver must be different`이면 준비자와 다른 현장 검토자가 승인해야 합니다.
 - 후보 작성 뒤 로그, manifest 또는 ZIP이 바뀌면 새 evidence로 후보부터 다시 만듭니다.
 - 승인된 v2 reference의 `approval`에서 candidate/evidence SHA, 준비자·승인자와 Ticket을 확인합니다.
+- 운영 v3 후보는 서로 다른 성공 ZIP이 최소 3개 필요합니다. 같은 ZIP을 이름만 바꾸거나 같은
+  폴더를 반복 선택하면 unique evidence 검사에서 차단됩니다.
+- 반복 run 중 하나라도 PC:CH, fixture serial, package/execution fingerprint, tool version,
+  transition 종류 또는 step 순서가 다르면 하나의 qualification으로 묶을 수 없습니다.
+- v3의 qualification evidence SHA는 과거 승인 근거입니다. 이후 production ZIP은 SHA가 달라도
+  같은 contract이면 PASS하며, 현재 ZIP을 과거 qualification SHA와 같게 만들 필요가 없습니다.

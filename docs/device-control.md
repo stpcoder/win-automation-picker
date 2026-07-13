@@ -264,19 +264,22 @@ Slave는 이 전체 폴더에서 manifest와 로그만 골라 FTP 증거 ZIP에 
 
 ## 실기 Qualification 증거 검증
 
-소프트웨어 테스트의 PASS와 실제 장비에서 승인된 조합의 PASS는 구분합니다. 담당자가 고정
-fixture에서 한 번 실기 qualification한 성공 증거로 먼저 `UNAPPROVED` 후보를 만들고, 다른
-검토자가 같은 증거와 SHA-256을 다시 대조해 `rig-device-field-reference/v2`로 승인합니다.
-후보 파일은 schema가 달라 검증 기준으로 직접 사용할 수 없습니다.
+소프트웨어 테스트의 PASS와 실제 장비에서 승인된 조합의 PASS는 구분합니다. 운영 기준은 같은
+고정 fixture/package/tool로 수행한 서로 다른 성공 ZIP을 최소 3개 수집해 반복 qualification
+후보를 만들고, 다른 검토자가 evidence-set SHA-256을 다시 대조해
+`rig-device-field-reference/v3`로 승인합니다. 단일 v2는 초기 bring-up과 legacy 장비용이며
+운영 안정성 기준으로 사용하지 않습니다. 후보 파일은 schema가 달라 검증 기준으로 직접 사용할
+수 없습니다.
 
 Master GUI에서는 `Binary 업데이트 > 고급 작업 > 실기 Qualification 준비 · 승인`을 엽니다.
 
-1. `후보 준비`에서 FTP artifact ZIP 또는 Slave 저널의 `manifest.json`, 준비자와 사내 Ticket을 입력합니다.
-2. 후보 생성기가 QDL 물리 스위치, MTK exit 순서 또는 Genio FTDI binding을 포함한 전체 증거를 다시 검증합니다.
-3. 생성된 후보의 target, fixture/tool/step과 evidence SHA-256을 외부 작업 기록과 대조합니다.
-4. `독립 승인`에서 후보와 같은 원본 증거를 다시 선택하고 준비자와 다른 승인자를 입력합니다.
-5. 화면의 evidence SHA-256을 원본과 대조한 뒤 `SHA 직접 확인 입력`에 전체 값을 입력합니다.
-6. 승인된 v2 reference를 저장하고 이후 `완료 저널 · 실기 증거 검증`에 사용합니다.
+1. 같은 target을 정상 update한 FTP artifact ZIP을 최소 3개 보관합니다.
+2. `후보 준비`의 `반복 ZIP 3개+`에서 서로 다른 ZIP을 함께 선택하고 준비자와 Ticket을 입력합니다.
+3. 모든 run의 QDL 물리 스위치, MTK exit 순서 또는 Genio FTDI binding과 contract를 다시 검증합니다.
+4. target, fixture/tool/package/step/version이 한 번이라도 다르거나 ZIP SHA가 중복이면 차단됩니다.
+5. `독립 승인`에서 후보와 같은 ZIP 집합을 다시 선택하고 준비자와 다른 승인자를 입력합니다.
+6. 화면의 evidence-set SHA-256을 대조해 직접 입력하고 승인된 v3 reference를 저장합니다.
+7. 이후의 새 작업은 qualification ZIP과 파일 SHA가 달라도 같은 contract이면 정상 검증됩니다.
 
 후보에는 다음 값이 자동 전사되지만 승인 상태는 부여되지 않습니다.
 
@@ -290,22 +293,27 @@ Master GUI에서는 `Binary 업데이트 > 고급 작업 > 실기 Qualification 
 CLI에서도 같은 준비자/승인자 분리와 재검증을 사용합니다.
 
 ```powershell
-RigCommander.exe device qualify prepare `
-  --evidence artifacts\PC04\job-id.zip `
+RigCommander.exe device qualify prepare-set `
+  --evidence artifacts\PC04\run-01.zip `
+  --evidence artifacts\PC04\run-02.zip `
+  --evidence artifacts\PC04\run-03.zip `
   --prepared-by operator-a --source-ticket AE-2026-1001 `
   --output approvals\PC04-CH9-candidate.json
 
-RigCommander.exe device qualify approve `
+RigCommander.exe device qualify approve-set `
   --candidate approvals\PC04-CH9-candidate.json `
-  --evidence artifacts\PC04\job-id.zip `
+  --evidence artifacts\PC04\run-01.zip `
+  --evidence artifacts\PC04\run-02.zip `
+  --evidence artifacts\PC04\run-03.zip `
   --qualification-id QUAL-SM8850-PC04-CH9-01 `
-  --approved-by reviewer-b --confirm-evidence-sha256 FULL_SHA256 `
+  --approved-by reviewer-b --confirm-evidence-set-sha256 FULL_SET_SHA256 `
   --output approvals\PC04-CH9-SM8850.json
 ```
 
-승인 단계는 후보 작성 후 evidence 파일 하나라도 바뀌거나, SHA 확인값이 다르거나, 준비자와
-승인자가 같으면 차단합니다. v2 reference에는 후보 파일 SHA, 원본 evidence SHA, 준비자와
-승인자, 양쪽 시각과 Ticket이 들어갑니다. 기존 수동 v1 기준은 계속 읽을 수 있으며
+승인 단계는 후보 작성 후 evidence 파일 하나라도 바뀌거나, set SHA 확인값이 다르거나, 준비자와
+승인자가 같으면 차단합니다. v3 reference에는 후보 파일 SHA, 각 qualification evidence SHA,
+canonical set SHA, 최소 성공 횟수, 준비자와 승인자, 양쪽 시각과 Ticket이 들어갑니다. 새
+production evidence는 이 provenance와 별도로 contract를 비교합니다. 기존 v1/v2 기준은 계속 읽을 수 있으며
 [QDL 예제](reference/device-field-reference-qdl.json)는 legacy 구조 참고용입니다.
 
 Master GUI에서는 `Binary 업데이트 > 고급 작업 > 완료 저널 · 실기 증거 검증`을 누릅니다.

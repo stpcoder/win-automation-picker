@@ -12,6 +12,7 @@ from .device_acceptance import (
     FIRMWARE_RUN_SCHEMA,
     REFERENCE_SCHEMA,
     REFERENCE_SCHEMA_V2,
+    REFERENCE_SCHEMA_V3,
     DeviceAcceptanceError,
     DeviceFieldReference,
     DeviceRunEvidence,
@@ -22,6 +23,9 @@ from .device_acceptance import (
 
 
 CANDIDATE_SCHEMA = "rig-device-field-reference-candidate/v1"
+REPEATED_CANDIDATE_SCHEMA = "rig-device-field-reference-candidate/v2"
+DEFAULT_MINIMUM_SUCCESSFUL_RUNS = 3
+MAXIMUM_QUALIFICATION_RUNS = 20
 MAX_CANDIDATE_BYTES = 1024 * 1024
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -269,21 +273,26 @@ def _build_reference_draft(
         _required_text(fixture_contract[key], f"qualification fixture {key}")
     if re.fullmatch(r"[0-9a-f]{64}", draft["execution_fingerprint"]) is None:
         raise DeviceAcceptanceError("Qualification execution fingerprint is invalid")
-    if draft["package_fingerprint"] and re.fullmatch(
-        r"[0-9a-f]{64}", draft["package_fingerprint"]
-    ) is None:
+    if (
+        draft["package_fingerprint"]
+        and re.fullmatch(r"[0-9a-f]{64}", draft["package_fingerprint"]) is None
+    ):
         raise DeviceAcceptanceError("Qualification package fingerprint is invalid")
     if adapter_kind == "qualcomm-qdl" and not fixture_contract["download_serial"]:
         raise DeviceAcceptanceError("Qualification QDL download_serial is missing")
-    if transition_kind == "mediatek-board-control" and not fixture_contract[
-        "board_control_serial"
-    ]:
-        raise DeviceAcceptanceError("Qualification Genio board_control_serial is missing")
+    if (
+        transition_kind == "mediatek-board-control"
+        and not fixture_contract["board_control_serial"]
+    ):
+        raise DeviceAcceptanceError(
+            "Qualification Genio board_control_serial is missing"
+        )
     if require_post_adb and not fixture_contract["adb_serial"]:
         raise DeviceAcceptanceError("Qualification post-update adb_serial is missing")
-    if transition_kind == "mediatek-serial-exit" and not 1 <= draft[
-        "preloader_exit_count"
-    ] <= 8:
+    if (
+        transition_kind == "mediatek-serial-exit"
+        and not 1 <= draft["preloader_exit_count"] <= 8
+    ):
         raise DeviceAcceptanceError("Qualification preloader_exit_count is invalid")
     return draft, version
 
@@ -470,7 +479,11 @@ def _load_candidate(path: str | Path) -> tuple[Path, str, dict[str, Any]]:
 
 
 def load_device_qualification_candidate(path: str | Path) -> dict[str, Any]:
-    _source, candidate_sha256, candidate = _load_candidate(path)
+    _source, _payload, raw = _load_json(path, "device qualification candidate")
+    if raw.get("schema") == REPEATED_CANDIDATE_SCHEMA:
+        _source, candidate_sha256, candidate = _load_repeated_candidate(path)
+    else:
+        _source, candidate_sha256, candidate = _load_candidate(path)
     return {**candidate, "candidate_sha256": candidate_sha256}
 
 
@@ -538,6 +551,294 @@ def approve_device_qualification_candidate(
             "state": "approved",
             "candidate_sha256": candidate_sha256,
             "evidence_sha256": evidence.source_sha256,
+            "prepared_by": preparer,
+            "prepared_at": candidate["prepared_at"],
+            "approved_by": reviewer,
+            "approved_at": approved_at,
+        },
+    }
+    destination = Path(output_path).expanduser().resolve()
+    if destination.exists():
+        raise DeviceAcceptanceError(
+            f"Approved reference already exists; choose a new path: {destination}"
+        )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(destination.name + ".tmp")
+    temporary.write_bytes(_json_bytes(reference))
+    try:
+        load_device_field_reference(temporary)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+    temporary.replace(destination)
+    return reference
+
+
+def _evidence_set_sha256(hashes: list[str]) -> str:
+    return sha256(
+        json.dumps(sorted(hashes), separators=(",", ":")).encode("ascii")
+    ).hexdigest()
+
+
+def _validate_qualification_run(
+    evidence: DeviceRunEvidence,
+    *,
+    expected_draft: dict[str, Any] | None,
+    prepared_by: str,
+    source_ticket: str,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    draft, version = _build_reference_draft(evidence)
+    _validate_reference_draft(draft)
+    if expected_draft is not None and draft != expected_draft:
+        raise DeviceAcceptanceError(
+            "Repeated qualification runs do not share one exact fixture/tool/package contract"
+        )
+    validation = build_device_acceptance_report(
+        evidence,
+        _validation_reference(
+            draft,
+            source_ticket=source_ticket,
+            prepared_by=prepared_by,
+        ),
+    )
+    if validation.get("ok") is not True:
+        failed = [
+            str(item.get("id") or "")
+            for item in validation.get("checks", [])
+            if isinstance(item, dict) and item.get("ok") is not True
+        ]
+        raise DeviceAcceptanceError(
+            "Repeated qualification evidence is not ready: " + ", ".join(failed)
+        )
+    return draft, version, validation
+
+
+def build_repeated_device_qualification_candidate(
+    evidences: list[DeviceRunEvidence],
+    *,
+    prepared_by: str,
+    source_ticket: str,
+    minimum_successful_runs: int = DEFAULT_MINIMUM_SUCCESSFUL_RUNS,
+) -> dict[str, Any]:
+    preparer = _required_text(prepared_by, "prepared_by")
+    ticket = _required_text(source_ticket, "source_ticket")
+    if (
+        not isinstance(minimum_successful_runs, int)
+        or isinstance(minimum_successful_runs, bool)
+        or not DEFAULT_MINIMUM_SUCCESSFUL_RUNS
+        <= minimum_successful_runs
+        <= MAXIMUM_QUALIFICATION_RUNS
+        or len(evidences) < minimum_successful_runs
+        or len(evidences) > MAXIMUM_QUALIFICATION_RUNS
+    ):
+        raise DeviceAcceptanceError(
+            "Repeated qualification requires 3-20 successful evidence runs"
+        )
+    evidence_hashes = [item.source_sha256 for item in evidences]
+    if len(set(evidence_hashes)) != len(evidence_hashes):
+        raise DeviceAcceptanceError(
+            "Repeated qualification evidence must contain unique run snapshots"
+        )
+
+    reference_draft: dict[str, Any] | None = None
+    observed_version = ""
+    validation_runs: list[dict[str, Any]] = []
+    evidence_rows: list[dict[str, Any]] = []
+    for evidence in evidences:
+        draft, version, validation = _validate_qualification_run(
+            evidence,
+            expected_draft=reference_draft,
+            prepared_by=preparer,
+            source_ticket=ticket,
+        )
+        if reference_draft is None:
+            reference_draft = draft
+            observed_version = version
+        elif version != observed_version:
+            raise DeviceAcceptanceError(
+                "Repeated qualification downloader version output changed between runs"
+            )
+        evidence_row = {
+            "kind": evidence.source_kind,
+            "name": evidence.source.name,
+            "sha256": evidence.source_sha256,
+            "digest_scope": evidence.digest_scope,
+        }
+        evidence_rows.append(evidence_row)
+        validation_runs.append(
+            {
+                "evidence_sha256": evidence.source_sha256,
+                "checks": validation["checks"],
+            }
+        )
+    if reference_draft is None:
+        raise DeviceAcceptanceError("Repeated qualification has no evidence")
+    evidence_rows.sort(key=lambda item: str(item["sha256"]))
+    validation_runs.sort(key=lambda item: str(item["evidence_sha256"]))
+    return {
+        "schema": REPEATED_CANDIDATE_SCHEMA,
+        "approval_state": "unapproved",
+        "prepared_by": preparer,
+        "prepared_at": _now(),
+        "source_ticket": ticket,
+        "minimum_successful_runs": minimum_successful_runs,
+        "evidence_set": {
+            "sha256": _evidence_set_sha256(evidence_hashes),
+            "runs": evidence_rows,
+        },
+        "observed_tool_version": observed_version,
+        "reference_draft": reference_draft,
+        "validation_runs": validation_runs,
+        "review_requirements": [
+            "Review every unique successful run and the canonical evidence-set SHA-256.",
+            "Confirm all runs used one exact fixture, channel, package, tool, mode, and transition.",
+            "Use a reviewer other than prepared_by and retain every qualification artifact.",
+        ],
+    }
+
+
+def write_repeated_device_qualification_candidate(
+    evidence_paths: list[str | Path],
+    output_path: str | Path,
+    *,
+    prepared_by: str,
+    source_ticket: str,
+    minimum_successful_runs: int = DEFAULT_MINIMUM_SUCCESSFUL_RUNS,
+) -> dict[str, Any]:
+    candidate = build_repeated_device_qualification_candidate(
+        [load_device_run_evidence(path) for path in evidence_paths],
+        prepared_by=prepared_by,
+        source_ticket=source_ticket,
+        minimum_successful_runs=minimum_successful_runs,
+    )
+    _write_atomic(output_path, candidate)
+    return candidate
+
+
+def _load_repeated_candidate(
+    path: str | Path,
+) -> tuple[Path, str, dict[str, Any]]:
+    source, payload, candidate = _load_json(
+        path, "repeated device qualification candidate"
+    )
+    evidence_set = candidate.get("evidence_set")
+    runs = evidence_set.get("runs") if isinstance(evidence_set, dict) else None
+    minimum_runs = candidate.get("minimum_successful_runs")
+    validation_runs = candidate.get("validation_runs")
+    if (
+        candidate.get("schema") != REPEATED_CANDIDATE_SCHEMA
+        or candidate.get("approval_state") != "unapproved"
+        or not isinstance(minimum_runs, int)
+        or isinstance(minimum_runs, bool)
+        or not DEFAULT_MINIMUM_SUCCESSFUL_RUNS
+        <= minimum_runs
+        <= MAXIMUM_QUALIFICATION_RUNS
+        or not isinstance(runs, list)
+        or len(runs) < minimum_runs
+        or len(runs) > MAXIMUM_QUALIFICATION_RUNS
+        or not isinstance(candidate.get("reference_draft"), dict)
+        or not isinstance(validation_runs, list)
+        or len(validation_runs) != len(runs)
+    ):
+        raise DeviceAcceptanceError(
+            "Repeated device qualification candidate is malformed"
+        )
+    hashes = [str(item.get("sha256") or "") for item in runs if isinstance(item, dict)]
+    if (
+        len(hashes) != len(runs)
+        or len(set(hashes)) != len(hashes)
+        or any(_SHA256.fullmatch(value) is None for value in hashes)
+        or evidence_set.get("sha256") != _evidence_set_sha256(hashes)
+        or any(
+            not isinstance(row, dict)
+            or _SHA256.fullmatch(str(row.get("evidence_sha256") or "")) is None
+            or not isinstance(row.get("checks"), list)
+            or not row["checks"]
+            or any(
+                not isinstance(check, dict) or check.get("ok") is not True
+                for check in row["checks"]
+            )
+            for row in validation_runs
+        )
+    ):
+        raise DeviceAcceptanceError(
+            "Repeated qualification evidence set or validation rows are invalid"
+        )
+    _required_text(candidate.get("prepared_by"), "candidate prepared_by")
+    _required_text(candidate.get("source_ticket"), "candidate source_ticket")
+    return source, sha256(payload).hexdigest(), candidate
+
+
+def approve_repeated_device_qualification_candidate(
+    candidate_path: str | Path,
+    evidence_paths: list[str | Path],
+    output_path: str | Path,
+    *,
+    qualification_id: str,
+    approved_by: str,
+    confirm_evidence_set_sha256: str,
+) -> dict[str, Any]:
+    _source, candidate_sha256, candidate = _load_repeated_candidate(candidate_path)
+    evidences = [load_device_run_evidence(path) for path in evidence_paths]
+    evidence_hashes = [item.source_sha256 for item in evidences]
+    expected_set_sha256 = str(candidate["evidence_set"]["sha256"])
+    if (
+        _evidence_set_sha256(evidence_hashes) != expected_set_sha256
+        or str(confirm_evidence_set_sha256 or "").strip().casefold()
+        != expected_set_sha256
+        or set(evidence_hashes)
+        != {str(item["sha256"]) for item in candidate["evidence_set"]["runs"]}
+    ):
+        raise DeviceAcceptanceError(
+            "Approval evidence set or typed set SHA-256 differs from the candidate"
+        )
+    preparer = _required_text(candidate.get("prepared_by"), "candidate prepared_by")
+    reviewer = _required_text(approved_by, "approved_by")
+    if preparer.casefold() == reviewer.casefold():
+        raise DeviceAcceptanceError(
+            "Qualification preparer and approver must be different"
+        )
+    qualification = _required_text(qualification_id, "qualification_id")
+    ticket = _required_text(candidate.get("source_ticket"), "candidate source_ticket")
+    draft = dict(candidate["reference_draft"])
+    observed_version = str(candidate.get("observed_tool_version") or "")
+    for evidence in evidences:
+        fresh_draft, fresh_version, _validation = _validate_qualification_run(
+            evidence,
+            expected_draft=draft,
+            prepared_by=preparer,
+            source_ticket=ticket,
+        )
+        if fresh_draft != draft or fresh_version != observed_version:
+            raise DeviceAcceptanceError(
+                "Repeated qualification candidate differs from current evidence"
+            )
+    approved_at = _now()
+    qualification_evidence = sorted(
+        (
+            {
+                "kind": evidence.source_kind,
+                "name": evidence.source.name,
+                "sha256": evidence.source_sha256,
+                "digest_scope": evidence.digest_scope,
+            }
+            for evidence in evidences
+        ),
+        key=lambda item: str(item["sha256"]),
+    )
+    reference = {
+        "schema": REFERENCE_SCHEMA_V3,
+        "qualification_id": qualification,
+        "approved_by": reviewer,
+        "approved_at": approved_at,
+        "source_ticket": ticket,
+        **draft,
+        "approval": {
+            "state": "approved",
+            "candidate_sha256": candidate_sha256,
+            "evidence_set_sha256": expected_set_sha256,
+            "minimum_successful_runs": candidate["minimum_successful_runs"],
+            "qualification_evidence": qualification_evidence,
             "prepared_by": preparer,
             "prepared_at": candidate["prepared_at"],
             "approved_by": reviewer,

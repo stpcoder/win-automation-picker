@@ -15,7 +15,9 @@ from win_automation_picker.device_acceptance import (
 )
 from win_automation_picker.device_qualification import (
     approve_device_qualification_candidate,
+    approve_repeated_device_qualification_candidate,
     write_device_qualification_candidate,
+    write_repeated_device_qualification_candidate,
 )
 from win_automation_picker import rig_cli
 
@@ -177,6 +179,17 @@ def _write_qdl_evidence(root: Path) -> tuple[Path, Path]:
         },
     )
     return root, reference_path
+
+
+def _write_unique_qdl_run(root: Path, run_index: int) -> Path:
+    evidence_path, _reference_path = _write_qdl_evidence(root)
+    manifest_path = evidence_path / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["started_at"] = f"2026-07-13T10:{run_index:02d}:00+00:00"
+    manifest["finished_at"] = f"2026-07-13T10:{run_index:02d}:30+00:00"
+    manifest["run_nonce"] = f"qualification-run-{run_index}"
+    _write_json(manifest_path, manifest)
+    return evidence_path
 
 
 def _write_mtk_evidence(root: Path) -> tuple[Path, Path]:
@@ -701,9 +714,7 @@ def test_device_qualification_approval_requires_separate_reviewer_and_exact_evid
     assert report["ok"] is True
     assert (
         next(
-            check
-            for check in report["checks"]
-            if check["id"] == "approval-evidence-binding"
+            check for check in report["checks"] if check["id"] == "approval-provenance"
         )["ok"]
         is True
     )
@@ -715,14 +726,14 @@ def test_device_qualification_approval_requires_separate_reviewer_and_exact_evid
         load_device_run_evidence(evidence_path),
         loaded,
     )
-    assert mutated_report["ok"] is False
+    assert mutated_report["ok"] is True
     assert (
         next(
             check
             for check in mutated_report["checks"]
-            if check["id"] == "approval-evidence-binding"
+            if check["id"] == "approval-provenance"
         )["ok"]
-        is False
+        is True
     )
 
 
@@ -814,6 +825,141 @@ def test_device_qualification_candidate_rejects_empty_fixture_identity(
             prepared_by="operator-a",
             source_ticket="AE-2026-0807",
         )
+
+
+def test_repeated_qualification_requires_three_unique_successful_runs(
+    tmp_path: Path,
+) -> None:
+    first = _write_unique_qdl_run(tmp_path / "run-1", 1)
+    second = _write_unique_qdl_run(tmp_path / "run-2", 2)
+
+    with pytest.raises(DeviceAcceptanceError, match="3-20"):
+        write_repeated_device_qualification_candidate(
+            [first, second],
+            tmp_path / "candidate.json",
+            prepared_by="operator-a",
+            source_ticket="AE-2026-0810",
+        )
+    with pytest.raises(DeviceAcceptanceError, match="unique"):
+        write_repeated_device_qualification_candidate(
+            [first, first, first],
+            tmp_path / "duplicate-candidate.json",
+            prepared_by="operator-a",
+            source_ticket="AE-2026-0810",
+        )
+
+
+def test_repeated_qualification_v3_accepts_later_matching_production_run(
+    tmp_path: Path,
+) -> None:
+    qualification_runs = [
+        _write_unique_qdl_run(tmp_path / f"qualification-{index}", index)
+        for index in range(1, 4)
+    ]
+    candidate_path = tmp_path / "repeated-candidate.json"
+    reference_path = tmp_path / "production-reference.json"
+    candidate = write_repeated_device_qualification_candidate(
+        qualification_runs,
+        candidate_path,
+        prepared_by="operator-a",
+        source_ticket="AE-2026-0811",
+    )
+
+    reference = approve_repeated_device_qualification_candidate(
+        candidate_path,
+        qualification_runs,
+        reference_path,
+        qualification_id="QUAL-QDL-SM8850-STABLE-01",
+        approved_by="reviewer-b",
+        confirm_evidence_set_sha256=candidate["evidence_set"]["sha256"],
+    )
+    production_run = _write_unique_qdl_run(tmp_path / "production-4", 4)
+    production_evidence = load_device_run_evidence(production_run)
+    report = build_device_acceptance_report(
+        production_evidence,
+        load_device_field_reference(reference_path),
+    )
+
+    qualification_hashes = {
+        item["sha256"] for item in reference["approval"]["qualification_evidence"]
+    }
+    provenance = next(
+        check
+        for check in report["checks"]
+        if check["id"] == "repeated-qualification-provenance"
+    )
+    assert reference["schema"] == "rig-device-field-reference/v3"
+    assert len(qualification_hashes) == 3
+    assert production_evidence.source_sha256 not in qualification_hashes
+    assert report["ok"] is True
+    assert provenance["successful_runs"] == 3
+    assert provenance["minimum_successful_runs"] == 3
+
+
+def test_repeated_qualification_rejects_contract_change_between_runs(
+    tmp_path: Path,
+) -> None:
+    runs = [
+        _write_unique_qdl_run(tmp_path / f"run-{index}", index) for index in range(1, 4)
+    ]
+    manifest_path = runs[2] / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["target"] = "PC99:CH9"
+    _write_json(manifest_path, manifest)
+
+    with pytest.raises(DeviceAcceptanceError, match="one exact"):
+        write_repeated_device_qualification_candidate(
+            runs,
+            tmp_path / "candidate.json",
+            prepared_by="operator-a",
+            source_ticket="AE-2026-0812",
+        )
+
+
+def test_repeated_qualification_cli_prepare_and_approve(tmp_path: Path, capsys) -> None:
+    runs = [
+        _write_unique_qdl_run(tmp_path / f"run-{index}", index) for index in range(1, 4)
+    ]
+    candidate_path = tmp_path / "candidate.json"
+    reference_path = tmp_path / "reference.json"
+    prepare_args = [
+        "device",
+        "qualify",
+        "prepare-set",
+        "--prepared-by",
+        "operator-a",
+        "--source-ticket",
+        "AE-2026-0813",
+        "--output",
+        str(candidate_path),
+    ]
+    for run in runs:
+        prepare_args.extend(["--evidence", str(run)])
+    assert rig_cli.main(prepare_args) == 0
+    assert "Successful runs: 3" in capsys.readouterr().out
+    set_sha256 = json.loads(candidate_path.read_text(encoding="utf-8"))["evidence_set"][
+        "sha256"
+    ]
+    approve_args = [
+        "device",
+        "qualify",
+        "approve-set",
+        "--candidate",
+        str(candidate_path),
+        "--qualification-id",
+        "QUAL-QDL-SM8850-STABLE-02",
+        "--approved-by",
+        "reviewer-b",
+        "--confirm-evidence-set-sha256",
+        set_sha256,
+        "--output",
+        str(reference_path),
+    ]
+    for run in runs:
+        approve_args.extend(["--evidence", str(run)])
+    assert rig_cli.main(approve_args) == 0
+    assert "Successful runs: 3" in capsys.readouterr().out
+    assert load_device_field_reference(reference_path).data["schema"].endswith("/v3")
 
 
 def test_device_qualification_cli_prepare_and_approve(tmp_path: Path, capsys) -> None:

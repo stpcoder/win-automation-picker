@@ -11,7 +11,9 @@ from typing import Any, Callable, Sequence
 from .device_acceptance import DeviceAcceptanceError, write_device_acceptance_report
 from .device_qualification import (
     approve_device_qualification_candidate,
+    approve_repeated_device_qualification_candidate,
     write_device_qualification_candidate,
+    write_repeated_device_qualification_candidate,
 )
 from .rig import (
     CommandResult,
@@ -248,6 +250,19 @@ def build_parser() -> argparse.ArgumentParser:
     qualification_prepare.add_argument("--output", required=True)
     qualification_prepare.add_argument("--json", action="store_true")
     qualification_prepare.set_defaults(func=_cmd_device_qualification_prepare)
+    qualification_prepare_set = qualification_subparsers.add_parser(
+        "prepare-set",
+        help="Create a production qualification candidate from 3-20 unique successful runs.",
+    )
+    qualification_prepare_set.add_argument(
+        "--evidence", action="append", required=True
+    )
+    qualification_prepare_set.add_argument("--minimum-runs", type=int, default=3)
+    qualification_prepare_set.add_argument("--prepared-by", required=True)
+    qualification_prepare_set.add_argument("--source-ticket", required=True)
+    qualification_prepare_set.add_argument("--output", required=True)
+    qualification_prepare_set.add_argument("--json", action="store_true")
+    qualification_prepare_set.set_defaults(func=_cmd_device_qualification_prepare_set)
     qualification_approve = qualification_subparsers.add_parser(
         "approve",
         help="Revalidate candidate evidence and create a reviewer-separated v2 reference.",
@@ -260,6 +275,22 @@ def build_parser() -> argparse.ArgumentParser:
     qualification_approve.add_argument("--output", required=True)
     qualification_approve.add_argument("--json", action="store_true")
     qualification_approve.set_defaults(func=_cmd_device_qualification_approve)
+    qualification_approve_set = qualification_subparsers.add_parser(
+        "approve-set",
+        help="Approve an exact repeated-run candidate as a production v3 reference.",
+    )
+    qualification_approve_set.add_argument("--candidate", required=True)
+    qualification_approve_set.add_argument(
+        "--evidence", action="append", required=True
+    )
+    qualification_approve_set.add_argument("--qualification-id", required=True)
+    qualification_approve_set.add_argument("--approved-by", required=True)
+    qualification_approve_set.add_argument(
+        "--confirm-evidence-set-sha256", required=True
+    )
+    qualification_approve_set.add_argument("--output", required=True)
+    qualification_approve_set.add_argument("--json", action="store_true")
+    qualification_approve_set.set_defaults(func=_cmd_device_qualification_approve_set)
 
     device_accept = device_subparsers.add_parser(
         "accept",
@@ -778,6 +809,25 @@ def _cmd_device_qualification_prepare(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_device_qualification_prepare_set(args: argparse.Namespace) -> int:
+    candidate = write_repeated_device_qualification_candidate(
+        list(args.evidence),
+        args.output,
+        prepared_by=args.prepared_by,
+        source_ticket=args.source_ticket,
+        minimum_successful_runs=args.minimum_runs,
+    )
+    if args.json:
+        print(json.dumps(candidate, indent=2, ensure_ascii=True))
+    else:
+        print("Repeated device qualification candidate: UNAPPROVED")
+        print(f"Target: {candidate['reference_draft']['target']}")
+        print(f"Successful runs: {len(candidate['evidence_set']['runs'])}")
+        print(f"Evidence-set SHA-256: {candidate['evidence_set']['sha256']}")
+        print(f"Candidate: {Path(args.output).expanduser().resolve()}")
+    return 0
+
+
 def _cmd_device_qualification_approve(args: argparse.Namespace) -> int:
     reference = approve_device_qualification_candidate(
         args.candidate,
@@ -793,6 +843,25 @@ def _cmd_device_qualification_approve(args: argparse.Namespace) -> int:
         print("Device qualification reference: APPROVED")
         print(f"Qualification: {reference['qualification_id']}")
         print(f"Target: {reference['target']}")
+        print(f"Reference: {Path(args.output).expanduser().resolve()}")
+    return 0
+
+
+def _cmd_device_qualification_approve_set(args: argparse.Namespace) -> int:
+    reference = approve_repeated_device_qualification_candidate(
+        args.candidate,
+        list(args.evidence),
+        args.output,
+        qualification_id=args.qualification_id,
+        approved_by=args.approved_by,
+        confirm_evidence_set_sha256=args.confirm_evidence_set_sha256,
+    )
+    if args.json:
+        print(json.dumps(reference, indent=2, ensure_ascii=True))
+    else:
+        print("Repeated device qualification reference: APPROVED")
+        print(f"Qualification: {reference['qualification_id']}")
+        print(f"Successful runs: {len(reference['approval']['qualification_evidence'])}")
         print(f"Reference: {Path(args.output).expanduser().resolve()}")
     return 0
 
