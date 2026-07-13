@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "win-automation-picker"
-version = "1.13.0"
+version = "1.14.0"
 description = "An AE workbench for Windows UI automation, SEQ handoff, and FTP rig orchestration."
 readme = "README.md"
 requires-python = ">=3.10"

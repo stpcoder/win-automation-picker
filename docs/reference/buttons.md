@@ -22,7 +22,7 @@
 | `모니터링` | `PC · CH 상태`로 이동 |
 | `긴급 중단` | 대상 PC에 stop signal 전송 |
 | `운영 도구 열기` | raw 패키지 등록과 단일 PC 고급 실행 표시 |
-| `[MARGIN]` 패키지 실행 | exact PC/CH에서 nominal probe, DQ sweep, 물리 단위 acceptance를 한 작업으로 실행 |
+| `[MARGIN]` 패키지 실행 | exact PC/CH와 CA/DQ target에서 nominal probe, sweep, 물리 단위 acceptance를 한 작업으로 실행 |
 | `마진 번들 만들기` | Windows controller, plan, PHY reference를 checksummed `*.drammargin.zip`으로 생성 |
 | `마진 번들 > PHY 기준 준비 · 승인` | null 승인 칸 worksheet 생성, 별도 검토자의 plan SHA 확인과 v2 reference 승인 |
 | `Scratch 수정` | 선택한 서버 FLOW를 source project로 안전하게 복원 |

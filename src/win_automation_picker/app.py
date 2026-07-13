@@ -3858,7 +3858,7 @@ class PickerApp(tk.Toplevel):
             + {
                 "workflow": "내장 워크플로 엔진",
                 "sequence": "검증된 Rig SEQ",
-                "dram_margin": "DRAM DQ 마진 캠페인",
+                "dram_margin": "DRAM CA/DQ 마진 캠페인",
                 "python": "외부 Python",
             }.get(package.runner, package.runner),
             f"Uploaded: {package.uploaded_at or '-'}",
