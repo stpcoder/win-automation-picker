@@ -262,6 +262,52 @@ Slave는 이 전체 폴더에서 manifest와 로그만 골라 FTP 증거 ZIP에 
 로컬 보관 개수 상한을 그대로 적용합니다. 따라서 전환이나 USB 탐지에서 실패해 downloader가
 시작되지 않은 경우에도 실패 지점을 Master에서 확인할 수 있습니다.
 
+## 실기 Qualification 증거 검증
+
+소프트웨어 테스트의 PASS와 실제 장비에서 승인된 조합의 PASS는 구분합니다. 먼저 담당자가
+고정 fixture, CH, Downloader 버전, package와 실행 계획을 한 번 실기 qualification하고
+`rig-device-field-reference/v1` JSON에 승인합니다. 실행 결과로 기준 파일을 자동 생성하지
+않습니다. 실행 결과를 그대로 기준으로 만들면 잘못된 target이나 단계도 스스로 승인할 수 있기
+때문입니다.
+
+기준 파일은 [QDL 예제](reference/device-field-reference-qdl.json)를 복사해 다음 값을 실제
+승인 기록으로 교체합니다.
+
+- qualification ID, 승인자, 승인 시각과 사내 ticket
+- 정확한 `PC:CH`, Vendor, SoC, fixture ID/serial, COM, EDL/ADB serial
+- package fingerprint와 target·mode·serial까지 포함한 execution fingerprint
+- 승인된 Downloader version 정규식과 firmware step 순서
+- qualification에서 반드시 통과한 preflight check ID
+- QC 물리 스위치, MTK serial exit 또는 MTK board-control 중 실제 전환 방식
+
+Master GUI에서는 `Binary 업데이트 > 고급 작업 > 완료 저널 · 실기 증거 검증`을 누릅니다.
+FTP에서 받은 artifact ZIP 또는 Slave 저널의 `manifest.json`, 별도 승인 기준 JSON, 출력 보고서
+위치를 차례로 고릅니다. 보고서는 다음 조건을 모두 만족할 때만 PASS입니다.
+
+1. dry-run이 아닌 전체 실행과 각 stage가 return code 0으로 완료됨
+2. PC/CH, fixture, COM, USB Download ID, EDL/ADB serial이 승인값과 정확히 일치함
+3. QC 물리 스위치 확인 또는 MTK 전환 횟수·순서·ready marker가 일치함
+4. Downloader ID, Adapter, version, package/실행 지문과 단계 순서가 일치함
+5. 모든 단계 로그와 checksum이 있는 package integrity 목록이 존재함
+
+CLI에서도 같은 검증기를 사용합니다.
+
+```powershell
+RigCommander.exe device accept `
+  --evidence artifacts\PC04\job-id.zip `
+  --reference approvals\PC04-CH9-SM8850.json `
+  --output reports\PC04-CH9-acceptance.json
+```
+
+종료코드는 PASS `0`, 정상적으로 읽었지만 기준 불일치 `1`, 손상·형식 오류 `2`입니다. 결과
+`rig-device-field-acceptance/v1`에는 ZIP 자체 또는 폴더 전체의 결정적 SHA-256과 모든 증거
+파일의 개별 SHA-256이 들어갑니다. 승인 기준 파일 자체의 SHA-256도 함께 남으므로 나중에
+기준이나 로그가 바뀌었는지 대조할 수 있습니다.
+
+이 검증은 실제 장비 qualification을 대신하지 않습니다. 새 SoC, fixture wiring, Download
+Agent, Downloader 버전 또는 package가 바뀌면 기존 reference를 재사용하지 않고 새
+qualification ID로 다시 승인합니다.
+
 ## 전원 제어
 
 `전원 > 켜기/끄기/다시 켜기`는 CH 프로필의 `power_on`, `power_off` 명령을 Console

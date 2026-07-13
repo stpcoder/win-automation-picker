@@ -13,6 +13,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Any
 
 from .binary_exchange import BinaryReleaseMetadata, read_binary_release_metadata
+from .device_acceptance import write_device_acceptance_report
 from .firmware_plan import FirmwarePlanError, inspect_firmware_package
 from .ftp_spool import (
     ChannelInfo,
@@ -358,6 +359,11 @@ class DeviceWorkspaceMixin:
         advanced = ttk.Menubutton(actions, text="고급 작업")
         advanced.grid(row=0, column=3, padx=(6, 0))
         advanced_menu = tk.Menu(advanced, tearoff=False)
+        advanced_menu.add_command(
+            label="완료 저널 · 실기 증거 검증",
+            command=self._verify_device_field_evidence,
+        )
+        advanced_menu.add_separator()
         advanced_menu.add_command(
             label="Qualcomm QDL Storage 범위 쓰기",
             command=self._open_qdl_raw_write_dialog,
@@ -1754,6 +1760,52 @@ class DeviceWorkspaceMixin:
         except BaseException as exc:
             self._show_error(exc)
 
+    def _verify_device_field_evidence(self) -> None:
+        evidence_selection = filedialog.askopenfilename(
+            title="완료된 Binary 업데이트 증거 선택",
+            filetypes=[
+                ("업데이트 증거", "*.zip manifest.json"),
+                ("ZIP", "*.zip"),
+                ("JSON", "*.json"),
+            ],
+        )
+        if not evidence_selection:
+            return
+        evidence_path = Path(evidence_selection)
+        if evidence_path.name.casefold() == "manifest.json":
+            evidence_path = evidence_path.parent
+        elif evidence_path.suffix.casefold() != ".zip":
+            messagebox.showerror(
+                "실기 증거 검증",
+                "FTP artifact ZIP 또는 업데이트 저널의 manifest.json을 선택하세요.",
+                parent=self,
+            )
+            return
+        reference_path = filedialog.askopenfilename(
+            title="별도 승인된 실기 기준 JSON 선택",
+            filetypes=[("Field reference", "*.json")],
+        )
+        if not reference_path:
+            return
+        output_path = filedialog.asksaveasfilename(
+            title="실기 검증 보고서 저장",
+            defaultextension=".json",
+            initialfile=f"{evidence_path.stem}-field-acceptance.json",
+            filetypes=[("JSON", "*.json")],
+        )
+        if not output_path:
+            return
+
+        def worker() -> None:
+            report = write_device_acceptance_report(
+                evidence_path,
+                reference_path,
+                output_path,
+            )
+            self._queue.put(("device_acceptance", (report, output_path)))
+
+        self._run_background(worker, "실기 증거 검증 중")
+
     def _open_qdl_raw_write_dialog(self) -> None:
         try:
             slave, channel = self._selected_binary_channel()
@@ -2043,6 +2095,25 @@ class DeviceWorkspaceMixin:
         if kind == "device_job":
             message = str(payload)
             self.device_binary_state_var.set(message)
+            self.device_binary_log.insert("end", f"\n{message}\n")
+            self.device_binary_log.see("end")
+            self._append_master_log(message)
+            return True
+        if kind == "device_acceptance":
+            report, output_path = payload
+            failed = [
+                str(check.get("id") or "")
+                for check in report.get("checks", [])
+                if isinstance(check, dict) and check.get("ok") is not True
+            ]
+            state = "PASS" if report.get("ok") is True else "FAIL"
+            message = (
+                f"실기 증거 검증 {state} · {report.get('qualification_id') or '-'} · "
+                f"{Path(output_path).resolve()}"
+            )
+            if failed:
+                message += "\n실패 항목: " + ", ".join(failed)
+            self.device_binary_state_var.set(f"실기 증거 검증 {state}")
             self.device_binary_log.insert("end", f"\n{message}\n")
             self.device_binary_log.see("end")
             self._append_master_log(message)

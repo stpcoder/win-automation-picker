@@ -192,3 +192,20 @@ timeout과 최근 response를 확인합니다. 다른 CH 결과는 같은 batch 
 정상 상황에서는 Downloader 완료를 기다립니다. 대상 오선택처럼 계속 실행하는 위험이 더 큰
 경우에만 긴급 중단을 사용합니다. Agent는 stop을 확인하면 Downloader 프로세스 트리를
 종료하고 return code `130`과 단계 저널을 남깁니다.
+
+## 실기 증거 검증이 FAIL
+
+`rig-device-field-acceptance/v1` 보고서의 `checks`에서 `ok: false`인 첫 항목을 봅니다.
+
+- `fixture-contract`: PC/CH, fixture serial, COM, EDL/ADB serial 중 하나가 승인값과 다름
+- `device-stage-order`: MTK 전환, Download 탐지, firmware, 사후 ADB 순서가 달라짐
+- `download-identity`/`qdl-edl-serial`: 다른 USB Download 장치를 탐지했거나 증거가 없음
+- `mediatek-serial-exit`: `exit` 횟수, 전송 순서 또는 `LK2]` 같은 marker가 다름
+- `firmware-step-order`: 승인되지 않은 단계가 추가됐거나 단계가 빠짐
+- `tool-version`: 실제 Downloader 출력이 승인 version 정규식과 다름
+- `package-integrity-contract`: descriptor/payload checksum 목록이 없음
+
+FAIL 보고서를 PASS로 만들기 위해 reference를 현재 결과에 맞춰 수정하지 않습니다. 설정 오류를
+바로잡거나, tool/package/fixture 변경이 의도된 경우 별도 실기 qualification 후 새 ID로
+승인합니다. ZIP이 잘렸거나 경로를 벗어나는 member, symlink, 중복 member가 있으면 결과 FAIL이
+아니라 형식 오류 종료코드 `2`로 차단됩니다.

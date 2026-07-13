@@ -329,6 +329,8 @@ def _safe_device_target(tmp_path, *, vendor: str = "qualcomm"):
                             "id": "CH1",
                             "port": "COM7",
                             "baud": 921600,
+                            "fixture_id": "FIXTURE-04",
+                            "fixture_serial": "FX04-2026-001",
                             "soc_vendor": vendor,
                             "soc_model": "SM8850" if vendor == "qualcomm" else "MTK25D",
                             "firmware_tool_id": f"{vendor}-tool",
@@ -887,6 +889,17 @@ def test_device_update_journal_captures_probe_firmware_and_postcheck(
     manifest = json.loads((journal / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["schema"] == "rig-device-update-run/v1"
     assert manifest["ok"] is True
+    assert manifest["application_version"] == "1.11.0"
+    assert manifest["fixture"]["fixture_id"] == "FIXTURE-04"
+    assert manifest["fixture"]["fixture_serial"] == "FX04-2026-001"
+    assert manifest["fixture"]["channel_id"] == "CH1"
+    assert manifest["tool"]["id"] == "qualcomm-tool"
+    assert manifest["operator_confirmations"] == {
+        "qualcomm_physical_switch": True,
+        "mediatek_preloader": False,
+        "mediatek_transition_executed": False,
+        "destructive_token_matched": True,
+    }
     assert [stage["id"] for stage in manifest["stages"]] == [
         "download-probe",
         "firmware",

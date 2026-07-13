@@ -18,6 +18,7 @@ import time
 from typing import Any, Callable, Iterable, Sequence
 import xml.etree.ElementTree as ET
 
+from . import __version__
 from .firmware_plan import (
     FirmwareExecutionPlan,
     FirmwareExecutionStep,
@@ -1513,9 +1514,11 @@ def run_device_update(
         blocked = "; ".join(check.detail for check in report.checks if not check.ok)
         raise RigConfigError(f"Device update preflight blocked for {target.label()}: {blocked}")
 
+    tool = target.host.firmware_for_port(target.port)
     device_journal_dir = _device_update_journal_dir(journal_root, target.label(), report)
     device_manifest: dict[str, Any] = {
         "schema": "rig-device-update-run/v1",
+        "application_version": __version__,
         "target": target.label(),
         "vendor": target.port.soc_vendor,
         "soc_model": target.port.soc_model,
@@ -1525,6 +1528,24 @@ def run_device_update(
         "ok": False,
         "cancelled": False,
         "preflight": report.to_mapping(),
+        "fixture": _device_update_fixture_contract(target),
+        "tool": {
+            "id": tool.id if tool is not None else "",
+            "vendor": tool.vendor if tool is not None else "",
+            "adapter_kind": tool.adapter_kind if tool is not None else "",
+            "executable": tool.executable if tool is not None else "",
+            "cli_evidence_ref": tool.cli_evidence_ref if tool is not None else "",
+            "version_arguments": list(tool.version_arguments) if tool is not None else [],
+        },
+        "operator_confirmations": {
+            "qualcomm_physical_switch": bool(physical_switch_confirmed),
+            "mediatek_preloader": bool(preloader_exit_confirmed),
+            "mediatek_transition_executed": bool(preloader_command),
+            "destructive_token_matched": bool(
+                report.expected_format_confirmation
+                and format_confirmation == report.expected_format_confirmation
+            ),
+        },
         "stages": [],
     }
     _write_firmware_journal(device_journal_dir, device_manifest)
@@ -1612,7 +1633,6 @@ def run_device_update(
             device_manifest,
         )
 
-    tool = target.host.firmware_for_port(target.port)
     if tool is None:
         raise RigConfigError(f"Host {target.host.id!r} has no firmware tool config.")
     firmware_journal_root = (
@@ -3419,6 +3439,34 @@ def _device_update_journal_dir(
     )
     directory.mkdir(parents=True, exist_ok=False)
     return directory
+
+
+def _device_update_fixture_contract(target: SerialTarget) -> dict[str, Any]:
+    port = target.port
+    return {
+        "host_id": target.host.id,
+        "host_address": target.host.address,
+        "channel_id": port.id,
+        "fixture_id": port.fixture_id,
+        "fixture_model": port.fixture_model,
+        "fixture_serial": port.fixture_serial,
+        "physical_location": port.physical_location,
+        "serial_port": port.port,
+        "baud": port.baud,
+        "console_identity": port.console_identity,
+        "usb_location": port.usb_location,
+        "firmware_port": port.firmware_port,
+        "download_identity": port.download_identity,
+        "download_serial": port.download_serial,
+        "board_control_serial": port.board_control_serial,
+        "storage_type": port.storage_type,
+        "storage_slot": port.storage_slot,
+        "preloader_exit_count": port.preloader_exit_count,
+        "preloader_exit_interval_ms": port.preloader_exit_interval_ms,
+        "preloader_ready_marker": port.preloader_ready_marker,
+        "adb_serial": port.adb.serial,
+        "adb_required_after_update": port.adb.required_after_update,
+    }
 
 
 def _record_device_update_stage(
