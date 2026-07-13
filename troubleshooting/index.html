@@ -1436,6 +1436,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#fail" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        실기 증거 검증이 FAIL
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1726,6 +1737,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#fail" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        실기 증거 검증이 FAIL
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1937,6 +1959,21 @@ timeout과 최근 response를 확인합니다. 다른 CH 결과는 같은 batch 
 <p>정상 상황에서는 Downloader 완료를 기다립니다. 대상 오선택처럼 계속 실행하는 위험이 더 큰
 경우에만 긴급 중단을 사용합니다. Agent는 stop을 확인하면 Downloader 프로세스 트리를
 종료하고 return code <code>130</code>과 단계 저널을 남깁니다.</p>
+<h2 id="fail">실기 증거 검증이 FAIL</h2>
+<p><code>rig-device-field-acceptance/v1</code> 보고서의 <code>checks</code>에서 <code>ok: false</code>인 첫 항목을 봅니다.</p>
+<ul>
+<li><code>fixture-contract</code>: PC/CH, fixture serial, COM, EDL/ADB serial 중 하나가 승인값과 다름</li>
+<li><code>device-stage-order</code>: MTK 전환, Download 탐지, firmware, 사후 ADB 순서가 달라짐</li>
+<li><code>download-identity</code>/<code>qdl-edl-serial</code>: 다른 USB Download 장치를 탐지했거나 증거가 없음</li>
+<li><code>mediatek-serial-exit</code>: <code>exit</code> 횟수, 전송 순서 또는 <code>LK2]</code> 같은 marker가 다름</li>
+<li><code>firmware-step-order</code>: 승인되지 않은 단계가 추가됐거나 단계가 빠짐</li>
+<li><code>tool-version</code>: 실제 Downloader 출력이 승인 version 정규식과 다름</li>
+<li><code>package-integrity-contract</code>: descriptor/payload checksum 목록이 없음</li>
+</ul>
+<p>FAIL 보고서를 PASS로 만들기 위해 reference를 현재 결과에 맞춰 수정하지 않습니다. 설정 오류를
+바로잡거나, tool/package/fixture 변경이 의도된 경우 별도 실기 qualification 후 새 ID로
+승인합니다. ZIP이 잘렸거나 경로를 벗어나는 member, symlink, 중복 member가 있으면 결과 FAIL이
+아니라 형식 오류 종료코드 <code>2</code>로 차단됩니다.</p>
 
 
 
