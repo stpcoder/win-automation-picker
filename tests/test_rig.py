@@ -41,44 +41,44 @@ from win_automation_picker.rig import (
 def test_rig_config_parses_hosts_ports_and_commands() -> None:
     config = RigConfig.from_mapping(example_config())
 
-    assert config.host_by_id("rig-pc-01").address == "RIG-PC-01"
-    assert config.host_by_id("rig-pc-01").port_by_id("ch1").port == "COM3"
-    assert config.host_by_id("rig-pc-01").port_by_id("ch1").commands["power_on"] == "POWER ON"
+    assert config.host_by_id("TFT30-1").address == "AE-TFT30-1"
+    assert config.host_by_id("TFT30-1").port_by_id("CH1").port == "COM3"
+    assert config.host_by_id("TFT30-1").port_by_id("CH1").commands["power_on"] == "POWER ON"
 
 
 def test_select_serial_targets_supports_all_host_port_and_tags() -> None:
     config = RigConfig.from_mapping(example_config())
 
-    assert [target.label() for target in select_serial_targets(config, ["rig-pc-01:ch1"])] == [
-        "rig-pc-01:ch1"
+    assert [target.label() for target in select_serial_targets(config, ["TFT30-1:CH1"])] == [
+        "TFT30-1:CH1"
     ]
-    assert [target.label() for target in select_serial_targets(config, ["rig-pc-01"])] == [
-        "rig-pc-01:ch1",
-        "rig-pc-01:ch2",
+    assert [target.label() for target in select_serial_targets(config, ["TFT30-1"])] == [
+        "TFT30-1:CH1",
+        "TFT30-1:CH2",
     ]
-    assert [target.label() for target in select_serial_targets(config, ["tag:bench"])] == [
-        "local-rig:ch1"
+    assert [target.label() for target in select_serial_targets(config, ["tag:local"])] == [
+        "local-fixture-pc:CH1"
     ]
 
 
 def test_select_hosts_dedupes_repeated_selectors() -> None:
     config = RigConfig.from_mapping(example_config())
 
-    assert [target.label() for target in select_hosts(config, ["rig-pc-01", "tag:line-a"])] == [
-        "rig-pc-01"
+    assert [target.label() for target in select_hosts(config, ["TFT30-1", "tag:tft30"])] == [
+        "TFT30-1"
     ]
 
 
 def test_resolve_named_command_uses_port_command_map() -> None:
     config = RigConfig.from_mapping(example_config())
-    target = select_serial_targets(config, ["rig-pc-01:ch2"])[0]
+    target = select_serial_targets(config, ["TFT30-1:CH2"])[0]
 
     assert resolve_named_command(target, "reset") == "RESET"
 
 
 def test_serial_script_contains_port_settings_and_command() -> None:
     config = RigConfig.from_mapping(example_config())
-    port = config.host_by_id("rig-pc-01").port_by_id("ch1")
+    port = config.host_by_id("TFT30-1").port_by_id("CH1")
 
     script = build_serial_command_script(port, "STATUS")
 
@@ -91,7 +91,7 @@ def test_serial_script_contains_port_settings_and_command() -> None:
 
 def test_serial_script_verifies_exact_com_hardware_identity_before_command() -> None:
     config = RigConfig.from_mapping(example_config())
-    original = config.host_by_id("rig-pc-01").port_by_id("ch1")
+    original = config.host_by_id("TFT30-1").port_by_id("CH1")
     port = replace(original, console_identity="VID_0403&PID_6001\\SERIAL-CH1")
 
     script = build_serial_command_script(port, "POWER ON")
@@ -104,7 +104,7 @@ def test_serial_script_verifies_exact_com_hardware_identity_before_command() -> 
 
 def test_mtk_transition_sends_exit_twice_in_one_session_and_checks_lk_marker() -> None:
     config = RigConfig.from_mapping(example_config())
-    port = config.host_by_id("rig-pc-01").port_by_id("ch2")
+    port = config.host_by_id("TFT30-1").port_by_id("CH2")
 
     script = build_serial_transition_script(
         port,
@@ -128,7 +128,7 @@ def test_mtk_transition_sends_exit_twice_in_one_session_and_checks_lk_marker() -
 
 def test_mtk_transition_passes_emergency_stop_to_powershell(monkeypatch) -> None:
     config = RigConfig.from_mapping(example_config())
-    target = select_serial_targets(config, ["rig-pc-01:ch2"])[0]
+    target = select_serial_targets(config, ["TFT30-1:CH2"])[0]
 
     def cancel() -> bool:
         return False
@@ -154,7 +154,7 @@ def test_mtk_transition_passes_emergency_stop_to_powershell(monkeypatch) -> None
 
 def test_download_probe_retries_until_late_usb_device_appears(monkeypatch) -> None:
     config = RigConfig.from_mapping(example_config())
-    target = select_serial_targets(config, ["rig-pc-01:ch2"])[0]
+    target = select_serial_targets(config, ["TFT30-1:CH2"])[0]
     results = iter(
         [
             CommandResult(
@@ -197,7 +197,7 @@ def test_download_probe_retries_until_late_usb_device_appears(monkeypatch) -> No
 
 def test_download_probe_does_not_retry_static_preflight_failure(monkeypatch) -> None:
     config = RigConfig.from_mapping(example_config())
-    target = select_serial_targets(config, ["rig-pc-01:ch2"])[0]
+    target = select_serial_targets(config, ["TFT30-1:CH2"])[0]
     phases: list[str] = []
 
     def fake_probe(*_args, **kwargs):
@@ -220,11 +220,11 @@ def test_download_probe_does_not_retry_static_preflight_failure(monkeypatch) -> 
 
 def test_remote_script_wraps_non_local_hosts() -> None:
     config = RigConfig.from_mapping(example_config())
-    host = config.host_by_id("rig-pc-01")
+    host = config.host_by_id("TFT30-1")
 
     script = build_remote_script(host, "Write-Output 'ok'")
 
-    assert "Invoke-Command -ComputerName 'RIG-PC-01'" in script
+    assert "Invoke-Command -ComputerName 'AE-TFT30-1'" in script
     assert "Write-Output 'ok'" in script
 
 
@@ -238,7 +238,7 @@ def test_example_config_round_trip_json() -> None:
     text = json.dumps(example_config())
     restored = RigConfig.from_mapping(json.loads(text))
 
-    assert restored.host_by_id("local-rig").port_by_id("ch1").newline == "\r\n"
+    assert restored.host_by_id("local-fixture-pc").port_by_id("CH1").newline == "\r\n"
 
 
 def test_inspect_firmware_manifest_collects_image_paths(tmp_path) -> None:
@@ -261,7 +261,7 @@ def test_inspect_firmware_manifest_collects_image_paths(tmp_path) -> None:
 
 def test_render_firmware_arguments_uses_mode_xml_and_port() -> None:
     config = RigConfig.from_mapping(example_config())
-    target = select_serial_targets(config, ["rig-pc-01:ch1"])[0]
+    target = select_serial_targets(config, ["TFT30-1:CH1"])[0]
     tool = target.host.firmware
     assert tool is not None
 
@@ -279,7 +279,7 @@ def test_render_firmware_arguments_uses_mode_xml_and_port() -> None:
 
 def test_build_firmware_flash_script_invokes_configured_tool() -> None:
     config = RigConfig.from_mapping(example_config())
-    target = select_serial_targets(config, ["rig-pc-01:ch1"])[0]
+    target = select_serial_targets(config, ["TFT30-1:CH1"])[0]
     tool = target.host.firmware
     assert tool is not None
 

@@ -603,10 +603,10 @@ def example_config() -> dict[str, Any]:
         "default_timeout_seconds": 12,
         "hosts": [
             {
-                "id": "rig-pc-01",
-                "address": "RIG-PC-01",
+                "id": "TFT30-1",
+                "address": "AE-TFT30-1",
                 "transport": "powershell",
-                "tags": ["line-a"],
+                "tags": ["tft30"],
                 "firmware": {
                     "id": "legacy-default",
                     "executable": "C:\\Tools\\FirmwareDownloader\\FirmwareDownload.exe",
@@ -667,7 +667,7 @@ def example_config() -> dict[str, Any]:
                 ],
                 "ports": [
                     {
-                        "id": "ch1",
+                        "id": "CH1",
                         "port": "COM3",
                         "firmware_port": "COM3",
                         "baud": 115200,
@@ -695,7 +695,7 @@ def example_config() -> dict[str, Any]:
                         },
                     },
                     {
-                        "id": "ch2",
+                        "id": "CH2",
                         "port": "COM4",
                         "firmware_port": "COM4",
                         "baud": 115200,
@@ -720,13 +720,13 @@ def example_config() -> dict[str, Any]:
                 ],
             },
             {
-                "id": "local-rig",
+                "id": "local-fixture-pc",
                 "address": "localhost",
                 "transport": "local",
-                "tags": ["bench"],
+                "tags": ["local"],
                 "ports": [
                     {
-                        "id": "ch1",
+                        "id": "CH1",
                         "port": "COM5",
                         "baud": 115200,
                         "commands": {
