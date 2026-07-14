@@ -33,9 +33,7 @@ from .windows_compat import configure_windows_console_utf8
 
 
 DEFAULT_CONFIG = "fixture-connection.info"
-LEGACY_CONFIG = "rig-ftp.info"
-LEGACY_JSON_CONFIG = "rig-ftp.config.json"
-DEFAULT_CONFIG_FILES = (DEFAULT_CONFIG, LEGACY_CONFIG, LEGACY_JSON_CONFIG)
+DEFAULT_CONFIG_FILES = (DEFAULT_CONFIG,)
 
 
 def build_parser() -> argparse.ArgumentParser:

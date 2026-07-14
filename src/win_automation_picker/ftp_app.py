@@ -80,9 +80,7 @@ from .workbench_ui import AEWorkbenchMixin
 
 
 DEFAULT_CONFIG = "fixture-connection.info"
-LEGACY_CONFIG = "rig-ftp.info"
-LEGACY_JSON_CONFIG = "rig-ftp.config.json"
-DEFAULT_CONFIG_FILES = (DEFAULT_CONFIG, LEGACY_CONFIG, LEGACY_JSON_CONFIG)
+DEFAULT_CONFIG_FILES = (DEFAULT_CONFIG,)
 
 _OPERATOR_RESULT_KEYS = {
     "schema": "내부 형식",

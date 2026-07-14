@@ -10,7 +10,7 @@ def test_init_config_writes_example_file(tmp_path) -> None:
 
     assert code == 0
     data = json.loads(path.read_text(encoding="utf-8"))
-    assert data["hosts"][0]["id"] == "rig-pc-01"
+    assert data["hosts"][0]["id"] == "TFT30-1"
 
 
 def test_cli_send_dry_run_prints_powershell(tmp_path, capsys) -> None:
@@ -23,7 +23,7 @@ def test_cli_send_dry_run_prints_powershell(tmp_path, capsys) -> None:
             str(path),
             "send",
             "--target",
-            "rig-pc-01:ch1",
+            "TFT30-1:CH1",
             "--command",
             "STATUS",
             "--dry-run",
@@ -32,8 +32,8 @@ def test_cli_send_dry_run_prints_powershell(tmp_path, capsys) -> None:
 
     output = capsys.readouterr().out
     assert code == 0
-    assert "[OK] dry-run rig-pc-01:ch1" in output
-    assert "Invoke-Command -ComputerName 'RIG-PC-01'" in output
+    assert "[OK] dry-run TFT30-1:CH1" in output
+    assert "Invoke-Command -ComputerName 'AE-TFT30-1'" in output
     assert "$serial.PortName = 'COM3'" in output
 
 
@@ -41,7 +41,7 @@ def test_cli_run_unknown_named_command_returns_error(tmp_path, capsys) -> None:
     path = tmp_path / "rigs.json"
     rig_cli.main(["init-config", "-o", str(path)])
 
-    code = rig_cli.main(["-c", str(path), "run", "missing", "--target", "rig-pc-01:ch1"])
+    code = rig_cli.main(["-c", str(path), "run", "missing", "--target", "TFT30-1:CH1"])
 
     error = capsys.readouterr().err
     assert code == 2
@@ -58,7 +58,7 @@ def test_cli_exec_dry_run_targets_hosts(tmp_path, capsys) -> None:
             str(path),
             "exec",
             "--target",
-            "tag:line-a",
+            "tag:tft30",
             "--script",
             "hostname",
             "--dry-run",
@@ -67,8 +67,8 @@ def test_cli_exec_dry_run_targets_hosts(tmp_path, capsys) -> None:
 
     output = capsys.readouterr().out
     assert code == 0
-    assert "[OK] dry-run rig-pc-01" in output
-    assert "Invoke-Command -ComputerName 'RIG-PC-01'" in output
+    assert "[OK] dry-run TFT30-1" in output
+    assert "Invoke-Command -ComputerName 'AE-TFT30-1'" in output
     assert "hostname" in output
 
 
@@ -94,7 +94,7 @@ def test_cli_firmware_flash_dry_run_prints_downloader_script(tmp_path, capsys) -
             "firmware",
             "flash",
             "--target",
-            "rig-pc-01:ch1",
+            "TFT30-1:CH1",
             "--xml",
             "C:\\fw\\firmware.xml",
             "--mode",
@@ -105,7 +105,7 @@ def test_cli_firmware_flash_dry_run_prints_downloader_script(tmp_path, capsys) -
 
     output = capsys.readouterr().out
     assert code == 0
-    assert "[OK] dry-run rig-pc-01:ch1" in output
+    assert "[OK] dry-run TFT30-1:CH1" in output
     assert "FirmwareDownload.exe" in output
     assert "format_all_download" in output
     assert "C:\\fw\\firmware.xml" in output
@@ -122,7 +122,7 @@ def test_cli_legacy_firmware_execution_is_blocked(tmp_path, capsys) -> None:
             "firmware",
             "flash",
             "--target",
-            "rig-pc-01:ch1",
+            "TFT30-1:CH1",
             "--xml",
             "C:\\fw\\firmware.xml",
         ]

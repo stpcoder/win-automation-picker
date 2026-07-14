@@ -5,11 +5,14 @@ from pathlib import Path
 import re
 
 from win_automation_picker.ftp_app import (
+    DEFAULT_CONFIG_FILES as APP_DEFAULT_CONFIG_FILES,
     RigFtpApp,
     operator_result_payload,
     operator_topology_target,
 )
+from win_automation_picker.ftp_cli import DEFAULT_CONFIG_FILES as CLI_DEFAULT_CONFIG_FILES
 from win_automation_picker.ftp_spool import FtpSpoolConfig, MasterInfo, SlaveInfo
+from win_automation_picker.rig import example_config
 from win_automation_picker.topology import TopologyIssue
 
 
@@ -154,6 +157,21 @@ def test_operator_facing_source_does_not_restore_legacy_phrases() -> None:
     assert not findings, (
         "이전 사용자 용어가 프로그램 문구에 남아 있습니다:\n" + "\n".join(findings)
     )
+
+
+def test_generated_fixture_control_example_uses_tft_and_channel_names() -> None:
+    config = example_config()
+    rendered = json.dumps(config, ensure_ascii=False).casefold()
+
+    assert "rig" not in rendered
+    assert config["hosts"][0]["id"] == "TFT30-1"
+    assert config["hosts"][0]["address"] == "AE-TFT30-1"
+    assert [port["id"] for port in config["hosts"][0]["ports"]] == ["CH1", "CH2"]
+
+
+def test_default_communication_config_does_not_search_retired_names() -> None:
+    assert APP_DEFAULT_CONFIG_FILES == ("fixture-connection.info",)
+    assert CLI_DEFAULT_CONFIG_FILES == ("fixture-connection.info",)
 
 
 def test_result_details_hide_internal_legacy_terms() -> None:
