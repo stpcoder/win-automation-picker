@@ -36,6 +36,7 @@ class ConditionResult:
     expected: str
     operator: str
     element_id: str = ""
+    element_role: str = ""
     monitor_tab: str = ""
     monitor_channel: str = ""
     monitor_state: str = ""
@@ -52,6 +53,7 @@ class ConditionResult:
             "expected": self.expected,
             "operator": self.operator,
             "element_id": self.element_id,
+            "element_role": self.element_role,
             "monitor_tab": self.monitor_tab,
             "monitor_channel": self.monitor_channel,
             "monitor_state": self.monitor_state,
@@ -756,6 +758,7 @@ def evaluate_condition(step: AutomationStep, *, row: dict[str, str] | None = Non
     result_metadata = {
         "label": render_template(step.display_label(), row),
         "element_id": render_template(step.element_id, row),
+        "element_role": render_template(step.element_role, row),
         "monitor_tab": render_template(step.monitor_tab, row),
         "monitor_channel": render_template(step.monitor_channel, row),
         "monitor_state": render_template(step.monitor_state, row),

@@ -1,181 +1,87 @@
-# Win Automation Picker
+# Mobile DRAM AE Fixture Testing
 
-A Windows UI Automation macro studio with a real nested block workspace, Python export, live text/color monitoring, and FTP-backed master/slave orchestration for restricted company networks.
-
-- Korean manual: https://stpcoder.github.io/win-automation-picker/
-- Korean README: [README.ko.md](README.ko.md)
-- Latest release: https://github.com/stpcoder/win-automation-picker/releases/tag/latest
+This Windows application combines SEQ preparation, recorded SK Commander automation, direct serial control, fixture-PC communication, and centralized test monitoring.
 
 ## Downloads
 
 | File | Purpose |
-| --- | --- |
-| [AEWorkbench-Windows-x64.zip](https://github.com/stpcoder/win-automation-picker/releases/latest/download/AEWorkbench-Windows-x64.zip) | Recommended bundle containing all five executables and their SHA-256 manifest |
-| [AEWorkbench.exe](https://github.com/stpcoder/win-automation-picker/releases/latest/download/AEWorkbench.exe) | Integrated SEQ, Scratch macro, validation, FTP deployment, and monitoring workspace |
-| [WinAutomationPicker.exe](https://github.com/stpcoder/win-automation-picker/releases/latest/download/WinAutomationPicker.exe) | Build, run, and export block macros |
-| [RigFtpCommander.exe](https://github.com/stpcoder/win-automation-picker/releases/latest/download/RigFtpCommander.exe) | FTP master/slave GUI |
-| [RigFtpCli.exe](https://github.com/stpcoder/win-automation-picker/releases/latest/download/RigFtpCli.exe) | Advanced FTP CLI |
-| [RigCommander.exe](https://github.com/stpcoder/win-automation-picker/releases/latest/download/RigCommander.exe) | COM, PowerShell, and SSH rig-control CLI |
+|---|---|
+| [AEWorkbench.exe](https://github.com/stpcoder/win-automation-picker/releases/latest/download/AEWorkbench.exe) | Recommended GUI for setup, SEQ preparation, automation, execution, and monitoring |
+| [AutomationBuilder.exe](https://github.com/stpcoder/win-automation-picker/releases/latest/download/AutomationBuilder.exe) | GUI recorder and nested block editor |
+| [FixtureCommunication.exe](https://github.com/stpcoder/win-automation-picker/releases/latest/download/FixtureCommunication.exe) | Standalone fixture-PC communication GUI |
+| [FixtureControlCli.exe](https://github.com/stpcoder/win-automation-picker/releases/latest/download/FixtureControlCli.exe) | Advanced serial, power, and Binary terminal |
+| [FixtureCommunicationCli.exe](https://github.com/stpcoder/win-automation-picker/releases/latest/download/FixtureCommunicationCli.exe) | Advanced communication-server terminal |
+| [AEWorkbench-Windows-x64.zip](https://github.com/stpcoder/win-automation-picker/releases/latest/download/AEWorkbench-Windows-x64.zip) | All Windows executables and their checksum manifest |
 
-The executables are not code-signed, so Windows SmartScreen may show a warning. Qualcomm QDL and
-MediaTek Genio Tools are not redistributed in this bundle; install an approved copy separately.
-The release manifest records the official repositories, exact source commits, expected versions,
-and parser dry-run scope used by contract tests.
+Most operators only need `AEWorkbench.exe`.
 
-## Highlights
+## Site Model
 
-![Daily workspace centered on automation selection and the PC/CH run table](docs/assets/screenshots/01-today-work.png)
+```text
+Administrator PC
+  └─ Communication server
+      └─ TFT30
+          ├─ TFT30-1 ─ CH1, CH2, CH3, CH4
+          ├─ TFT30-2 ─ CH5, CH6, CH7, CH8
+          ├─ TFT30-3 ─ CH9, CH10, CH11, CH12
+          └─ TFT30-4 ─ CH13, CH14, CH15, CH16
+```
 
-- Separates daily execution, one-time automation preparation, and Rig setup into three task-frequency tabs.
-- Keeps raw package upload and single-node arguments behind progressive disclosure in the daily view.
-- Keeps the active SEQ recipe/package, Scratch source/Python export, and named macro buttons in one `*.aework.json` project.
-- Opens Test Sequence Generator on the active recipe and calls `SeqTool.exe` in the background for validation and Rig-package builds.
-- Treats temperature as a user-selected SEQ target rendered into `@TF set/run`, not as automatic measured-temperature collection.
-- Opens the real Scratch editor from Rig, runs/stops a local test, and uploads the validated SEQ and current macro together.
-- Edits detected local-test variables in labeled fields and stores them per Workbench project without requiring JSON syntax.
-- Renames, annotates, and reorders named macro buttons without recreating the source macro.
-- Continuously records external-app clicks, grouped text input, and common keys between explicit Start/Stop actions.
-- Reads the final UIA field value so IME composition and paste become one input block; password values are never stored.
-- Drags click, type, key, wait, repeat, if, and monitor blocks from a palette into the workspace.
-- Defaults to a compact Scratch layout with 46 px blocks and a 2 px connected-stack gap.
-- Moves blocks between top-level order and nested C-shaped repeat/condition containers.
-- Selects, renames, duplicates, moves, and deletes nested children independently.
-- Supports undo, redo, duplicate, and Delete keyboard editing.
-- Focuses block naming and capture-quality feedback immediately after recording.
-- Distinguishes multiple copies of one executable using text or regex window markers.
-- Evaluates component text and sampled screen color as conditions or monitor states.
-- Builds custom boards from arbitrary equipment/channel labels, states, axes, and display order.
-- Runs monitor rules once or on an interval without executing click/type/key blocks.
-- Replays pasted spreadsheet rows with `${name}`, `${col1}`, and `${row}` variables.
-- Converts recorded values into runtime variables and submits a different macro/value matrix for each PC.
-- Exports the complete nested workflow as runnable Python.
-- Runs exported workflows inside the slave executable without requiring a separate Python installation.
-- Distributes jobs and collects status, results, and screenshots through an FTP spool.
-- Separates controller, FTP, fixture-PC, and physical-fixture identity and audits duplicate Node, asset, Windows, COM, HWID, and ADB bindings.
-- Bulk-merges and exports Excel-friendly PC/fixture inventory CSV with free-form channel names.
-- Verifies Test Sequence Generator `.rigseq.zip` artifacts and assigns each PC/slot/CH to direct COM or an SK Commander launcher.
-- Keeps direct COM and SK Commander on one run contract while distinguishing Master-started and fixture-PC-local runs.
-- Validates semantic SK Commander SEQ/Load/Start roles and observes locally started SK tests with a read-only slave monitor.
-- Writes bounded per-Grid Temp/VDD logs for direct COM runs and uploads one completion artifact ZIP instead of streaming serial data through FTP.
-- Tracks free-form per-PC channels with SoC, binary source/version/time, DRAM material, current test/SEQ, and Grid progress in FTP heartbeats and two-sheet Excel exports.
-- Verifies checksummed AE campaign snapshots, expands PC/CH/repeat run rows, and shows acceptance/failure state in a campaign board.
-- Stores operator failure classification and disposition in separate triage sidecars without rewriting raw results.
-- Imports Seq Generator `.rigbinary.json` metadata without copying proprietary binary payloads.
-- Keeps up to four COM consoles open for live output, boot-state markers, ASCII/control-key input, and parallel `.seq` runs.
-- Revalidates the configured hardware identity before opening a COM and only suggests uniquely identified COM moves.
-- Batches direct-COM run-table rows by slave/campaign/attempt and runs up to four distinct ports concurrently.
-- Pins MTK/QC updates to one CH with full descriptor/payload fingerprints, exact USB serials,
-  fixed ADB targets, vendor gates, dry-runs, and allowlisted QDL/Genio or generic downloader rules.
-- Exports `rig-ftp.info` and `rig-commander.config.json` together for each slave PC.
-- Keeps configured but stale PCs visible as offline and matches screenshots to their exact request job.
+A fixture PC hosts up to four physical fixtures. Every fixture stores its SoC, Binary, DRAM part, Lot, material ID, active test, SEQ, BL1/BL2/LK/OS stage, fault status, and edit history.
 
-## Macro quick start
+## Operator Flow
 
-For the complete flow, use the [AE Workbench guide](https://stpcoder.github.io/win-automation-picker/ae-workbench/). For macro-only work:
+1. Follow steps 1 through 6 under `3 초기 설정 > 설정 순서` to register the communication server, TFT/UTF group, fixture PCs, and fixtures.
+2. Map the fixture number and status components in each SK Commander window.
+3. Validate the SEQ and record or edit the automatic execution flow under `2 SEQ · 자동 실행 순서 준비`.
+4. Select fixtures and per-fixture values under `1 테스트 진행`, then start the test.
+5. Monitor `PASS`, `진행 중`, `FAIL`, `없음`, and `중지` from the administrator PC.
 
-1. Open `AEWorkbench.exe > 2 자동화 준비 > Scratch 더보기 > 새 매크로 만들기`, or start `WinAutomationPicker.exe` directly.
-2. Keep `입력값을 PC별 변수로` enabled and click `연속 녹화 시작`.
-3. Use the target application normally: click fields, type values, and click buttons.
-4. Return to the Picker and click `녹화 정지`; the stop click itself is excluded.
-5. Inspect the app, component, captured value, and variable mode in the recording timeline.
-6. Drag repeat or if blocks around the recorded blocks as needed.
-7. Run with the captured defaults or export the workflow as Python.
-8. Use the Deploy run matrix to assign a different macro and input value to each PC.
+![Test execution](docs/assets/screenshots/01-test-run.png)
 
-Continuous recording is active only after an explicit start and always shows elapsed time and action count. One-shot click/input capture remains available for adding a single block.
+## Automation Editor
 
-See the [basic macro guide](https://stpcoder.github.io/win-automation-picker/macro-builder/basic-flow/) and [block workspace guide](https://stpcoder.github.io/win-automation-picker/macro-builder/block-designer/).
+- Records external application clicks and text input between start and stop.
+- Excludes the recorder's own stop action.
+- Supports rename, reorder, drag and drop, nesting, duplication, deletion, undo, and redo.
+- Supports repeat blocks, text conditions, color conditions, and nested AND/OR groups.
+- Converts recorded input into fixed values or values supplied separately for each fixture.
+- Exports a validated flow as executable Python.
 
-## Direct fixture control and binary updates
+![Automatic execution flow](docs/assets/screenshots/02-automation-flow.png)
 
-![Four persistent serial consoles](docs/assets/screenshots/12-four-channel-console.png)
+## Communication and Monitoring
 
-Open `2 자동화 준비 > 실장기 제어 · Binary` on the PC that owns the COM ports. The console
-supports printable ASCII, explicit Enter/Ctrl+C/Ctrl+V, per-character delay, keepalive Enter, and
-parallel execution of one `.seq` on up to four selected channels.
+- Fixture PCs poll briefly and disconnect instead of holding a permanent server connection.
+- Full-screen capture is generated only when requested.
+- Retention limits bound result, log, screenshot, and local work-file growth.
+- Automatic monitoring stops when no test is running.
+- Fixture and fixture-PC state can be exported to Excel.
+- Binary edits use their own Binary timestamp; material, SoC, and fault edits use the general information timestamp, so newer values from opposite PCs are preserved independently.
+- `시작 폴더 만들기` prepares one self-contained startup folder per fixture PC; operators do not need to assemble a separate archive manually.
 
-Binary jobs can inspect an XML/package and all referenced payloads directly, or import checksummed
-Seq Generator metadata when Master and Slave paths differ. They execute one channel at a time. The
-slave rechecks the SoC vendor, downloader allowlist, package fingerprint, COM port, exact USB download
-identity, Qualcomm EDL switch or a configurable two-command MediaTek LK transition, and optional
-post-download ADB serial. Late USB re-enumeration is retried only for the configured bounded window.
-Static tool/XML/hash checks run once; later retries probe only the exact USB identity to keep host and
-FTP-side load bounded.
+## Direct Serial and Binary Updates
 
-See the [Korean device-control guide](https://stpcoder.github.io/win-automation-picker/device-control/).
+The application supports both SK Commander automation and direct serial SEQ execution. A physical fixture's serial port must not be opened by both routes at the same time.
 
-## Monitoring quick start
+Public Qualcomm QDL and MediaTek Genio command contracts are tested in CI, but external downloader executables are not bundled. Configure an approved local tool, validate it on one fixture, and only then enable execution. Format and bounded sector-write operations require explicit preflight checks and confirmation tokens.
 
-1. Drag a text-state or color-state monitor block into the workspace.
-2. Click the target status component; its current value is sampled as the expectation.
-3. Set the board, equipment/channel label, and displayed state in the inspector.
-4. Nest rules inside AND/OR monitor groups for compound decisions.
-5. Open the monitoring tab and run one check or start interval monitoring.
-6. Inspect pass/fail, the latest actual value, and the latest refresh time.
-7. Customize board rows, columns, state order, and channel order.
+## Manuals
 
-Equipment labels are free-form. `CH9`, `CH11`, and `PC04-RIG2` work without a fixed CH schema.
+- [Initial setup](docs/index.md)
+- [Test operation](docs/operation/index.md)
+- [Troubleshooting](docs/troubleshooting/index.md)
 
-## FTP master/slave
+The GitHub Pages build presents the same material as a searchable GitBook-style manual. The operator text and screenshots are Korean because that is the target workplace language.
 
-The FTP tools use a configured root directory as a shared spool when inbound ports cannot be opened.
-
-1. Start `RigFtpCommander.exe` on the master PC.
-2. Audit Master/FTP/fixture-PC/fixture identity under `3 Rig 설정 > 연결 구조`, then verify FTP under `Master · FTP`.
-3. Open `실장기 연결 PC` and run `서버 폴더 준비` for the dedicated folders.
-4. Export one `.info` file per slave and place it next to the executable on that PC.
-5. Start `이 PC Agent` on each slave.
-6. Open `1 오늘 작업 > 실행`, load the Rig targets, assign each macro or SEQ, and click `실행 시작`.
-
-Connections are opened only for transfers. Poll jitter, screenshot rate limits, retention limits, stale-heartbeat classification, and agent reconnect backoff reduce server load and false status. The tool stays under its configured FTP root and does not touch unrelated folders.
-
-See the [FTP overview](https://stpcoder.github.io/win-automation-picker/rig-ftp/overview/), [dual execution route guide](https://stpcoder.github.io/win-automation-picker/rig-ftp/execution-routes/), and [SEQ Generator / fixture execution workflow](https://stpcoder.github.io/win-automation-picker/rig-ftp/seq-integration/).
-
-## Install from source
-
-On Windows PowerShell:
+## Development
 
 ```powershell
-py -3 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -U pip
 python -m pip install -e .
-python -m win_automation_picker
-```
-
-Run tests:
-
-```powershell
-python -m pip install pytest
 python -m pytest -q
+python -m win_automation_picker.ae_workbench
 ```
 
-Preview documentation:
+Updates to `main` run the full test suite, external command-contract checks, Windows packaging, and the `latest` release update. Pull requests and manually dispatched runs expose the Windows bundle as an Actions artifact.
 
-```powershell
-python -m pip install -r requirements-docs.txt
-mkdocs serve
-```
-
-## Rig Commander CLI
-
-```powershell
-RigCommander.exe init-config --output rig-config.json
-RigCommander.exe -c rig-config.json list
-RigCommander.exe -c rig-config.json run --target rig-pc-01:ch1 status
-RigCommander.exe -c rig-config.json device probe --target rig-pc-01:ch1
-RigCommander.exe device system-check
-```
-
-## CI and releases
-
-Every push to `main` runs tests and pinned QDL/Genio parser contracts, rebuilds all five Windows
-executables in the release job, and updates the `latest` assets directly. The release does not
-depend on expiring GitHub Actions artifact storage. Documentation changes deploy to `gh-pages`.
-
-## Limitations
-
-- The picker targets native Windows UI Automation.
-- Games, canvas-rendered apps, browser DOM content, and custom-rendered controls may expose insufficient selector metadata.
-- Run the picker at the same integrity level as an elevated target application.
-- GUI automation and screenshots require an active interactive Windows desktop session.
+Actual SK Commander selectors, serial hardware, physical download switches, and proprietary workplace downloader commands must be verified on the target Windows fixture PC.

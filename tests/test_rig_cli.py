@@ -140,7 +140,7 @@ def test_interactive_loop_shows_help_and_exits(monkeypatch, capsys) -> None:
 
     output = capsys.readouterr().out
     assert code == 0
-    assert "Rig Commander interactive shell" in output
+    assert "실장기 직접 제어 터미널" in output
     assert "firmware" in output
 
 

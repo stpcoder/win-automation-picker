@@ -106,6 +106,40 @@ def test_inventory_csv_dump_round_trips_physical_identity() -> None:
     assert fixture["firmware_partitions"] == ["mmc0", "mmc0boot0"]
 
 
+def test_inventory_csv_round_trips_fixture_hierarchy_and_operator_metadata() -> None:
+    rows = [
+        {
+            "fixture_pc_id": "TFT30-1",
+            "rack_type": "TFT",
+            "rack_id": "TFT30",
+            "channels": [
+                {
+                    "channel_id": "CH1",
+                    "soc_model": "MTK24D",
+                    "binary_name": "release.xml",
+                    "binary_updated_by": "AE Kim",
+                    "dram_part": "LPDDR5X",
+                    "material_id": "AS1S1-1",
+                    "boot_stage": "LK",
+                    "fault_status": "사용 주의",
+                    "metadata_updated_at": "2026-07-13T01:02:03+00:00",
+                }
+            ],
+        }
+    ]
+
+    restored = merge_inventory_csv(dump_inventory_csv(rows))
+
+    assert restored[0]["fixture_pc_id"] == "TFT30-1"
+    assert restored[0]["rack_id"] == "TFT30"
+    channel = restored[0]["channels"][0]
+    assert channel["dram_part"] == "LPDDR5X"
+    assert channel["material_id"] == "AS1S1-1"
+    assert channel["binary_updated_by"] == "AE Kim"
+    assert channel["boot_stage"] == "LK"
+    assert channel["fault_status"] == "사용 주의"
+
+
 def test_inventory_csv_rejects_duplicate_pc_channel_rows() -> None:
     text = (
         "node_id,channel_id,fixture_id\n"
@@ -113,7 +147,7 @@ def test_inventory_csv_rejects_duplicate_pc_channel_rows() -> None:
         "rig-pc-04,CH11,RIG-11-OTHER\n"
     )
 
-    with pytest.raises(FtpSpoolError, match="repeats rig-pc-04 / CH11"):
+    with pytest.raises(FtpSpoolError, match="rig-pc-04 / CH11이 중복"):
         merge_inventory_csv(text)
 
 

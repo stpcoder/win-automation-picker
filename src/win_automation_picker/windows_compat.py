@@ -4,11 +4,31 @@ from dataclasses import dataclass
 import importlib.util
 import platform
 import shutil
-from typing import Callable
+import sys
+from typing import Any, Callable, Iterable
 
 
 MIN_SUPPORTED_WINDOWS_BUILD = 19041
 WINDOWS_11_FIRST_BUILD = 22000
+
+
+def configure_windows_console_utf8(
+    *,
+    platform_name: str | None = None,
+    streams: Iterable[Any] | None = None,
+) -> None:
+    """Avoid legacy Windows code pages failing when CLI help contains Korean text."""
+    if (platform_name or sys.platform) != "win32":
+        return
+
+    for stream in streams if streams is not None else (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+        except (OSError, ValueError):
+            continue
 
 
 @dataclass(frozen=True)

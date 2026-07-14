@@ -39,6 +39,7 @@ def test_seq_generator_binary_metadata_maps_to_channel_inventory(tmp_path) -> No
         "binary_version": "SM8850_20260711",
         "binary_source_path": "D:/binary/SM8850_20260711",
         "binary_updated_at": "2026-07-11T12:00:00+00:00",
+        "binary_update_source": "Binary 정보 파일",
     }
 
 

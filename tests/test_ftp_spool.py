@@ -20,6 +20,7 @@ from win_automation_picker.ftp_spool import (
     RunProfile,
     SlaveInfo,
     SpoolJob,
+    apply_fixture_metadata,
     agent_instance_lock,
     classify_status_rows,
     build_slave_rig_config,
@@ -32,8 +33,11 @@ from win_automation_picker.ftp_spool import (
     list_results,
     list_screenshots,
     list_status,
+    merge_channel_rows,
     publish_local_sequence_progress,
     publish_local_sequence_result,
+    publish_fixture_metadata,
+    read_fixture_metadata,
     request_stop,
     run_slave_once,
     save_triage_record,
@@ -44,7 +48,10 @@ from win_automation_picker.ftp_spool import (
     _update_channel_status,
 )
 from win_automation_picker.recipe import AutomationRecipe, AutomationStep
-from win_automation_picker.sequence_bundle import RigSequenceBundleError, read_rig_sequence_bundle
+from win_automation_picker.sequence_bundle import (
+    RigSequenceBundleError,
+    read_rig_sequence_bundle,
+)
 from win_automation_picker.selector import SelectorSegment, UISelector
 from win_automation_picker.serial_console import (
     SerialCommandResult,
@@ -61,7 +68,10 @@ def _write_rig_sequence_bundle(
     campaign: bool = False,
     campaign_snapshot_sha: str = "",
 ) -> None:
-    recipe = (json.dumps({"name": "DRAM Four Corner", "command_set": "hdiag64_default"}) + "\n").encode()
+    recipe = (
+        json.dumps({"name": "DRAM Four Corner", "command_set": "hdiag64_default"})
+        + "\n"
+    ).encode()
     validation = {
         "ok": True,
         "compatibility_level": "structural",
@@ -267,12 +277,12 @@ def test_config_supports_slave_roster() -> None:
     assert config.to_mapping()["runtime"]["min_screenshot_interval_seconds"] == 45
 
 
-def test_slave_channel_inventory_has_heartbeat_size_limit() -> None:
-    with pytest.raises(FtpSpoolError, match="64-item limit"):
+def test_fixture_pc_inventory_allows_at_most_four_fixtures() -> None:
+    with pytest.raises(FtpSpoolError, match="최대 4대"):
         SlaveInfo.from_mapping(
             {
-                "node_id": "rig-pc-oversized",
-                "channels": [{"channel_id": f"CH{index}"} for index in range(65)],
+                "node_id": "TFT30-1",
+                "channels": [{"channel_id": f"CH{index}"} for index in range(1, 6)],
             }
         )
 
@@ -295,10 +305,14 @@ def test_slave_runs_node_shell_job_and_publishes_result(tmp_path) -> None:
     assert len(results) == 1
     assert results[0].ok
     assert "hello rig-pc-01" in results[0].stdout
-    result_json = json.loads((tmp_path / "results" / "rig-pc-01" / "job-shell.json").read_text())
+    result_json = json.loads(
+        (tmp_path / "results" / "rig-pc-01" / "job-shell.json").read_text()
+    )
     assert result_json["ok"] is True
     assert (tmp_path / "logs" / "rig-pc-01" / "job-shell.log").exists()
-    assert not (tmp_path / "commands" / "rig-pc-01" / "pending" / "job-shell.json").exists()
+    assert not (
+        tmp_path / "commands" / "rig-pc-01" / "pending" / "job-shell.json"
+    ).exists()
 
 
 def test_slave_runs_broadcast_python_package_with_variables(tmp_path) -> None:
@@ -416,7 +430,7 @@ def test_rig_sequence_bundle_rejects_checksum_mismatch(tmp_path) -> None:
     source = tmp_path / "bad.rigseq.zip"
     _write_rig_sequence_bundle(source, declared_sequence_sha="0" * 64)
 
-    with pytest.raises(RigSequenceBundleError, match="checksum"):
+    with pytest.raises(RigSequenceBundleError, match="확인값"):
         read_rig_sequence_bundle(source)
 
 
@@ -439,7 +453,7 @@ def test_campaign_bundle_rejects_tampered_snapshot(tmp_path) -> None:
     source = tmp_path / "tampered-campaign.rigseq.zip"
     _write_rig_sequence_bundle(source, campaign=True, campaign_snapshot_sha="0" * 64)
 
-    with pytest.raises(RigSequenceBundleError, match="campaign snapshot checksum"):
+    with pytest.raises(RigSequenceBundleError, match="테스트 정보의 확인값"):
         read_rig_sequence_bundle(source)
 
 
@@ -475,7 +489,7 @@ def test_campaign_attempt_must_fit_declared_repeat_count(tmp_path) -> None:
     )[0]
 
     assert not result.ok
-    assert "between 1 and 2" in result.stderr
+    assert "1부터 2" in result.stderr
 
 
 def test_slave_stages_sequence_and_runs_picker_launcher(tmp_path) -> None:
@@ -561,13 +575,14 @@ def test_slave_stages_sequence_and_runs_picker_launcher(tmp_path) -> None:
         status_context=status_context,
     )
     attempts = {
-        int(run["campaign_attempt"])
-        for run in list_status(backend)[0]["campaign_runs"]
+        int(run["campaign_attempt"]) for run in list_status(backend)[0]["campaign_runs"]
     }
     assert attempts == {1, 2}
 
 
-def test_slave_runs_rig_sequence_directly_over_configured_serial_port(tmp_path, monkeypatch) -> None:
+def test_slave_runs_rig_sequence_directly_over_configured_serial_port(
+    tmp_path, monkeypatch
+) -> None:
     backend = LocalSpoolBackend(tmp_path / "spool")
     sequence_package = tmp_path / "direct.rigseq.zip"
     _write_rig_sequence_bundle(
@@ -665,14 +680,20 @@ def test_slave_runs_rig_sequence_directly_over_configured_serial_port(tmp_path, 
     assert manifest["commands"][0]["command"] == "exit;"
     assert manifest["schema"] == "rig-test-run/v2"
     assert [row["name"] for row in manifest["grids"]] == ["#BOOT", "#RUN"]
-    assert all((manifest_path.parent / row["log_path"]).is_file() for row in manifest["grids"])
+    assert all(
+        (manifest_path.parent / row["log_path"]).is_file() for row in manifest["grids"]
+    )
     assert "LK2]" in console_path.read_text(encoding="utf-8")
-    assert result.details["artifact_path"] == "artifacts/rig-pc-04/direct-serial-job.zip"
+    assert (
+        result.details["artifact_path"] == "artifacts/rig-pc-04/direct-serial-job.zip"
+    )
     assert (tmp_path / "spool" / result.details["artifact_path"]).is_file()
 
 
 def test_sk_commander_control_profile_detects_required_and_optional_roles() -> None:
-    selector = UISelector(root=SelectorSegment(control_type="Window", name="SK Commander"))
+    selector = UISelector(
+        root=SelectorSegment(control_type="Window", name="SK Commander")
+    )
     recipe = AutomationRecipe(
         steps=[
             AutomationStep.type(selector, "${seq_path}", element_role="sk_seq_path"),
@@ -772,6 +793,121 @@ def test_local_sk_observer_does_not_relabel_active_master_run() -> None:
     assert context["channels"][0]["current_grid"] == "GRID_08"
 
 
+def test_sk_commander_monitor_readings_update_fixture_business_fields() -> None:
+    context = {"channels": [{"channel_id": "CH1", "state": "idle"}]}
+    job = SpoolJob.create(kind="monitor", payload={}, job_id="mapping-check")
+    result = JobResult(
+        job_id="mapping-check",
+        node_id="TFT30-1",
+        kind="monitor_local",
+        ok=True,
+        returncode=0,
+        started_at="2026-07-13T00:00:00Z",
+        finished_at="2026-07-13T00:00:01Z",
+        monitor_results=[
+            {
+                "kind": "monitor_group",
+                "ok": True,
+                "monitor_channel": "CH1",
+                "monitor_state": "RUNNING",
+                "actual": "4/4 matched",
+                "expected": "all matched",
+                "details": [
+                    {"ok": True, "element_role": "sk_soc", "actual": "MTK24D"},
+                    {"ok": True, "element_role": "sk_dram", "actual": "AA-1"},
+                    {"ok": True, "element_role": "sk_test", "actual": "CBT Margin"},
+                    {"ok": True, "element_role": "sk_boot_stage", "actual": "LK2]"},
+                ],
+            }
+        ],
+        details={"execution_origin": "local_fixture_pc"},
+    )
+
+    _update_channel_status(context, job, result)
+
+    channel = context["channels"][0]
+    assert channel["soc_vendor"] == "mediatek"
+    assert channel["soc_model"] == "MTK24D"
+    assert channel["material_id"] == "AA-1"
+    assert channel["sample_id"] == "AA-1"
+    assert channel["current_test"] == "CBT Margin"
+    assert channel["boot_stage"] == "LK"
+
+
+def test_fixture_metadata_sync_keeps_newest_editor_update(tmp_path) -> None:
+    backend = LocalSpoolBackend(tmp_path / "spool")
+    older = SlaveInfo(
+        node_id="TFT30-1",
+        rack_type="TFT",
+        rack_id="TFT30",
+        fixture_pc_id="TFT30-1",
+        channels=(
+            ChannelInfo(
+                channel_id="CH1",
+                binary_name="old.xml",
+                metadata_updated_at="2026-07-13T00:00:00+00:00",
+                metadata_updated_by="관리자 A",
+                metadata_update_source="관리자 PC",
+            ),
+        ),
+    )
+    newer = SlaveInfo(
+        node_id="TFT30-1",
+        rack_type="TFT",
+        rack_id="TFT30",
+        fixture_pc_id="TFT30-1",
+        channels=(
+            ChannelInfo(
+                channel_id="CH1",
+                binary_name="new.xml",
+                metadata_updated_at="2026-07-13T01:00:00+00:00",
+                metadata_updated_by="담당자 B",
+                metadata_update_source="실장기 PC",
+            ),
+        ),
+    )
+
+    publish_fixture_metadata(backend, newer)
+    publish_fixture_metadata(backend, older)
+    restored = apply_fixture_metadata(older, read_fixture_metadata(backend, "TFT30-1"))
+
+    assert restored.channels[0].binary_name == "new.xml"
+    assert restored.channels[0].metadata_updated_by == "담당자 B"
+
+
+def test_fixture_metadata_sync_merges_binary_and_material_by_separate_clocks() -> None:
+    administrator_row = ChannelInfo(
+        channel_id="CH1",
+        binary_name="old.xml",
+        binary_updated_at="2026-07-13T00:00:00+00:00",
+        material_id="AA-2",
+        metadata_updated_at="2026-07-13T03:00:00+00:00",
+        metadata_updated_by="관리자 PC 담당자",
+    )
+    fixture_pc_row = ChannelInfo(
+        channel_id="CH1",
+        binary_name="new.xml",
+        binary_version="R2",
+        binary_updated_at="2026-07-13T04:00:00+00:00",
+        binary_updated_by="TFT30-1 담당자",
+        binary_update_source="실장기 PC",
+        material_id="AA-1",
+        metadata_updated_at="2026-07-13T01:00:00+00:00",
+        metadata_updated_by="TFT30-1 담당자",
+    )
+
+    merged = merge_channel_rows(
+        (administrator_row,),
+        [fixture_pc_row.to_mapping()],
+    )[0]
+
+    assert merged["material_id"] == "AA-2"
+    assert merged["metadata_updated_by"] == "관리자 PC 담당자"
+    assert merged["binary_name"] == "new.xml"
+    assert merged["binary_version"] == "R2"
+    assert merged["binary_updated_by"] == "TFT30-1 담당자"
+
+
 def test_agent_heartbeat_preserves_local_fixture_pc_sequence_status(tmp_path) -> None:
     backend = LocalSpoolBackend(tmp_path / "spool")
     config = FtpSpoolConfig(
@@ -781,7 +917,9 @@ def test_agent_heartbeat_preserves_local_fixture_pc_sequence_status(tmp_path) ->
         slaves=(
             SlaveInfo(
                 node_id="rig-pc-04",
-                channels=(ChannelInfo(channel_id="CH11", slot_id="S3", com_port="COM7"),),
+                channels=(
+                    ChannelInfo(channel_id="CH11", slot_id="S3", com_port="COM7"),
+                ),
             ),
         ),
     )
@@ -817,7 +955,9 @@ def test_agent_heartbeat_preserves_local_fixture_pc_sequence_status(tmp_path) ->
     assert channel["current_grid"] == "#HH_105_0.99"
     assert channel["completed_grids"] == 1
 
-    snapshot_path = tmp_path / "work" / "local-runs" / "rig-pc-04" / "channels" / "CH11.json"
+    snapshot_path = (
+        tmp_path / "work" / "local-runs" / "rig-pc-04" / "channels" / "CH11.json"
+    )
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
     snapshot["channel"]["updated_at"] = "2020-01-01T00:00:00Z"
     snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
@@ -922,12 +1062,14 @@ def test_local_sequence_result_can_disable_artifact_upload(tmp_path) -> None:
     published = publish_local_sequence_result(backend, config, job, result)
 
     assert published.details.get("artifact_path", "") == ""
-    assert "disabled" in published.details["artifact_error"]
+    assert "꺼져 있습니다" in published.details["artifact_error"]
     assert backend.list_files("artifacts/rig-pc-04") == []
     assert backend.list_files("results/rig-pc-04")
 
 
-def test_slave_runs_direct_serial_batch_concurrently_and_updates_each_channel(tmp_path, monkeypatch) -> None:
+def test_slave_runs_direct_serial_batch_concurrently_and_updates_each_channel(
+    tmp_path, monkeypatch
+) -> None:
     backend = LocalSpoolBackend(tmp_path / "spool")
     sequence_package = tmp_path / "parallel.rigseq.zip"
     _write_rig_sequence_bundle(sequence_package, sequence=b"#BOOT\nexit;exit;\n")
@@ -1025,7 +1167,10 @@ def test_slave_runs_direct_serial_batch_concurrently_and_updates_each_channel(tm
     assert result.details["batch_size"] == 2
     assert result.details["passed_channels"] == 2
     assert max_active == 2
-    assert {item["channel_id"] for item in result.details["channels"]} == {"CH11", "CH12"}
+    assert {item["channel_id"] for item in result.details["channels"]} == {
+        "CH11",
+        "CH12",
+    }
     assert len(result.details["artifact_paths"]) == 2
     assert len(list((work_dir / "serial-results").glob("*/manifest.json"))) == 2
     status = list_status(backend)[0]
@@ -1033,7 +1178,9 @@ def test_slave_runs_direct_serial_batch_concurrently_and_updates_each_channel(tm
     assert {item["state"] for item in status["channels"]} == {"pass"}
 
 
-def test_direct_serial_batch_rejects_duplicate_com_ports_before_opening(tmp_path) -> None:
+def test_direct_serial_batch_rejects_duplicate_com_ports_before_opening(
+    tmp_path,
+) -> None:
     backend = LocalSpoolBackend(tmp_path / "spool")
     sequence_package = tmp_path / "duplicate.rigseq.zip"
     _write_rig_sequence_bundle(sequence_package)
@@ -1093,7 +1240,9 @@ def test_staged_sequence_cleanup_only_removes_owned_hash_directories(tmp_path) -
     assert (unexpected / "notes.txt").exists()
 
 
-def test_exported_workflow_uses_embedded_runner_without_external_python(tmp_path) -> None:
+def test_exported_workflow_uses_embedded_runner_without_external_python(
+    tmp_path,
+) -> None:
     backend = LocalSpoolBackend(tmp_path / "spool")
     script = tmp_path / "workflow.py"
     script.write_text(
@@ -1124,16 +1273,22 @@ def test_exported_workflow_uses_embedded_runner_without_external_python(tmp_path
     assert "Running row 1/1" in results[0].stdout
 
 
-def test_embedded_workflow_publishes_structured_monitor_results(tmp_path, monkeypatch) -> None:
+def test_embedded_workflow_publishes_structured_monitor_results(
+    tmp_path, monkeypatch
+) -> None:
     monkeypatch.setattr(
         "win_automation_picker.recipe.get_element_text",
         lambda selector, timeout=1.0: "CH11 PASS 3/12",
     )
     monkeypatch.setattr(
         "win_automation_picker.recipe.click",
-        lambda *args, **kwargs: pytest.fail("monitor job must not execute click blocks"),
+        lambda *args, **kwargs: pytest.fail(
+            "monitor job must not execute click blocks"
+        ),
     )
-    selector = UISelector(root=SelectorSegment(control_type="Window", name="SK Commander"))
+    selector = UISelector(
+        root=SelectorSegment(control_type="Window", name="SK Commander")
+    )
     recipe = AutomationRecipe(
         steps=[
             AutomationStep.click(selector),
@@ -1144,7 +1299,7 @@ def test_embedded_workflow_publishes_structured_monitor_results(tmp_path, monkey
                 monitor_tab="SK Commander",
                 monitor_channel="CH11",
                 monitor_state="GRID_PROGRESS",
-            )
+            ),
         ],
         monitor_view={"name": "Line A", "tab_order": ["SK Commander"]},
     )
@@ -1155,7 +1310,9 @@ def test_embedded_workflow_publishes_structured_monitor_results(tmp_path, monkey
     initialize_spool(backend, nodes=["rig-pc-01"])
     submit_job(
         backend,
-        SpoolJob.create(kind="monitor", payload={"package": "monitor.py"}, job_id="monitor-job"),
+        SpoolJob.create(
+            kind="monitor", payload={"package": "monitor.py"}, job_id="monitor-job"
+        ),
         ["rig-pc-01"],
     )
 
@@ -1204,7 +1361,9 @@ def test_classify_status_rows_keeps_missing_and_stale_slaves_visible() -> None:
             "state": "running",
             "message": "step 2",
             "updated_at": (now - timedelta(seconds=2)).isoformat(),
-            "channels": [{"channel_id": "CH11", "state": "running", "completed_grids": 2}],
+            "channels": [
+                {"channel_id": "CH11", "state": "running", "completed_grids": 2}
+            ],
         },
     ]
 
@@ -1289,9 +1448,11 @@ def test_windows_slave_refuses_another_pcs_agent_config(tmp_path, monkeypatch) -
         ),
     )
     monkeypatch.setattr("win_automation_picker.ftp_spool.sys.platform", "win32")
-    monkeypatch.setattr("win_automation_picker.ftp_spool.platform.node", lambda: "AE-RIG-PC99")
+    monkeypatch.setattr(
+        "win_automation_picker.ftp_spool.platform.node", lambda: "AE-RIG-PC99"
+    )
 
-    with pytest.raises(FtpSpoolError, match="Agent 소유 PC 불일치"):
+    with pytest.raises(FtpSpoolError, match="실장기 PC 불일치"):
         run_slave_once(backend, config)
 
 
@@ -1311,7 +1472,9 @@ def test_agent_instance_lock_prevents_two_pollers_for_same_node(tmp_path) -> Non
         pass
 
 
-def test_triage_sidecar_preserves_result_and_merges_operator_disposition(tmp_path) -> None:
+def test_triage_sidecar_preserves_result_and_merges_operator_disposition(
+    tmp_path,
+) -> None:
     backend = LocalSpoolBackend(tmp_path)
     config = FtpSpoolConfig(node_id="rig-pc-01", capture_on_error=False)
     initialize_spool(backend, nodes=["rig-pc-01"])
@@ -1341,7 +1504,9 @@ def test_triage_sidecar_preserves_result_and_merges_operator_disposition(tmp_pat
     assert path == "triage/rig-pc-01/job-triage.json"
     assert merged["triage"]["failure_class"] == "setup"
     assert merged["triage"]["disposition"] == "retest"
-    assert (tmp_path / "results" / "rig-pc-01" / "job-triage.json").read_bytes() == original
+    assert (
+        tmp_path / "results" / "rig-pc-01" / "job-triage.json"
+    ).read_bytes() == original
 
 
 def test_triage_rejects_unknown_classification(tmp_path) -> None:
@@ -1377,7 +1542,9 @@ def test_broadcast_job_is_processed_once_per_slave(tmp_path) -> None:
     assert (tmp_path / "commands" / "all" / "pending" / "broadcast-job.json").exists()
 
 
-def test_broadcast_job_is_deleted_after_every_configured_slave_archives_it(tmp_path) -> None:
+def test_broadcast_job_is_deleted_after_every_configured_slave_archives_it(
+    tmp_path,
+) -> None:
     backend = LocalSpoolBackend(tmp_path)
     slaves = (SlaveInfo(node_id="rig-pc-01"), SlaveInfo(node_id="rig-pc-02"))
     initialize_spool(backend, nodes=[slave.node_id for slave in slaves])
@@ -1392,11 +1559,15 @@ def test_broadcast_job_is_deleted_after_every_configured_slave_archives_it(tmp_p
     )
 
     run_slave_once(backend, FtpSpoolConfig(node_id="rig-pc-01", slaves=slaves))
-    assert (tmp_path / "commands" / "all" / "pending" / "broadcast-cleanup.json").exists()
+    assert (
+        tmp_path / "commands" / "all" / "pending" / "broadcast-cleanup.json"
+    ).exists()
 
     run_slave_once(backend, FtpSpoolConfig(node_id="rig-pc-02", slaves=slaves))
 
-    assert not (tmp_path / "commands" / "all" / "pending" / "broadcast-cleanup.json").exists()
+    assert not (
+        tmp_path / "commands" / "all" / "pending" / "broadcast-cleanup.json"
+    ).exists()
 
 
 def test_stop_signal_terminates_running_shell_job(tmp_path) -> None:
@@ -1413,7 +1584,9 @@ def test_stop_signal_terminates_running_shell_job(tmp_path) -> None:
         ["rig-pc-01"],
     )
     results: list = []
-    worker = threading.Thread(target=lambda: results.extend(run_slave_once(backend, config)))
+    worker = threading.Thread(
+        target=lambda: results.extend(run_slave_once(backend, config))
+    )
 
     worker.start()
     deadline = time.monotonic() + 5
@@ -1427,17 +1600,21 @@ def test_stop_signal_terminates_running_shell_job(tmp_path) -> None:
 
     assert not worker.is_alive()
     assert results[0].returncode == 130
-    assert "Stopped by master stop signal" in results[0].stderr
+    assert "관리자 PC의 긴급 중단 요청" in results[0].stderr
 
 
 def test_screenshot_job_uploads_png(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("win_automation_picker.ftp_spool._capture_screen_png", lambda: b"fake-png")
+    monkeypatch.setattr(
+        "win_automation_picker.ftp_spool._capture_screen_png", lambda: b"fake-png"
+    )
     backend = LocalSpoolBackend(tmp_path)
     config = FtpSpoolConfig(node_id="rig-pc-01")
     initialize_spool(backend, nodes=["rig-pc-01"])
     submit_job(
         backend,
-        SpoolJob.create(kind="screenshot", payload={"label": "manual"}, job_id="shot-job"),
+        SpoolJob.create(
+            kind="screenshot", payload={"label": "manual"}, job_id="shot-job"
+        ),
         ["rig-pc-01"],
     )
 
@@ -1450,19 +1627,27 @@ def test_screenshot_job_uploads_png(tmp_path, monkeypatch) -> None:
 
 
 def test_screenshot_rate_limit_is_enforced_on_slave(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("win_automation_picker.ftp_spool._capture_screen_png", lambda: b"fake-png")
+    monkeypatch.setattr(
+        "win_automation_picker.ftp_spool._capture_screen_png", lambda: b"fake-png"
+    )
     backend = LocalSpoolBackend(tmp_path)
-    config = FtpSpoolConfig(node_id="rig-pc-01", min_screenshot_interval_seconds=60, capture_on_error=False)
+    config = FtpSpoolConfig(
+        node_id="rig-pc-01", min_screenshot_interval_seconds=60, capture_on_error=False
+    )
     initialize_spool(backend, nodes=["rig-pc-01"])
     submit_job(
         backend,
-        SpoolJob.create(kind="screenshot", payload={"label": "first"}, job_id="shot-first"),
+        SpoolJob.create(
+            kind="screenshot", payload={"label": "first"}, job_id="shot-first"
+        ),
         ["rig-pc-01"],
     )
     first = run_slave_once(backend, config)
     submit_job(
         backend,
-        SpoolJob.create(kind="screenshot", payload={"label": "second"}, job_id="shot-second"),
+        SpoolJob.create(
+            kind="screenshot", payload={"label": "second"}, job_id="shot-second"
+        ),
         ["rig-pc-01"],
     )
 
@@ -1652,13 +1837,13 @@ def test_rig_job_uploads_structured_firmware_journal_and_progress(
     assert result.details["artifact_path"] == "artifacts/rig-pc-04/firmware-job.zip"
     assert "01-download-probe.log" in result.details["artifact_members"]
     assert "firmware/run-1/01-qdl-version.log" in result.details["artifact_members"]
-    status = json.loads(
-        backend.read_bytes("status/rig-pc-04.json").decode("utf-8")
-    )
+    status = json.loads(backend.read_bytes("status/rig-pc-04.json").decode("utf-8"))
     assert status["firmware_progress"]["step_id"] == "qdl-version"
 
 
-def test_firmware_journal_pruning_removes_owned_nested_device_evidence(tmp_path) -> None:
+def test_firmware_journal_pruning_removes_owned_nested_device_evidence(
+    tmp_path,
+) -> None:
     root = tmp_path / "journals"
     old = root / "old-device-update"
     current = root / "current-device-update"

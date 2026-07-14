@@ -10,6 +10,9 @@ from .ftp_spool import FtpSpoolError, SlaveInfo
 
 PC_COLUMNS = {
     "node_id": "node_id",
+    "fixture_pc_name": "fixture_pc_id",
+    "rack_type": "rack_type",
+    "rack_name": "rack_id",
     "pc_alias": "alias",
     "pc_asset_id": "asset_id",
     "windows_name": "windows_name",
@@ -69,11 +72,19 @@ CHANNEL_COLUMNS = {
     "binary_version": "binary_version",
     "binary_source_path": "binary_source_path",
     "binary_updated_at": "binary_updated_at",
+    "binary_updated_by": "binary_updated_by",
+    "binary_update_source": "binary_update_source",
     "dram_part": "dram_part",
     "lot_id": "lot_id",
+    "material_id": "material_id",
     "sample_id": "sample_id",
     "current_test": "current_test",
     "sequence_name": "sequence_name",
+    "boot_stage": "boot_stage",
+    "fault_status": "fault_status",
+    "metadata_updated_at": "metadata_updated_at",
+    "metadata_updated_by": "metadata_updated_by",
+    "metadata_update_source": "metadata_update_source",
     "fixture_notes": "notes",
 }
 
@@ -95,32 +106,45 @@ def merge_inventory_csv(
     existing: Sequence[Mapping[str, Any]] = (),
 ) -> list[dict[str, Any]]:
     reader = _dict_reader(text)
-    if not reader.fieldnames or "node_id" not in reader.fieldnames:
-        raise FtpSpoolError("Inventory CSV requires a node_id column.")
+    if not reader.fieldnames or not (
+        {"node_id", "fixture_pc_name"} & set(reader.fieldnames)
+    ):
+        raise FtpSpoolError(
+            "실장기 목록 파일에는 fixture_pc_name 열이 필요합니다. "
+            "이전 파일은 node_id 열도 사용할 수 있습니다."
+        )
 
     merged = [copy.deepcopy(dict(row)) for row in existing]
     by_node: dict[str, dict[str, Any]] = {}
     for row in merged:
         node_id = str(row.get("node_id") or "").strip()
         if not node_id:
-            raise FtpSpoolError("Existing inventory contains a PC without node_id.")
+            raise FtpSpoolError("기존 목록에 내부 식별값이 없는 실장기 PC가 있습니다.")
         key = node_id.casefold()
         if key in by_node:
-            raise FtpSpoolError(f"Existing inventory contains duplicate node_id: {node_id}")
+            raise FtpSpoolError(
+                f"기존 목록의 실장기 PC 내부 식별값이 중복되었습니다: {node_id}"
+            )
         channels = row.get("channels")
-        row["channels"] = [copy.deepcopy(item) for item in channels or [] if isinstance(item, dict)]
+        row["channels"] = [
+            copy.deepcopy(item) for item in channels or [] if isinstance(item, dict)
+        ]
         by_node[key] = row
 
     seen_import_rows: set[tuple[str, str]] = set()
     imported_count = 0
     for line_number, raw in enumerate(reader, start=2):
-        values = {str(key): str(value or "").strip() for key, value in raw.items() if key}
+        values = {
+            str(key): str(value or "").strip() for key, value in raw.items() if key
+        }
         if not any(values.values()):
             continue
         imported_count += 1
-        node_id = values.get("node_id", "")
+        node_id = values.get("node_id", "") or values.get("fixture_pc_name", "")
         if not node_id:
-            raise FtpSpoolError(f"Inventory CSV row {line_number} has no node_id.")
+            raise FtpSpoolError(
+                f"실장기 목록 {line_number}행에 실장기 PC 이름이 없습니다. 예: TFT30-1"
+            )
         node_key = node_id.casefold()
         pc = by_node.get(node_key)
         if pc is None:
@@ -151,12 +175,13 @@ def merge_inventory_csv(
         )
         if not channel_label:
             raise FtpSpoolError(
-                f"Inventory CSV row {line_number} has fixture data but no channel_id, channel_name, or slot_id."
+                f"실장기 목록 {line_number}행에 실장기 정보가 있지만 "
+                "channel_id, channel_name 또는 slot_id가 없습니다."
             )
         import_key = (node_key, str(channel_label).casefold())
         if import_key in seen_import_rows:
             raise FtpSpoolError(
-                f"Inventory CSV repeats {node_id} / {channel_label} at row {line_number}."
+                f"실장기 목록 {line_number}행에서 {node_id} / {channel_label}이 중복되었습니다."
             )
         seen_import_rows.add(import_key)
 
@@ -176,7 +201,7 @@ def merge_inventory_csv(
             channel[field_name] = _coerce_value(field_name, value, line_number)
 
     if not imported_count:
-        raise FtpSpoolError("Inventory CSV has no data rows.")
+        raise FtpSpoolError("실장기 목록 파일에 입력된 행이 없습니다.")
     return [SlaveInfo.from_mapping(row).to_mapping() for row in merged]
 
 
@@ -208,26 +233,34 @@ def inventory_template_csv() -> str:
     return dump_inventory_csv(
         [
             {
-                "node_id": "rig-pc-04",
-                "alias": "PC04",
-                "asset_id": "PC-ASSET-004",
-                "windows_name": "AE-RIG-PC04",
+                "node_id": "TFT30-1",
+                "fixture_pc_id": "TFT30-1",
+                "rack_type": "TFT",
+                "rack_id": "TFT30",
+                "alias": "TFT30-1",
+                "asset_id": "PC-ASSET-TFT30-1",
+                "windows_name": "AE-TFT30-1",
                 "host": "10.20.30.44",
-                "physical_location": "Mobile AE Lab / Rack 04",
+                "physical_location": "Mobile AE Lab / TFT30 / PC 1",
                 "channels": [
                     {
-                        "channel_id": "CH9",
+                        "channel_id": "CH1",
                         "slot_id": "S1",
-                        "fixture_id": "RIG-PC04-9",
-                        "fixture_model": "SK-RIG-QC",
-                        "fixture_serial": "AE-RIG-0009",
-                        "physical_location": "Mobile AE Lab / Rack 04 / Bay 1",
+                        "fixture_id": "TFT30-CH1",
+                        "fixture_model": "Mobile DRAM Fixture",
+                        "fixture_serial": "AE-FIXTURE-0001",
+                        "physical_location": "Mobile AE Lab / TFT30 / CH1",
                         "com_port": "COM11",
                         "baud_rate": 115200,
-                        "console_identity": "VID_0403&PID_6001\\AE-RIG-0009",
-                        "usb_location": "Rack04 Hub-A / Port 1",
-                        "soc_vendor": "qualcomm",
-                        "soc_model": "SM8850",
+                        "console_identity": "VID_0403&PID_6001\\AE-FIXTURE-0001",
+                        "usb_location": "TFT30-1 Hub-A / Port 1",
+                        "soc_vendor": "mediatek",
+                        "soc_model": "MTK24D",
+                        "binary_name": "2026-07-13.xml",
+                        "dram_part": "LPDDR5X",
+                        "material_id": "AA-1",
+                        "boot_stage": "OS",
+                        "fault_status": "정상",
                     }
                 ],
             }
@@ -237,7 +270,7 @@ def inventory_template_csv() -> str:
 
 def _dict_reader(text: str) -> csv.DictReader[str]:
     if not text.strip():
-        raise FtpSpoolError("Inventory CSV is empty.")
+        raise FtpSpoolError("실장기 목록 파일이 비어 있습니다.")
     sample = text[:4096]
     try:
         dialect = csv.Sniffer().sniff(sample, delimiters=",\t;")
@@ -258,9 +291,16 @@ def _pc_csv_values(slave: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _channel_key(channel: Mapping[str, Any]) -> str:
-    return str(
-        channel.get("channel_id") or channel.get("name") or channel.get("slot_id") or ""
-    ).strip().casefold()
+    return (
+        str(
+            channel.get("channel_id")
+            or channel.get("name")
+            or channel.get("slot_id")
+            or ""
+        )
+        .strip()
+        .casefold()
+    )
 
 
 def _coerce_value(field_name: str, value: str, line_number: int) -> Any:
@@ -269,11 +309,11 @@ def _coerce_value(field_name: str, value: str, line_number: int) -> Any:
             parsed = int(value)
         except ValueError as exc:
             raise FtpSpoolError(
-                f"Inventory CSV row {line_number} field {field_name} must be an integer."
+                f"실장기 목록 {line_number}행의 {field_name} 값은 정수여야 합니다."
             ) from exc
         if parsed < 0 or (field_name == "baud_rate" and parsed == 0):
             raise FtpSpoolError(
-                f"Inventory CSV row {line_number} field {field_name} is out of range."
+                f"실장기 목록 {line_number}행의 {field_name} 값이 허용 범위를 벗어났습니다."
             )
         return parsed
     if field_name in BOOLEAN_FIELDS:
@@ -283,22 +323,24 @@ def _coerce_value(field_name: str, value: str, line_number: int) -> Any:
         if normalized in {"0", "false", "no", "n", "off", "미사용"}:
             return False
         raise FtpSpoolError(
-            f"Inventory CSV row {line_number} field {field_name} must be true or false."
+            f"실장기 목록 {line_number}행의 {field_name} 값은 true 또는 false여야 합니다."
         )
     if field_name in FLOAT_FIELDS:
         try:
             parsed_float = float(value)
         except ValueError as exc:
             raise FtpSpoolError(
-                f"Inventory CSV row {line_number} field {field_name} must be a number."
+                f"실장기 목록 {line_number}행의 {field_name} 값은 숫자여야 합니다."
             ) from exc
         if parsed_float <= 0:
             raise FtpSpoolError(
-                f"Inventory CSV row {line_number} field {field_name} is out of range."
+                f"실장기 목록 {line_number}행의 {field_name} 값이 허용 범위를 벗어났습니다."
             )
         return parsed_float
     if field_name in LIST_FIELDS:
-        return [item.strip() for item in value.replace(",", ";").split(";") if item.strip()]
+        return [
+            item.strip() for item in value.replace(",", ";").split(";") if item.strip()
+        ]
     return value
 
 
@@ -310,13 +352,13 @@ def _parse_variables(value: str, line_number: int) -> dict[str, str]:
             continue
         if "=" not in item:
             raise FtpSpoolError(
-                f"Inventory CSV row {line_number} pc_variables must use name=value pairs."
+                f"실장기 목록 {line_number}행의 pc_variables는 이름=값 형식이어야 합니다."
             )
         key, variable_value = item.split("=", 1)
         key = key.strip()
         if not key:
             raise FtpSpoolError(
-                f"Inventory CSV row {line_number} contains an empty variable name."
+                f"실장기 목록 {line_number}행에 이름이 비어 있는 입력값이 있습니다."
             )
         result[key] = variable_value.strip()
     return result

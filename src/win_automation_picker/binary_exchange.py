@@ -12,7 +12,7 @@ MAX_BINARY_METADATA_BYTES = 1024 * 1024
 
 
 class BinaryExchangeError(ValueError):
-    """Raised when Seq Generator binary metadata cannot be safely imported."""
+    """Raised when binary metadata cannot be safely imported."""
 
 
 @dataclass(frozen=True)
@@ -196,6 +196,7 @@ class BinaryReleaseMetadata:
             "binary_version": self.version,
             "binary_source_path": self.source_folder,
             "binary_updated_at": self.latest_modified_at,
+            "binary_update_source": "Binary 정보 파일",
         }
         if self.recommended_slot_id:
             values["slot_id"] = self.recommended_slot_id
@@ -272,13 +273,13 @@ def read_binary_release_metadata(path: str | Path) -> BinaryReleaseMetadata:
     except BinaryExchangeError:
         raise
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise BinaryExchangeError(f"invalid Rig binary metadata file: {source}") from exc
+        raise BinaryExchangeError(f"Binary 정보 파일을 읽을 수 없습니다: {source}") from exc
     if not isinstance(payload, dict) or payload.get("schema") != BINARY_RELEASE_SCHEMA:
-        raise BinaryExchangeError("unsupported Rig binary metadata schema")
+        raise BinaryExchangeError("지원하지 않는 Binary 정보 파일입니다.")
     release = payload.get("release")
     if not isinstance(release, dict):
-        raise BinaryExchangeError("Rig binary metadata has no release object")
+        raise BinaryExchangeError("Binary 정보 파일에 배포 정보가 없습니다.")
     provisioning = payload.get("provisioning")
     if provisioning is not None and not isinstance(provisioning, dict):
-        raise BinaryExchangeError("Rig binary metadata provisioning must be an object")
+        raise BinaryExchangeError("Binary 정보 파일의 장치 설정 형식이 올바르지 않습니다.")
     return BinaryReleaseMetadata.from_mapping(release, provisioning)

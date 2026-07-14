@@ -38,97 +38,97 @@ from .rig import (
     select_serial_targets,
     write_example_config,
 )
-from .windows_compat import assess_windows_environment
+from .windows_compat import assess_windows_environment, configure_windows_console_utf8
 
 
-DEFAULT_CONFIG = "rig-commander.config.json"
+DEFAULT_CONFIG = "fixture-device.config.json"
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="rig-commander",
-        description="Control Windows rig PCs and COM-port connected devices from a terminal.",
+        prog="fixture-control",
+        description="Windows 실장기 PC와 COM으로 연결된 실장기를 터미널에서 제어합니다.",
     )
     parser.add_argument(
         "-c",
         "--config",
         default=DEFAULT_CONFIG,
-        help=f"Path to rig config JSON. Default: {DEFAULT_CONFIG}",
+        help=f"실장기 직접 제어 설정 파일 경로입니다. 기본값: {DEFAULT_CONFIG}",
     )
     subparsers = parser.add_subparsers(dest="command_name", required=True)
 
-    init_parser = subparsers.add_parser("init-config", help="Write an example config file.")
-    init_parser.add_argument("-o", "--output", default=DEFAULT_CONFIG, help="Output path.")
-    init_parser.add_argument("--force", action="store_true", help="Overwrite an existing config.")
+    init_parser = subparsers.add_parser("init-config", help="실장기 직접 제어 예제 설정을 만듭니다.")
+    init_parser.add_argument("-o", "--output", default=DEFAULT_CONFIG, help="저장 경로입니다.")
+    init_parser.add_argument("--force", action="store_true", help="기존 설정 파일을 덮어씁니다.")
     init_parser.set_defaults(func=_cmd_init_config)
 
-    list_parser = subparsers.add_parser("list", help="List configured hosts and serial channels.")
-    list_parser.add_argument("--json", action="store_true", help="Print JSON.")
+    list_parser = subparsers.add_parser("list", help="등록된 실장기 PC와 실장기를 표시합니다.")
+    list_parser.add_argument("--json", action="store_true", help="JSON 형식으로 표시합니다.")
     list_parser.set_defaults(func=_cmd_list)
 
-    check_parser = subparsers.add_parser("check", help="Check local/remote PowerShell reachability.")
+    check_parser = subparsers.add_parser("check", help="선택한 실장기 PC의 PowerShell 연결을 확인합니다.")
     _add_target_args(check_parser)
     _add_runtime_args(check_parser)
     check_parser.set_defaults(func=_cmd_check)
 
-    ports_parser = subparsers.add_parser("ports", help="List actual COM ports on selected host PCs.")
+    ports_parser = subparsers.add_parser("ports", help="선택한 실장기 PC의 실제 COM을 표시합니다.")
     _add_target_args(ports_parser)
     _add_runtime_args(ports_parser)
     ports_parser.set_defaults(func=_cmd_ports)
 
-    exec_parser = subparsers.add_parser("exec", help="Run PowerShell on selected host PCs.")
+    exec_parser = subparsers.add_parser("exec", help="선택한 실장기 PC에서 PowerShell을 실행합니다.")
     _add_target_args(exec_parser)
     _add_runtime_args(exec_parser)
-    exec_parser.add_argument("--script", "-s", required=True, help="PowerShell script to run.")
+    exec_parser.add_argument("--script", "-s", required=True, help="실행할 PowerShell 명령입니다.")
     exec_parser.set_defaults(func=_cmd_exec)
 
-    send_parser = subparsers.add_parser("send", help="Send a raw command string to selected serial channels.")
+    send_parser = subparsers.add_parser("send", help="선택한 실장기에 COM 명령을 전송합니다.")
     _add_target_args(send_parser)
     _add_runtime_args(send_parser)
-    send_parser.add_argument("--command", "-m", required=True, help="Raw command to send.")
+    send_parser.add_argument("--command", "-m", required=True, help="전송할 원문 명령입니다.")
     send_parser.set_defaults(func=_cmd_send)
 
-    run_parser = subparsers.add_parser("run", help="Run a named command from the config.")
+    run_parser = subparsers.add_parser("run", help="설정에 등록한 이름으로 명령을 실행합니다.")
     _add_target_args(run_parser)
     _add_runtime_args(run_parser)
-    run_parser.add_argument("name", help="Named command, e.g. status, power_on, power_off.")
+    run_parser.add_argument("name", help="명령 이름입니다. 예: status, power_on, power_off")
     run_parser.set_defaults(func=_cmd_run)
 
-    monitor_parser = subparsers.add_parser("monitor", help="Repeat a raw or named command and print results.")
+    monitor_parser = subparsers.add_parser("monitor", help="원문 또는 등록 명령을 반복하고 결과를 표시합니다.")
     _add_target_args(monitor_parser)
     _add_runtime_args(monitor_parser)
     command_group = monitor_parser.add_mutually_exclusive_group(required=True)
-    command_group.add_argument("--name", help="Named command from the config.")
-    command_group.add_argument("--command", "-m", help="Raw command to send.")
-    monitor_parser.add_argument("--interval", type=float, default=5.0, help="Seconds between polls.")
+    command_group.add_argument("--name", help="설정에 등록된 명령 이름입니다.")
+    command_group.add_argument("--command", "-m", help="전송할 원문 명령입니다.")
+    monitor_parser.add_argument("--interval", type=float, default=5.0, help="반복 간격(초)입니다.")
     monitor_parser.add_argument(
         "--count",
         type=int,
         default=0,
-        help="Number of polling rounds. 0 means run until Ctrl+C.",
+        help="반복 횟수입니다. 0이면 Ctrl+C를 누를 때까지 계속합니다.",
     )
     monitor_parser.set_defaults(func=_cmd_monitor)
 
-    firmware_parser = subparsers.add_parser("firmware", help="Inspect packages or run a configured downloader.")
+    firmware_parser = subparsers.add_parser("firmware", help="Binary 파일을 검사하거나 등록된 다운로드 도구를 실행합니다.")
     firmware_subparsers = firmware_parser.add_subparsers(dest="firmware_command", required=True)
 
     firmware_inspect = firmware_subparsers.add_parser(
         "inspect",
-        help="Inspect a firmware folder, XML/JSON descriptor, or installer ZIP.",
+        help="Binary 폴더, XML/JSON 설명 파일 또는 ZIP을 검사합니다.",
     )
     firmware_inspect.add_argument(
         "--xml",
         "--package",
         dest="xml",
         required=True,
-        help="Firmware folder, XML/JSON descriptor, or installer ZIP path.",
+        help="Binary 폴더, XML/JSON 설명 파일 또는 ZIP 경로입니다.",
     )
-    firmware_inspect.add_argument("--json", action="store_true", help="Print JSON.")
+    firmware_inspect.add_argument("--json", action="store_true", help="JSON 형식으로 표시합니다.")
     firmware_inspect.add_argument(
         "--vendor",
         choices=("qualcomm", "mediatek"),
         default="",
-        help="Enable vendor package inspection instead of generic XML listing.",
+        help="일반 XML 목록 대신 제조사별 Binary 검사를 사용합니다.",
     )
     firmware_inspect.add_argument(
         "--adapter",
@@ -142,66 +142,68 @@ def build_parser() -> argparse.ArgumentParser:
     )
     firmware_inspect.set_defaults(func=_cmd_firmware_inspect)
 
-    firmware_flash = firmware_subparsers.add_parser("flash", help="Run configured firmware downloader.")
+    firmware_flash = firmware_subparsers.add_parser("flash", help="등록된 Binary 다운로드 도구를 실행합니다.")
     _add_target_args(firmware_flash)
     _add_runtime_args(firmware_flash)
-    firmware_flash.add_argument("--xml", required=True, help="Firmware XML path as seen by the rig PC.")
+    firmware_flash.add_argument(
+        "--xml", required=True, help="실장기 PC에서 접근할 수 있는 Binary XML 경로입니다."
+    )
     firmware_flash.add_argument(
         "--mode",
         choices=("download-only", "format-all-download"),
         default="download-only",
-        help="Firmware download mode.",
+        help="Binary 다운로드 방식입니다.",
     )
     firmware_flash.add_argument(
         "--ready-command",
         default="",
-        help="Optional named serial command to poll before flashing, e.g. status.",
+        help="다운로드 전에 확인할 등록 COM 명령입니다. 예: status",
     )
     firmware_flash.add_argument(
         "--ready-marker",
         default="",
-        help="Optional text marker that indicates the device is ready for firmware download.",
+        help="Binary 다운로드 준비 완료를 나타내는 문구입니다.",
     )
-    firmware_flash.add_argument("--ready-timeout", type=float, default=0.0, help="Seconds to wait for ready marker.")
-    firmware_flash.add_argument("--ready-interval", type=float, default=2.0, help="Seconds between ready polls.")
+    firmware_flash.add_argument("--ready-timeout", type=float, default=0.0, help="준비 문구 대기 시간(초)입니다.")
+    firmware_flash.add_argument("--ready-interval", type=float, default=2.0, help="준비 상태 확인 간격(초)입니다.")
     firmware_flash.set_defaults(func=_cmd_firmware_flash)
 
     device_parser = subparsers.add_parser(
         "device",
-        help="Probe, power, and safely update one or more configured fixture channels.",
+        help="등록된 실장기의 연결·전원·Binary 업데이트를 수행합니다.",
     )
     device_subparsers = device_parser.add_subparsers(dest="device_command", required=True)
 
     device_system = device_subparsers.add_parser(
         "system-check",
-        help="Check Windows build, architecture, PowerShell, and pyserial prerequisites.",
+        help="Windows 버전, 구조, PowerShell과 시리얼 준비 상태를 확인합니다.",
     )
     device_system.add_argument("--json", action="store_true")
     device_system.set_defaults(func=_cmd_device_system_check)
 
-    device_probe = device_subparsers.add_parser("probe", help="Check COM, download identity, or ADB state.")
+    device_probe = device_subparsers.add_parser("probe", help="COM, 다운로드 식별값 또는 ADB 상태를 확인합니다.")
     _add_target_args(device_probe)
     _add_runtime_args(device_probe)
     device_probe.add_argument(
         "--phase",
         choices=("normal", "download", "post"),
         default="normal",
-        help="normal checks COM/ADB; download checks downloader/XML/USB identity; post checks COM/ADB.",
+        help="normal은 COM/ADB, download는 도구/XML/USB, post는 업데이트 후 COM/ADB를 확인합니다.",
     )
-    device_probe.add_argument("--xml", default="", help="Firmware XML path for download phase.")
-    device_probe.add_argument("--xml-sha256", default="", help="Expected XML SHA-256.")
+    device_probe.add_argument("--xml", default="", help="다운로드 단계에서 사용할 Binary XML 경로입니다.")
+    device_probe.add_argument("--xml-sha256", default="", help="예상 XML SHA-256 값입니다.")
     device_probe.set_defaults(func=_cmd_device_probe)
 
-    device_power = device_subparsers.add_parser("power", help="Run configured power commands over COM.")
+    device_power = device_subparsers.add_parser("power", help="등록된 전원 명령을 COM으로 실행합니다.")
     _add_target_args(device_power)
     _add_runtime_args(device_power)
     device_power.add_argument("action", choices=("on", "off", "cycle"))
-    device_power.add_argument("--cycle-delay", type=float, default=2.0, help="Seconds between off and on.")
+    device_power.add_argument("--cycle-delay", type=float, default=2.0, help="전원 OFF와 ON 사이 대기 시간(초)입니다.")
     device_power.set_defaults(func=_cmd_device_power)
 
     device_preflight = device_subparsers.add_parser(
         "preflight",
-        help="Validate every destructive-update gate and optionally probe the target PC.",
+        help="Binary 쓰기 전 필수 조건을 검사하고 필요하면 대상 PC를 확인합니다.",
     )
     _add_target_args(device_preflight)
     _add_runtime_args(device_preflight)
@@ -209,13 +211,13 @@ def build_parser() -> argparse.ArgumentParser:
     device_preflight.add_argument(
         "--static-only",
         action="store_true",
-        help="Do not check the target PC's live COM, downloader, XML, and USB identity.",
+        help="대상 PC의 COM, 다운로드 도구, XML, USB 식별값 실시간 확인을 생략합니다.",
     )
     device_preflight.set_defaults(func=_cmd_device_preflight)
 
     device_update = device_subparsers.add_parser(
         "update",
-        help="Run the allowlisted downloader after all vendor and target gates pass.",
+        help="제조사와 대상 검사를 모두 통과한 뒤 허용된 다운로드 도구를 실행합니다.",
     )
     _add_target_args(device_update)
     _add_runtime_args(device_update)
@@ -223,18 +225,18 @@ def build_parser() -> argparse.ArgumentParser:
     device_update.add_argument(
         "--run-preloader-exit",
         action="store_true",
-        help="Send the channel's configured preloader_exit command before MTK update.",
+        help="MTK 업데이트 전에 등록된 Preloader 종료 명령을 전송합니다.",
     )
     device_update.add_argument(
         "--journal-root",
-        default="rig-firmware-results",
-        help="Folder for per-step firmware manifests and logs.",
+        default="fixture-binary-results",
+        help="단계별 Binary 기록과 로그를 저장할 폴더입니다.",
     )
     device_update.set_defaults(func=_cmd_device_update)
 
     device_qualify = device_subparsers.add_parser(
         "qualify",
-        help="Prepare and independently approve a field qualification reference.",
+        help="현장 검증 기준을 준비하고 별도 승인합니다.",
     )
     qualification_subparsers = device_qualify.add_subparsers(
         dest="qualification_command",
@@ -242,7 +244,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     qualification_prepare = qualification_subparsers.add_parser(
         "prepare",
-        help="Create an explicitly unapproved candidate from successful device evidence.",
+        help="성공한 장치 기록으로 미승인 검증 후보를 만듭니다.",
     )
     qualification_prepare.add_argument("--evidence", required=True)
     qualification_prepare.add_argument("--prepared-by", required=True)
@@ -252,7 +254,7 @@ def build_parser() -> argparse.ArgumentParser:
     qualification_prepare.set_defaults(func=_cmd_device_qualification_prepare)
     qualification_prepare_set = qualification_subparsers.add_parser(
         "prepare-set",
-        help="Create a production qualification candidate from 3-20 unique successful runs.",
+        help="서로 다른 성공 기록 3~20개로 운영 검증 후보를 만듭니다.",
     )
     qualification_prepare_set.add_argument(
         "--evidence", action="append", required=True
@@ -265,7 +267,7 @@ def build_parser() -> argparse.ArgumentParser:
     qualification_prepare_set.set_defaults(func=_cmd_device_qualification_prepare_set)
     qualification_approve = qualification_subparsers.add_parser(
         "approve",
-        help="Revalidate candidate evidence and create a reviewer-separated v2 reference.",
+        help="후보 기록을 다시 검사하고 검토자가 분리된 승인 기준을 만듭니다.",
     )
     qualification_approve.add_argument("--candidate", required=True)
     qualification_approve.add_argument("--evidence", required=True)
@@ -277,7 +279,7 @@ def build_parser() -> argparse.ArgumentParser:
     qualification_approve.set_defaults(func=_cmd_device_qualification_approve)
     qualification_approve_set = qualification_subparsers.add_parser(
         "approve-set",
-        help="Approve an exact repeated-run candidate as a production v3 reference.",
+        help="반복 실행 후보를 운영용 승인 기준으로 확정합니다.",
     )
     qualification_approve_set.add_argument("--candidate", required=True)
     qualification_approve_set.add_argument(
@@ -294,17 +296,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     device_accept = device_subparsers.add_parser(
         "accept",
-        help="Verify a completed device-update journal or FTP artifact against a field reference.",
+        help="완료된 Binary 업데이트 기록을 승인된 현장 기준과 비교합니다.",
     )
-    device_accept.add_argument("--evidence", required=True, help="Journal folder or artifact ZIP.")
-    device_accept.add_argument("--reference", required=True, help="Approved field reference JSON.")
-    device_accept.add_argument("--output", required=True, help="Acceptance report JSON path.")
-    device_accept.add_argument("--json", action="store_true", help="Print the full report.")
+    device_accept.add_argument("--evidence", required=True, help="업데이트 기록 폴더 또는 ZIP입니다.")
+    device_accept.add_argument("--reference", required=True, help="승인된 현장 기준 JSON입니다.")
+    device_accept.add_argument("--output", required=True, help="판정 보고서 JSON 저장 경로입니다.")
+    device_accept.add_argument("--json", action="store_true", help="전체 보고서를 JSON으로 표시합니다.")
     device_accept.set_defaults(func=_cmd_device_accept)
 
     device_raw_write = device_subparsers.add_parser(
         "raw-write",
-        help="Write one checksummed image to an explicit bounded QDL P/S+L sector range.",
+        help="검사값이 있는 이미지 하나를 지정된 QDL 섹터 범위에 씁니다.",
     )
     _add_target_args(device_raw_write)
     _add_runtime_args(device_raw_write)
@@ -315,7 +317,7 @@ def build_parser() -> argparse.ArgumentParser:
     device_raw_write.add_argument("--sector-size", type=int, choices=(512, 4096), default=4096)
     device_raw_write.add_argument("--qc-switch-confirmed", action="store_true")
     device_raw_write.add_argument("--confirm-write", default="")
-    device_raw_write.add_argument("--journal-root", default="rig-firmware-results")
+    device_raw_write.add_argument("--journal-root", default="fixture-binary-results")
     device_raw_write.set_defaults(func=_cmd_device_raw_write)
 
     return parser
@@ -327,6 +329,7 @@ def main(
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
     cancel_callback: Callable[[], bool] | None = None,
 ) -> int:
+    configure_windows_console_utf8()
     args_list = list(sys.argv[1:] if argv is None else argv)
     if not args_list:
         return interactive_loop()
@@ -350,23 +353,23 @@ def run_command(
     try:
         return int(args.func(args) or 0)
     except (RigConfigError, RigExecutionError, DeviceAcceptanceError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        print(f"오류: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
-        print("stopped", file=sys.stderr)
+        print("중지됨", file=sys.stderr)
         return 130
 
 
 def interactive_loop() -> int:
     parser = build_parser()
-    print("Rig Commander interactive shell")
-    print("Type help for commands, or exit to close.")
+    print("실장기 직접 제어 터미널")
+    print("명령 목록은 help, 종료는 exit를 입력하세요.")
     print("")
     parser.print_help()
 
     while True:
         try:
-            line = input("rig> ").strip()
+            line = input("fixture> ").strip()
         except EOFError:
             print("")
             return 0
@@ -382,7 +385,7 @@ def interactive_loop() -> int:
         try:
             argv = [_strip_wrapping_quotes(item) for item in shlex.split(line, posix=False)]
         except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
+            print(f"오류: {exc}", file=sys.stderr)
             continue
 
         if not argv:
@@ -421,26 +424,28 @@ def _add_target_args(parser: argparse.ArgumentParser) -> None:
         action="append",
         default=[],
         help=(
-            "Target selector. Use all, host_id, host_id:port_id, or tag:name. "
-            "Can be repeated. Default: all."
+            "대상 선택값입니다. all, 실장기_PC, 실장기_PC:실장기, tag:이름을 사용하며 "
+            "여러 번 지정할 수 있습니다. 기본값은 all입니다."
         ),
     )
 
 
 def _add_runtime_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--timeout", type=float, default=None, help="Command timeout seconds.")
-    parser.add_argument("--parallel", action="store_true", help="Run selected serial targets concurrently.")
+    parser.add_argument("--timeout", type=float, default=None, help="명령 제한 시간(초)입니다.")
+    parser.add_argument("--parallel", action="store_true", help="선택한 실장기를 동시에 실행합니다.")
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Show the generated command without running it.",
+        help="실행하지 않고 생성된 명령만 표시합니다.",
     )
-    parser.add_argument("--json", action="store_true", help="Print JSON results.")
+    parser.add_argument("--json", action="store_true", help="결과를 JSON 형식으로 표시합니다.")
 
 
 def _add_device_update_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--xml", required=True, help="Firmware XML path as seen by the target rig PC.")
-    parser.add_argument("--xml-sha256", default="", help="Expected XML SHA-256 from inventory metadata.")
+    parser.add_argument(
+        "--xml", required=True, help="대상 실장기 PC에서 접근할 수 있는 Binary XML 경로입니다."
+    )
+    parser.add_argument("--xml-sha256", default="", help="실장기 정보에 기록된 예상 XML SHA-256 값입니다.")
     parser.add_argument(
         "--mode",
         choices=("download-only", "format-all-download", "provision-only"),
@@ -451,7 +456,7 @@ def _add_device_update_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--confirm-format",
         default="",
-        help="For format mode, type the exact token shown by device preflight.",
+        help="Format 방식에서는 사전 검사 화면에 표시된 확인 문구를 정확히 입력합니다.",
     )
 
 

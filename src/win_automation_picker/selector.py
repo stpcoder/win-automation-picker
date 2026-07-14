@@ -82,7 +82,10 @@ class SelectorSegment:
         return node + suffix
 
     def matches(self, other: "SelectorSegment") -> bool:
-        if self.control_type and self.control_type.lower() != other.control_type.lower():
+        if (
+            self.control_type
+            and self.control_type.lower() != other.control_type.lower()
+        ):
             return False
         if self.automation_id and self.automation_id != other.automation_id:
             return False
@@ -107,7 +110,9 @@ class WindowMarker:
     def from_mapping(cls, data: dict[str, Any] | None) -> "WindowMarker | None":
         if not data:
             return None
-        name_contains = _clean(data.get("name_contains")) or _clean(data.get("text_contains"))
+        name_contains = _clean(data.get("name_contains")) or _clean(
+            data.get("text_contains")
+        )
         name_equals = _clean(data.get("name_equals")) or _clean(data.get("text_equals"))
         name_regex = _clean(data.get("name_regex")) or _clean(data.get("text_regex"))
         marker = cls(
@@ -136,17 +141,17 @@ class WindowMarker:
     def summary(self) -> str:
         pieces: list[str] = []
         if self.name_contains:
-            pieces.append(f"Name contains {self.name_contains!r}")
+            pieces.append(f"창 제목에 {self.name_contains!r} 포함")
         if self.name_equals:
-            pieces.append(f"Name equals {self.name_equals!r}")
+            pieces.append(f"창 제목이 {self.name_equals!r}와 같음")
         if self.name_regex:
-            pieces.append(f"Name regex {self.name_regex!r}")
+            pieces.append(f"창 제목 정규식 {self.name_regex!r}")
         if self.automation_id:
-            pieces.append(f"AutomationId={self.automation_id!r}")
+            pieces.append(f"자동화 ID={self.automation_id!r}")
         if self.control_type:
-            pieces.append(f"ControlType={self.control_type!r}")
+            pieces.append(f"항목 유형={self.control_type!r}")
         if self.class_name:
-            pieces.append(f"ClassName={self.class_name!r}")
+            pieces.append(f"창 클래스={self.class_name!r}")
         return ", ".join(pieces)
 
 
@@ -171,7 +176,9 @@ class UISelector:
             backend=_clean(data.get("backend")) or "uia",
             root_handle=data.get("root_handle"),
             process_id=data.get("process_id"),
-            rect=Rect(**rect_data) if isinstance(rect_data, dict) else Rect.from_any(rect_data),
+            rect=Rect(**rect_data)
+            if isinstance(rect_data, dict)
+            else Rect.from_any(rect_data),
             picked_point=tuple(point) if point else None,
             window_marker=WindowMarker.from_mapping(data.get("window_marker")),
         )
@@ -230,7 +237,9 @@ def selector_for_action(selector: UISelector, action: str) -> UISelector:
     return selector
 
 
-def _trim_to_deepest_control_type(selector: UISelector, control_types: set[str]) -> UISelector:
+def _trim_to_deepest_control_type(
+    selector: UISelector, control_types: set[str]
+) -> UISelector:
     segments = [selector.root, *selector.path]
     best_index: int | None = None
     for index, segment in enumerate(segments):

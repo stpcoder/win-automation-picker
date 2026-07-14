@@ -65,32 +65,32 @@ Invoke-PyInstallerBuild `
     -Icon "src/win_automation_picker/assets/rig_commander.ico" `
     -HiddenImports $rigHiddenImports
 Invoke-PyInstallerBuild `
-    -Name "WinAutomationPicker" `
+    -Name "AutomationBuilder" `
     -EntryPoint "src/win_automation_picker/__main__.py" `
     -Icon "src/win_automation_picker/assets/win_automation_picker.ico"
 Invoke-PyInstallerBuild `
-    -Name "RigCommander" `
+    -Name "FixtureControlCli" `
     -EntryPoint "src/win_automation_picker/rig_commander.py" `
     -Icon "src/win_automation_picker/assets/rig_commander.ico" `
     -Console `
     -HiddenImports $rigHiddenImports
 Invoke-PyInstallerBuild `
-    -Name "RigFtpCommander" `
+    -Name "FixtureCommunication" `
     -EntryPoint "src/win_automation_picker/rig_ftp_commander.py" `
     -Icon "src/win_automation_picker/assets/rig_commander.ico" `
     -HiddenImports $rigHiddenImports
 Invoke-PyInstallerBuild `
-    -Name "RigFtpCli" `
+    -Name "FixtureCommunicationCli" `
     -EntryPoint "src/win_automation_picker/rig_ftp_cli.py" `
     -Icon "src/win_automation_picker/assets/rig_commander.ico" `
     -Console
 
 $executables = @(
     "AEWorkbench.exe",
-    "WinAutomationPicker.exe",
-    "RigCommander.exe",
-    "RigFtpCommander.exe",
-    "RigFtpCli.exe"
+    "AutomationBuilder.exe",
+    "FixtureControlCli.exe",
+    "FixtureCommunication.exe",
+    "FixtureCommunicationCli.exe"
 )
 foreach ($name in $executables) {
     $path = Join-Path $OutputDirectory $name
@@ -100,19 +100,19 @@ foreach ($name in $executables) {
 }
 
 Assert-GuiStarts (Join-Path $OutputDirectory "AEWorkbench.exe")
-Assert-GuiStarts (Join-Path $OutputDirectory "WinAutomationPicker.exe")
-Assert-GuiStarts (Join-Path $OutputDirectory "RigFtpCommander.exe")
+Assert-GuiStarts (Join-Path $OutputDirectory "AutomationBuilder.exe")
+Assert-GuiStarts (Join-Path $OutputDirectory "FixtureCommunication.exe")
 
-& (Join-Path $OutputDirectory "RigCommander.exe") --help | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "RigCommander.exe --help failed" }
-& (Join-Path $OutputDirectory "RigCommander.exe") device system-check
-if ($LASTEXITCODE -ne 0) { throw "RigCommander.exe device system-check failed" }
-& (Join-Path $OutputDirectory "RigCommander.exe") firmware --help | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "RigCommander.exe firmware --help failed" }
-& (Join-Path $OutputDirectory "RigCommander.exe") device raw-write --help | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "RigCommander.exe device raw-write --help failed" }
-& (Join-Path $OutputDirectory "RigFtpCli.exe") --help | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "RigFtpCli.exe --help failed" }
+& (Join-Path $OutputDirectory "FixtureControlCli.exe") --help | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "FixtureControlCli.exe --help failed" }
+& (Join-Path $OutputDirectory "FixtureControlCli.exe") device system-check
+if ($LASTEXITCODE -ne 0) { throw "FixtureControlCli.exe device system-check failed" }
+& (Join-Path $OutputDirectory "FixtureControlCli.exe") firmware --help | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "FixtureControlCli.exe firmware --help failed" }
+& (Join-Path $OutputDirectory "FixtureControlCli.exe") device raw-write --help | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "FixtureControlCli.exe device raw-write --help failed" }
+& (Join-Path $OutputDirectory "FixtureCommunicationCli.exe") --help | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "FixtureCommunicationCli.exe --help failed" }
 
 $sourceCommit = if ($env:GITHUB_SHA) { $env:GITHUB_SHA } else { (git rev-parse HEAD).Trim() }
 $fileRows = foreach ($name in $executables) {
