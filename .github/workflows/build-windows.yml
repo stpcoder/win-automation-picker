@@ -210,6 +210,15 @@ jobs:
         run: |
           gh release view latest --repo "$env:GITHUB_REPOSITORY" 1>$null 2>$null
           if ($LASTEXITCODE -eq 0) {
+            $retiredAssets = @(
+              "RigCommander.exe",
+              "RigFtpCli.exe",
+              "RigFtpCommander.exe",
+              "WinAutomationPicker.exe"
+            )
+            foreach ($asset in $retiredAssets) {
+              gh release delete-asset latest $asset --yes --repo "$env:GITHUB_REPOSITORY" 2>$null
+            }
             gh release upload latest dist/AEWorkbench.exe dist/AutomationBuilder.exe dist/FixtureControlCli.exe dist/FixtureCommunication.exe dist/FixtureCommunicationCli.exe dist/AEWorkbench-Windows-x64.zip dist/windows-release-manifest.json --clobber --repo "$env:GITHUB_REPOSITORY"
             if ($LASTEXITCODE -ne 0) { throw "Failed to upload latest release assets" }
             gh release edit latest --latest --title "Latest Windows build" --repo "$env:GITHUB_REPOSITORY"
