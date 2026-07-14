@@ -10,31 +10,31 @@
       
       
       
-        <link rel="canonical" href="https://stpcoder.github.io/win-automation-picker/troubleshooting/">
+        <link rel="canonical" href="https://stpcoder.github.io/win-automation-picker/setup/fixture-pc/">
       
       
-        <link rel="prev" href="../operation/fixture-info/">
+        <link rel="prev" href="../admin-pc/">
       
       
-        <link rel="next" href="communication/">
+        <link rel="next" href="../sk-commander/">
       
       
         
       
       
-      <link rel="icon" href="../assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>확인 순서 - Mobile DRAM AE 실장기 테스트 설명서</title>
+        <title>실장기 PC 설정 - Mobile DRAM AE 실장기 테스트 설명서</title>
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -53,9 +53,9 @@
       
     
     
-      <link rel="stylesheet" href="../stylesheets/extra.css">
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
     
-    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#_1" class="md-skip">
+        <a href="#pc" class="md-skip">
           콘텐츠로 이동
         </a>
       
@@ -96,7 +96,7 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="상단/헤더">
-    <a href=".." title="Mobile DRAM AE 실장기 테스트 설명서" class="md-header__button md-logo" aria-label="Mobile DRAM AE 실장기 테스트 설명서" data-md-component="logo">
+    <a href="../.." title="Mobile DRAM AE 실장기 테스트 설명서" class="md-header__button md-logo" aria-label="Mobile DRAM AE 실장기 테스트 설명서" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -116,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              확인 순서
+              실장기 PC 설정
             
           </span>
         </div>
@@ -220,7 +220,7 @@
 
 <nav class="md-nav md-nav--primary" aria-label="네비게이션" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href=".." title="Mobile DRAM AE 실장기 테스트 설명서" class="md-nav__button md-logo" aria-label="Mobile DRAM AE 실장기 테스트 설명서" data-md-component="logo">
+    <a href="../.." title="Mobile DRAM AE 실장기 테스트 설명서" class="md-nav__button md-logo" aria-label="Mobile DRAM AE 실장기 테스트 설명서" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -247,8 +247,10 @@
       
   
   
+    
   
   
+  
     
     
     
@@ -259,13 +261,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_1" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" checked>
         
           
           <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="">
@@ -286,7 +286,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_1">
             <span class="md-nav__icon md-icon"></span>
             
@@ -304,7 +304,7 @@
   
   
     <li class="md-nav__item">
-      <a href=".." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -332,7 +332,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../setup/admin-pc/" class="md-nav__link">
+      <a href="../admin-pc/" class="md-nav__link">
         
   
   
@@ -357,10 +357,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../setup/fixture-pc/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    실장기 PC 설정
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -376,6 +403,92 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="목차">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      목차
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. 전달받은 폴더 확인
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. 프로그램 실행
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. 연결된 실장기 확인
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-sk-commander" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. SK Commander 상태 확인 시작
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. 실장기 정보 수정
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-windows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Windows를 다시 시작한 경우
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -388,7 +501,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../setup/sk-commander/" class="md-nav__link">
+      <a href="../sk-commander/" class="md-nav__link">
         
   
   
@@ -477,7 +590,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../operation/" class="md-nav__link">
+      <a href="../../operation/" class="md-nav__link">
         
   
   
@@ -505,7 +618,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../operation/prepare/" class="md-nav__link">
+      <a href="../../operation/prepare/" class="md-nav__link">
         
   
   
@@ -533,7 +646,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../operation/run-monitor/" class="md-nav__link">
+      <a href="../../operation/run-monitor/" class="md-nav__link">
         
   
   
@@ -561,7 +674,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../operation/dram-margin/" class="md-nav__link">
+      <a href="../../operation/dram-margin/" class="md-nav__link">
         
   
   
@@ -589,7 +702,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../operation/fixture-info/" class="md-nav__link">
+      <a href="../../operation/fixture-info/" class="md-nav__link">
         
   
   
@@ -621,8 +734,6 @@
       
   
   
-    
-  
   
   
     
@@ -635,11 +746,13 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
         
           
           <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
@@ -660,7 +773,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -675,37 +788,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    확인 순서
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../troubleshooting/" class="md-nav__link">
         
   
   
@@ -721,37 +807,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="목차">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      목차
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#_2" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        증상별 문서
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -764,7 +819,7 @@
   
   
     <li class="md-nav__item">
-      <a href="communication/" class="md-nav__link">
+      <a href="../../troubleshooting/communication/" class="md-nav__link">
         
   
   
@@ -792,7 +847,7 @@
   
   
     <li class="md-nav__item">
-      <a href="sk-commander/" class="md-nav__link">
+      <a href="../../troubleshooting/sk-commander/" class="md-nav__link">
         
   
   
@@ -820,7 +875,7 @@
   
   
     <li class="md-nav__item">
-      <a href="test-execution/" class="md-nav__link">
+      <a href="../../troubleshooting/test-execution/" class="md-nav__link">
         
   
   
@@ -875,10 +930,65 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#_2" class="md-nav__link">
+  <a href="#1" class="md-nav__link">
     <span class="md-ellipsis">
       
-        증상별 문서
+        1. 전달받은 폴더 확인
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. 프로그램 실행
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. 연결된 실장기 확인
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-sk-commander" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. SK Commander 상태 확인 시작
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. 실장기 정보 수정
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-windows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Windows를 다시 시작한 경우
       
     </span>
   </a>
@@ -905,24 +1015,70 @@
   
 
 
-<h1 id="_1">문제 해결 확인 순서</h1>
-<p>문제가 생기면 기능을 다시 설정하기 전에 아래 순서로 원인을 좁힙니다.</p>
+<h1 id="pc">실장기 PC 설정</h1>
+<p>이 작업은 <code>TFT30-1</code>처럼 실장기 4대가 연결된 각 Windows PC에서 한 번씩 진행합니다.</p>
+<h2 id="1">1. 전달받은 폴더 확인</h2>
+<p>관리자 PC에서 내보낸 폴더 이름과 실제 PC 이름이 같은지 확인합니다.</p>
+<div class="highlight"><pre><span></span><code>TFT30-1/
+  AEWorkbench.exe
+  fixture-connection.info
+  fixture-device.config.json
+  README-SETUP.txt
+</code></pre></div>
+<p>네 파일은 한 폴더에 둡니다. 설정 파일 이름을 바꾸지 않습니다.</p>
+<p>별도의 압축 파일이나 추가 설정 파일은 필요하지 않습니다. 관리자 PC에서 만든 폴더 이름과 실제 실장기 PC 이름만 일치시키면 됩니다.</p>
+<p>각 폴더의 설정에는 폴더 이름과 같은 실장기 PC 한 대와 그 PC에 연결된 실장기만 들어 있습니다. 예를 들어 <code>TFT30-1</code> 폴더에는 <code>TFT30-1</code>과 <code>CH1~CH4</code>만 들어가며, <code>TFT30-2</code> 정보는 섞이지 않습니다.</p>
+<h2 id="2">2. 프로그램 실행</h2>
 <ol>
-<li>프로그램 상단의 <code>연결 확인</code>이 성공하는지 확인합니다.</li>
-<li>실장기 PC에서 <code>통신 중</code>인지 확인합니다.</li>
-<li>관리자 PC의 <code>마지막 상태 조회</code> 시각을 확인합니다.</li>
-<li><code>연결 구조 &gt; 구성 검사</code>에서 오류가 있는지 확인합니다.</li>
-<li><code>이 PC COM 대조</code>로 COM과 USB 식별값을 확인합니다.</li>
-<li>SK Commander에서 실장기 번호를 눈으로 확인합니다.</li>
-<li>상태 규칙의 <code>현재 값 읽기</code> 결과와 실제 화면 값을 비교합니다.</li>
-<li>실행 기록에서 마지막으로 완료된 블록을 확인합니다.</li>
+<li><code>AEWorkbench.exe</code>를 실행합니다.</li>
+<li>Windows 보안 경고가 나오면 사내 승인 절차에 따라 실행을 허용합니다.</li>
+<li><code>3 초기 설정 &gt; 이 실장기 PC</code>를 엽니다.</li>
+<li><code>이 실장기 PC 식별값</code>이 실제 이름과 같은지 확인합니다.</li>
+<li><code>통신 시작</code>을 누릅니다.</li>
+<li>상태가 <code>통신 중: TFT30-1</code>로 바뀌는지 확인합니다.</li>
 </ol>
-<h2 id="_2">증상별 문서</h2>
+<p><img alt="실장기 PC 통신" src="../../assets/screenshots/09-fixture-pc-communication.png" /></p>
+<p>프로그램은 요청을 확인할 때만 짧게 통신 서버에 연결합니다. 계속 한 연결을 점유하지 않습니다.</p>
+<h2 id="3">3. 연결된 실장기 확인</h2>
+<ol>
+<li><code>관리자 PC · 실장기 PC &gt; 연결 구조</code>를 엽니다.</li>
+<li>현재 PC를 선택합니다.</li>
+<li><code>이 PC COM 대조</code>를 누릅니다.</li>
+<li>등록된 COM과 Windows에서 실제로 찾은 COM이 같은지 확인합니다.</li>
+</ol>
+<p>다음 값이 실장기마다 달라야 안정적으로 구별할 수 있습니다.</p>
 <ul>
-<li>실장기 PC가 보이지 않음: <a href="communication/">통신과 실장기 PC</a></li>
-<li>다른 SK Commander 창을 읽음: <a href="sk-commander/">SK Commander 인식</a></li>
-<li>SEQ 오류, COM 충돌, 중단 후 재시작: <a href="test-execution/">SEQ·COM·중단 복구</a></li>
+<li>Console COM</li>
+<li>예상 COM HWID 또는 USB Serial</li>
+<li>USB Hub / Port / 케이블 라벨</li>
+<li>실장기 번호</li>
 </ul>
+<p>COM 번호만 사용하면 USB를 다시 연결했을 때 다른 실장기로 바뀔 수 있습니다. 가능한 경우 HWID 또는 USB Serial도 함께 등록합니다.</p>
+<h2 id="4-sk-commander">4. SK Commander 상태 확인 시작</h2>
+<ol>
+<li>SK Commander를 최대 4개까지 실행합니다.</li>
+<li>각 창이 올바른 실장기 번호를 표시하는지 확인합니다.</li>
+<li><code>이 실장기 PC &gt; SK Commander 상태</code>에서 등록된 자동 실행 순서를 선택합니다.</li>
+<li><code>테스트 모니터링 시작</code>을 누릅니다.</li>
+</ol>
+<p>테스트 중에만 모니터링을 켭니다. 진행 중인 테스트가 없으면 관리자 PC의 자동 모니터링은 스스로 종료됩니다.</p>
+<h2 id="5">5. 실장기 정보 수정</h2>
+<p>현장에서 Binary 또는 장착 자재를 바꾼 경우 다음 순서로 수정합니다.</p>
+<ol>
+<li><code>3 초기 설정 &gt; 관리자 PC · 실장기 PC &gt; 실장기 PC 목록</code>을 엽니다.</li>
+<li>이 PC를 선택하고 <code>실장기 관리</code>를 누릅니다.</li>
+<li>실장기를 선택하고 <code>수정</code>을 누릅니다.</li>
+<li>값을 바꾸고 <code>저장</code>을 누릅니다.</li>
+<li><code>정보 동기화 &gt; 이 PC 정보를 통신 서버에 반영</code>을 누릅니다.</li>
+</ol>
+<p>관리자 PC가 다음 상태 새로고침을 수행하면 더 최근에 수정한 값이 표시됩니다.</p>
+<ul>
+<li>Binary만 바꾸면 <code>Binary 수정 시각</code>을 기준으로 반영됩니다.</li>
+<li>장착 자재, SoC, 고장 상태를 바꾸면 <code>기본 정보 수정 시각</code>을 기준으로 반영됩니다.</li>
+<li>두 종류는 따로 비교하므로 한쪽에서 최신 Binary를 적고 다른 쪽에서 최신 장착 자재를 적어도 둘 중 하나가 사라지지 않습니다.</li>
+</ul>
+<h2 id="6-windows">6. Windows를 다시 시작한 경우</h2>
+<p>현재 배포본은 Windows 시작 시 자동 실행을 강제로 등록하지 않습니다. PC를 다시 시작한 뒤에는 <code>AEWorkbench.exe</code>를 다시 실행하고 <code>통신 시작</code>을 눌러야 합니다. 자동 시작이 필요한 현장은 사내 승인된 시작 프로그램 정책으로 바로가기를 등록합니다.</p>
 
 
 
@@ -958,7 +1114,7 @@
       <nav class="md-footer__inner md-grid" aria-label="하단/푸터" >
         
           
-          <a href="../operation/fixture-info/" class="md-footer__link md-footer__link--prev" aria-label="이전: 실장기 정보 수정과 Excel">
+          <a href="../admin-pc/" class="md-footer__link md-footer__link--prev" aria-label="이전: 관리자 PC 설정">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -968,20 +1124,20 @@
                 이전
               </span>
               <div class="md-ellipsis">
-                실장기 정보 수정과 Excel
+                관리자 PC 설정
               </div>
             </div>
           </a>
         
         
           
-          <a href="communication/" class="md-footer__link md-footer__link--next" aria-label="다음: 통신과 실장기 PC">
+          <a href="../sk-commander/" class="md-footer__link md-footer__link--next" aria-label="다음: SK Commander 항목 연결">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 다음
               </span>
               <div class="md-ellipsis">
-                통신과 실장기 PC
+                SK Commander 항목 연결
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -1018,10 +1174,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "navigation.footer", "search.highlight", "search.suggest", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "\ud074\ub9bd\ubcf4\ub4dc\uc5d0 \ubcf5\uc0ac\ub428", "clipboard.copy": "\ud074\ub9bd\ubcf4\ub4dc\ub85c \ubcf5\uc0ac", "search.result.more.one": "\uc774 \ubb38\uc11c\uc5d0\uc11c 1\uac1c\uc758 \uac80\uc0c9 \uacb0\uacfc \ub354 \ubcf4\uae30", "search.result.more.other": "\uc774 \ubb38\uc11c\uc5d0\uc11c #\uac1c\uc758 \uac80\uc0c9 \uacb0\uacfc \ub354 \ubcf4\uae30", "search.result.none": "\uac80\uc0c9\uc5b4\uc640 \uc77c\uce58\ud558\ub294 \ubb38\uc11c\uac00 \uc5c6\uc2b5\ub2c8\ub2e4", "search.result.one": "1\uac1c\uc758 \uc77c\uce58\ud558\ub294 \ubb38\uc11c", "search.result.other": "#\uac1c\uc758 \uc77c\uce58\ud558\ub294 \ubb38\uc11c", "search.result.placeholder": "\uac80\uc0c9\uc5b4\ub97c \uc785\ub825\ud558\uc138\uc694", "search.result.term.missing": "\ud3ec\ud568\ub418\uc9c0 \uc54a\uc740 \uac80\uc0c9\uc5b4", "select.version": "\ubc84\uc804 \uc120\ud0dd"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "navigation.footer", "search.highlight", "search.suggest", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "\ud074\ub9bd\ubcf4\ub4dc\uc5d0 \ubcf5\uc0ac\ub428", "clipboard.copy": "\ud074\ub9bd\ubcf4\ub4dc\ub85c \ubcf5\uc0ac", "search.result.more.one": "\uc774 \ubb38\uc11c\uc5d0\uc11c 1\uac1c\uc758 \uac80\uc0c9 \uacb0\uacfc \ub354 \ubcf4\uae30", "search.result.more.other": "\uc774 \ubb38\uc11c\uc5d0\uc11c #\uac1c\uc758 \uac80\uc0c9 \uacb0\uacfc \ub354 \ubcf4\uae30", "search.result.none": "\uac80\uc0c9\uc5b4\uc640 \uc77c\uce58\ud558\ub294 \ubb38\uc11c\uac00 \uc5c6\uc2b5\ub2c8\ub2e4", "search.result.one": "1\uac1c\uc758 \uc77c\uce58\ud558\ub294 \ubb38\uc11c", "search.result.other": "#\uac1c\uc758 \uc77c\uce58\ud558\ub294 \ubb38\uc11c", "search.result.placeholder": "\uac80\uc0c9\uc5b4\ub97c \uc785\ub825\ud558\uc138\uc694", "search.result.term.missing": "\ud3ec\ud568\ub418\uc9c0 \uc54a\uc740 \uac80\uc0c9\uc5b4", "select.version": "\ubc84\uc804 \uc120\ud0dd"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

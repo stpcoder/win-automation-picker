@@ -10,31 +10,31 @@
       
       
       
-        <link rel="canonical" href="https://stpcoder.github.io/win-automation-picker/troubleshooting/">
+        <link rel="canonical" href="https://stpcoder.github.io/win-automation-picker/operation/prepare/">
       
       
-        <link rel="prev" href="../operation/fixture-info/">
+        <link rel="prev" href="../">
       
       
-        <link rel="next" href="communication/">
+        <link rel="next" href="../run-monitor/">
       
       
         
       
       
-      <link rel="icon" href="../assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>확인 순서 - Mobile DRAM AE 실장기 테스트 설명서</title>
+        <title>SEQ와 자동 실행 순서 준비 - Mobile DRAM AE 실장기 테스트 설명서</title>
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -53,9 +53,9 @@
       
     
     
-      <link rel="stylesheet" href="../stylesheets/extra.css">
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
     
-    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#_1" class="md-skip">
+        <a href="#seq" class="md-skip">
           콘텐츠로 이동
         </a>
       
@@ -96,7 +96,7 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="상단/헤더">
-    <a href=".." title="Mobile DRAM AE 실장기 테스트 설명서" class="md-header__button md-logo" aria-label="Mobile DRAM AE 실장기 테스트 설명서" data-md-component="logo">
+    <a href="../.." title="Mobile DRAM AE 실장기 테스트 설명서" class="md-header__button md-logo" aria-label="Mobile DRAM AE 실장기 테스트 설명서" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -116,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              확인 순서
+              SEQ와 자동 실행 순서 준비
             
           </span>
         </div>
@@ -220,7 +220,7 @@
 
 <nav class="md-nav md-nav--primary" aria-label="네비게이션" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href=".." title="Mobile DRAM AE 실장기 테스트 설명서" class="md-nav__button md-logo" aria-label="Mobile DRAM AE 실장기 테스트 설명서" data-md-component="logo">
+    <a href="../.." title="Mobile DRAM AE 실장기 테스트 설명서" class="md-nav__button md-logo" aria-label="Mobile DRAM AE 실장기 테스트 설명서" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -304,7 +304,7 @@
   
   
     <li class="md-nav__item">
-      <a href=".." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -332,7 +332,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../setup/admin-pc/" class="md-nav__link">
+      <a href="../../setup/admin-pc/" class="md-nav__link">
         
   
   
@@ -360,7 +360,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../setup/fixture-pc/" class="md-nav__link">
+      <a href="../../setup/fixture-pc/" class="md-nav__link">
         
   
   
@@ -388,7 +388,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../setup/sk-commander/" class="md-nav__link">
+      <a href="../../setup/sk-commander/" class="md-nav__link">
         
   
   
@@ -396,207 +396,6 @@
     
   
     SK Commander 항목 연결
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-        
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
-        
-          
-          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    테스트 운용
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    테스트 운용
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../operation/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    운용 순서
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../operation/prepare/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    SEQ와 자동 실행 순서 준비
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../operation/run-monitor/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    테스트 실행과 상태 확인
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../operation/dram-margin/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    SoC별 DRAM 마진 설정
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../operation/fixture-info/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    실장기 정보 수정과 Excel
   
 
     
@@ -639,17 +438,17 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
         
           
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
             
   
   
   <span class="md-ellipsis">
     
   
-    문제 해결
+    테스트 운용
   
 
     
@@ -660,16 +459,44 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_3">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
   
-    문제 해결
+    테스트 운용
   
 
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    운용 순서
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
             
               
                 
@@ -694,7 +521,7 @@
   <span class="md-ellipsis">
     
   
-    확인 순서
+    SEQ와 자동 실행 순서 준비
   
 
     
@@ -712,7 +539,7 @@
   <span class="md-ellipsis">
     
   
-    확인 순서
+    SEQ와 자동 실행 순서 준비
   
 
     
@@ -738,10 +565,54 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#_2" class="md-nav__link">
+  <a href="#1-seq" class="md-nav__link">
     <span class="md-ellipsis">
       
-        증상별 문서
+        1. SEQ 준비
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. 자동 실행 순서 녹화
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. 블록 편집
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. 실장기별 입력값 만들기
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-python" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. 테스트와 Python 준비
       
     </span>
   </a>
@@ -764,7 +635,180 @@
   
   
     <li class="md-nav__item">
-      <a href="communication/" class="md-nav__link">
+      <a href="../run-monitor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    테스트 실행과 상태 확인
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dram-margin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SoC별 DRAM 마진 설정
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fixture-info/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    실장기 정보 수정과 Excel
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    문제 해결
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    문제 해결
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    확인 순서
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../troubleshooting/communication/" class="md-nav__link">
         
   
   
@@ -792,7 +836,7 @@
   
   
     <li class="md-nav__item">
-      <a href="sk-commander/" class="md-nav__link">
+      <a href="../../troubleshooting/sk-commander/" class="md-nav__link">
         
   
   
@@ -820,7 +864,7 @@
   
   
     <li class="md-nav__item">
-      <a href="test-execution/" class="md-nav__link">
+      <a href="../../troubleshooting/test-execution/" class="md-nav__link">
         
   
   
@@ -875,10 +919,54 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#_2" class="md-nav__link">
+  <a href="#1-seq" class="md-nav__link">
     <span class="md-ellipsis">
       
-        증상별 문서
+        1. SEQ 준비
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. 자동 실행 순서 녹화
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. 블록 편집
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. 실장기별 입력값 만들기
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-python" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. 테스트와 Python 준비
       
     </span>
   </a>
@@ -905,24 +993,75 @@
   
 
 
-<h1 id="_1">문제 해결 확인 순서</h1>
-<p>문제가 생기면 기능을 다시 설정하기 전에 아래 순서로 원인을 좁힙니다.</p>
+<h1 id="seq">SEQ와 자동 실행 순서 준비</h1>
+<h2 id="1-seq">1. SEQ 준비</h2>
 <ol>
-<li>프로그램 상단의 <code>연결 확인</code>이 성공하는지 확인합니다.</li>
-<li>실장기 PC에서 <code>통신 중</code>인지 확인합니다.</li>
-<li>관리자 PC의 <code>마지막 상태 조회</code> 시각을 확인합니다.</li>
-<li><code>연결 구조 &gt; 구성 검사</code>에서 오류가 있는지 확인합니다.</li>
-<li><code>이 PC COM 대조</code>로 COM과 USB 식별값을 확인합니다.</li>
-<li>SK Commander에서 실장기 번호를 눈으로 확인합니다.</li>
-<li>상태 규칙의 <code>현재 값 읽기</code> 결과와 실제 화면 값을 비교합니다.</li>
-<li>실행 기록에서 마지막으로 완료된 블록을 확인합니다.</li>
+<li><code>2 SEQ · 자동 실행 순서 준비 &gt; SEQ · 자동 실행 순서</code>를 엽니다.</li>
+<li><code>SEQ 작성 파일</code>에서 작성한 파일을 선택합니다.</li>
+<li><code>검사 완료 SEQ</code>의 저장 위치를 확인합니다.</li>
+<li><code>오류 검사 · 내보내기</code>를 누릅니다.</li>
+<li>결과가 <code>SEQ PASS</code>인지 확인합니다.</li>
 </ol>
-<h2 id="_2">증상별 문서</h2>
+<p>SEQ 명령은 <code>;</code>로 구분합니다. 한 줄 형식에서 <code>;</code> 다음에 불필요한 공백이 들어가면 대상 프로그램에서 오류가 날 수 있으므로 검사 결과를 반드시 확인합니다.</p>
+<div class="highlight"><pre><span></span><code>log 0xff;tm -de 0x2;exit;exit
+</code></pre></div>
+<p>부팅 단계 전환, <code>clk.sh</code>, 온도, VDD, 4-corner 조건은 작성한 SEQ 목적에 맞게 포함합니다.</p>
+<h2 id="2">2. 자동 실행 순서 녹화</h2>
+<ol>
+<li><code>순서 편집</code>을 누릅니다.</li>
+<li><code>연속 녹화 시작</code>을 누릅니다.</li>
+<li>SK Commander에서 평소처럼 Load, 입력, Start 순서로 조작합니다.</li>
+<li>편집 화면으로 돌아와 <code>녹화 정지</code>를 누릅니다.</li>
+<li>아래 녹화 목록에서 프로그램, 동작, 대상, 입력값을 확인합니다.</li>
+</ol>
+<p>편집 프로그램 안에서 누른 <code>녹화 정지</code>는 기록되지 않습니다. 외부 프로그램에서 수행한 클릭과 입력만 블록으로 만들어집니다.</p>
+<h2 id="3">3. 블록 편집</h2>
 <ul>
-<li>실장기 PC가 보이지 않음: <a href="communication/">통신과 실장기 PC</a></li>
-<li>다른 SK Commander 창을 읽음: <a href="sk-commander/">SK Commander 인식</a></li>
-<li>SEQ 오류, COM 충돌, 중단 후 재시작: <a href="test-execution/">SEQ·COM·중단 복구</a></li>
+<li>블록 이름을 <code>SEQ Load</code>, <code>자재 ID 입력</code>, <code>테스트 시작</code>처럼 바꿉니다.</li>
+<li>블록을 잡아 위아래로 이동합니다.</li>
+<li>반복 블록 안으로 끌어 넣어 반복 횟수를 지정합니다.</li>
+<li>텍스트 또는 색상 조건 블록 안에 실행할 블록을 넣습니다.</li>
+<li>필요 없는 블록은 선택 후 Delete 키 또는 삭제 버튼으로 지웁니다.</li>
+<li>실행 취소와 다시 실행으로 이동 결과를 되돌릴 수 있습니다.</li>
 </ul>
+<p><img alt="자동 실행 순서 편집" src="../../assets/screenshots/02-automation-flow.png" /></p>
+<h2 id="4">4. 실장기별 입력값 만들기</h2>
+<p>녹화한 텍스트 입력은 두 방식 중 하나로 설정합니다.</p>
+<table>
+<thead>
+<tr>
+<th>방식</th>
+<th>사용 시점</th>
+<th>예</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>고정값</td>
+<td>모든 실장기에 같은 값 입력</td>
+<td>SEQ 이름</td>
+</tr>
+<tr>
+<td>실장기별 입력값</td>
+<td>실장기마다 값이 다름</td>
+<td>장착 자재 ID, Slot, 온도 이름</td>
+</tr>
+</tbody>
+</table>
+<p>텍스트를 보내는 방법은 기본값인 <code>한 번에 입력</code>을 사용합니다. 대상 프로그램에서 일부 글자가 빠지면 해당 블록을 선택하고 <code>한 글자씩 입력</code>으로 바꿔 다시 시험합니다.</p>
+<p>녹화 목록에서 입력 동작을 선택하고 <code>선택 입력을 실장기별 값으로</code>를 누릅니다. 변수 이름은 <code>material_id</code>, <code>sequence_name</code>, <code>temperature_c</code>처럼 지정합니다.</p>
+<p>실행할 때 <code>TFT30-1 / CH1</code>에는 <code>AA-1</code>, <code>TFT30-1 / CH2</code>에는 <code>AA-2</code>를 넣을 수 있습니다. 자동 실행 순서의 텍스트에는 <code>${material_id}</code>가 사용되고 실제 값은 실행 직전에 각 행에서 들어갑니다.</p>
+<p>같은 SEQ를 여러 TFT/UTF에 보내는 경우에도 <code>sequence_name</code>만 같게 두고 <code>material_id</code>는 실장기 정보에서 불러온 값을 유지합니다. 공통 입력값에 <code>AA-1</code>을 한 번 적어 모든 실장기에 덮어쓰지 않습니다.</p>
+<h2 id="5-python">5. 테스트와 Python 준비</h2>
+<ol>
+<li><code>값 편집</code>에서 이 PC에서 테스트할 임시 값을 입력합니다.</li>
+<li><code>테스트 실행</code>을 눌러 선택한 프로그램에서 실제 동작을 확인합니다.</li>
+<li>이상이 있으면 즉시 <code>중지</code>를 누릅니다.</li>
+<li><code>검사 · Python 준비</code>를 눌러 실행 가능한 <code>.py</code> 파일을 만듭니다.</li>
+<li><code>통신 서버에 등록</code>을 누릅니다.</li>
+</ol>
+<p>Python 파일은 블록 순서, 반복, 조건, 실장기별 입력값을 포함하므로 별도 편집 없이 실행할 수 있습니다.</p>
+<p><img alt="SEQ와 자동 실행 순서 준비" src="../../assets/screenshots/03-automation-preparation.png" /></p>
 
 
 
@@ -958,7 +1097,7 @@
       <nav class="md-footer__inner md-grid" aria-label="하단/푸터" >
         
           
-          <a href="../operation/fixture-info/" class="md-footer__link md-footer__link--prev" aria-label="이전: 실장기 정보 수정과 Excel">
+          <a href="../" class="md-footer__link md-footer__link--prev" aria-label="이전: 운용 순서">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -968,20 +1107,20 @@
                 이전
               </span>
               <div class="md-ellipsis">
-                실장기 정보 수정과 Excel
+                운용 순서
               </div>
             </div>
           </a>
         
         
           
-          <a href="communication/" class="md-footer__link md-footer__link--next" aria-label="다음: 통신과 실장기 PC">
+          <a href="../run-monitor/" class="md-footer__link md-footer__link--next" aria-label="다음: 테스트 실행과 상태 확인">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 다음
               </span>
               <div class="md-ellipsis">
-                통신과 실장기 PC
+                테스트 실행과 상태 확인
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -1018,10 +1157,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "navigation.footer", "search.highlight", "search.suggest", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "\ud074\ub9bd\ubcf4\ub4dc\uc5d0 \ubcf5\uc0ac\ub428", "clipboard.copy": "\ud074\ub9bd\ubcf4\ub4dc\ub85c \ubcf5\uc0ac", "search.result.more.one": "\uc774 \ubb38\uc11c\uc5d0\uc11c 1\uac1c\uc758 \uac80\uc0c9 \uacb0\uacfc \ub354 \ubcf4\uae30", "search.result.more.other": "\uc774 \ubb38\uc11c\uc5d0\uc11c #\uac1c\uc758 \uac80\uc0c9 \uacb0\uacfc \ub354 \ubcf4\uae30", "search.result.none": "\uac80\uc0c9\uc5b4\uc640 \uc77c\uce58\ud558\ub294 \ubb38\uc11c\uac00 \uc5c6\uc2b5\ub2c8\ub2e4", "search.result.one": "1\uac1c\uc758 \uc77c\uce58\ud558\ub294 \ubb38\uc11c", "search.result.other": "#\uac1c\uc758 \uc77c\uce58\ud558\ub294 \ubb38\uc11c", "search.result.placeholder": "\uac80\uc0c9\uc5b4\ub97c \uc785\ub825\ud558\uc138\uc694", "search.result.term.missing": "\ud3ec\ud568\ub418\uc9c0 \uc54a\uc740 \uac80\uc0c9\uc5b4", "select.version": "\ubc84\uc804 \uc120\ud0dd"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "navigation.footer", "search.highlight", "search.suggest", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "\ud074\ub9bd\ubcf4\ub4dc\uc5d0 \ubcf5\uc0ac\ub428", "clipboard.copy": "\ud074\ub9bd\ubcf4\ub4dc\ub85c \ubcf5\uc0ac", "search.result.more.one": "\uc774 \ubb38\uc11c\uc5d0\uc11c 1\uac1c\uc758 \uac80\uc0c9 \uacb0\uacfc \ub354 \ubcf4\uae30", "search.result.more.other": "\uc774 \ubb38\uc11c\uc5d0\uc11c #\uac1c\uc758 \uac80\uc0c9 \uacb0\uacfc \ub354 \ubcf4\uae30", "search.result.none": "\uac80\uc0c9\uc5b4\uc640 \uc77c\uce58\ud558\ub294 \ubb38\uc11c\uac00 \uc5c6\uc2b5\ub2c8\ub2e4", "search.result.one": "1\uac1c\uc758 \uc77c\uce58\ud558\ub294 \ubb38\uc11c", "search.result.other": "#\uac1c\uc758 \uc77c\uce58\ud558\ub294 \ubb38\uc11c", "search.result.placeholder": "\uac80\uc0c9\uc5b4\ub97c \uc785\ub825\ud558\uc138\uc694", "search.result.term.missing": "\ud3ec\ud568\ub418\uc9c0 \uc54a\uc740 \uac80\uc0c9\uc5b4", "select.version": "\ubc84\uc804 \uc120\ud0dd"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>
