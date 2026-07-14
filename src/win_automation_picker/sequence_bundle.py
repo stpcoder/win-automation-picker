@@ -19,7 +19,7 @@ MAX_MEMBER_BYTES = 32 * 1024 * 1024
 
 
 class RigSequenceBundleError(ValueError):
-    """Raised when a Rig SEQ package is incomplete, unsafe, or corrupted."""
+    """Raised when a validated SEQ bundle is incomplete, unsafe, or corrupted."""
 
 
 @dataclass(frozen=True)
@@ -82,7 +82,9 @@ class RigSequenceBundle:
                     "objective": str(campaign.get("objective") or ""),
                     "hypothesis": str(campaign.get("hypothesis") or ""),
                     "expected_result": str(campaign.get("expected_result") or ""),
-                    "acceptance_criteria": str(campaign.get("acceptance_criteria") or ""),
+                    "acceptance_criteria": str(
+                        campaign.get("acceptance_criteria") or ""
+                    ),
                     "stop_condition": str(campaign.get("stop_condition") or ""),
                     "repeat_count": max(1, int(campaign.get("repeat_count") or 1)),
                     "campaign_snapshot_sha256": str(
@@ -100,7 +102,9 @@ def _digest(data: bytes) -> str:
 
 
 def _json_digest(value: dict[str, Any]) -> str:
-    canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    canonical = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    )
     return _digest(canonical.encode("utf-8"))
 
 
@@ -108,20 +112,22 @@ def _read_json(archive: ZipFile, name: str) -> dict[str, Any]:
     try:
         value = json.loads(archive.read(name).decode("utf-8"))
     except (KeyError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise RigSequenceBundleError(f"Invalid {name} in Rig SEQ package.") from exc
+        raise RigSequenceBundleError(
+            f"검사 완료 SEQ의 {name} 파일을 읽을 수 없습니다."
+        ) from exc
     if not isinstance(value, dict):
-        raise RigSequenceBundleError(f"{name} must contain a JSON object.")
+        raise RigSequenceBundleError(f"{name} 파일에는 JSON 객체가 있어야 합니다.")
     return value
 
 
 def parse_rig_sequence_bundle(data: bytes) -> RigSequenceBundle:
     if len(data) > MAX_BUNDLE_BYTES:
-        raise RigSequenceBundleError("Rig SEQ package exceeds the 64 MB package limit.")
+        raise RigSequenceBundleError("검사 완료 SEQ가 64 MB 제한을 넘었습니다.")
     try:
         archive = ZipFile(BytesIO(data), "r")
     except BadZipFile as exc:
         raise RigSequenceBundleError(
-            "Rig SEQ package is not a valid ZIP archive."
+            "검사 완료 SEQ가 올바른 ZIP 파일이 아닙니다."
         ) from exc
 
     try:
@@ -131,23 +137,23 @@ def parse_rig_sequence_bundle(data: bytes) -> RigSequenceBundle:
             missing = sorted(required - set(names))
             if missing:
                 raise RigSequenceBundleError(
-                    f"Rig SEQ package is missing: {', '.join(missing)}"
+                    f"검사 완료 SEQ에 필요한 파일이 없습니다: {', '.join(missing)}"
                 )
             duplicates = sorted(name for name in required if names.count(name) != 1)
             if duplicates:
                 raise RigSequenceBundleError(
-                    f"Rig SEQ package contains duplicate members: {', '.join(duplicates)}"
+                    f"검사 완료 SEQ에 같은 파일이 중복되어 있습니다: {', '.join(duplicates)}"
                 )
             for name in required:
                 info = archive.getinfo(name)
                 if info.file_size > MAX_MEMBER_BYTES:
                     raise RigSequenceBundleError(
-                        f"Rig SEQ member exceeds the 32 MB limit: {name}"
+                        f"검사 완료 SEQ 내부 파일이 32 MB 제한을 넘었습니다: {name}"
                     )
             total_size = sum(archive.getinfo(name).file_size for name in required)
             if total_size > MAX_BUNDLE_BYTES:
                 raise RigSequenceBundleError(
-                    "Rig SEQ members exceed the 64 MB expanded-size limit."
+                    "검사 완료 SEQ의 압축 해제 크기가 64 MB 제한을 넘었습니다."
                 )
 
             manifest = _read_json(archive, MANIFEST_PATH)
@@ -156,35 +162,35 @@ def parse_rig_sequence_bundle(data: bytes) -> RigSequenceBundle:
             recipe_bytes = archive.read(RECIPE_PATH)
     except (BadZipFile, RuntimeError, NotImplementedError) as exc:
         raise RigSequenceBundleError(
-            "Rig SEQ package contains unreadable ZIP members."
+            "검사 완료 SEQ 안에 읽을 수 없는 파일이 있습니다."
         ) from exc
 
     if manifest.get("schema") != BUNDLE_SCHEMA:
-        raise RigSequenceBundleError("Unsupported Rig SEQ package schema.")
+        raise RigSequenceBundleError("지원하지 않는 검사 완료 SEQ 형식입니다.")
     if (
         validation.get("ok") is not True
         or (manifest.get("validation") or {}).get("ok") is not True
     ):
-        raise RigSequenceBundleError(
-            "Rig SEQ package did not pass generator validation."
-        )
+        raise RigSequenceBundleError("SEQ 오류 검사를 통과하지 않은 파일입니다.")
 
     sequence_sha = str((manifest.get("sequence") or {}).get("sha256") or "")
     recipe_sha = str((manifest.get("recipe") or {}).get("sha256") or "")
     if not sequence_sha or _digest(sequence_bytes) != sequence_sha:
-        raise RigSequenceBundleError("Rig SEQ package sequence checksum mismatch.")
+        raise RigSequenceBundleError("SEQ 내용의 확인값이 일치하지 않습니다.")
     if not recipe_sha or _digest(recipe_bytes) != recipe_sha:
-        raise RigSequenceBundleError("Rig SEQ package recipe checksum mismatch.")
+        raise RigSequenceBundleError("SEQ 작성 정보의 확인값이 일치하지 않습니다.")
 
     try:
         recipe = json.loads(recipe_bytes.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise RigSequenceBundleError("Rig SEQ recipe is not valid UTF-8 JSON.") from exc
+        raise RigSequenceBundleError(
+            "SEQ 작성 정보가 올바른 UTF-8 JSON이 아닙니다."
+        ) from exc
     if not isinstance(recipe, dict):
-        raise RigSequenceBundleError("Rig SEQ recipe must contain a JSON object.")
+        raise RigSequenceBundleError("SEQ 작성 정보는 JSON 객체여야 합니다.")
     if str(manifest.get("bundle_id") or "") != sequence_sha[:16]:
         raise RigSequenceBundleError(
-            "Rig SEQ package bundle id does not match its sequence checksum."
+            "검사 완료 SEQ의 식별값과 내용 확인값이 일치하지 않습니다."
         )
 
     campaign_bundle = manifest.get("campaign")
@@ -193,24 +199,33 @@ def parse_rig_sequence_bundle(data: bytes) -> RigSequenceBundle:
             not isinstance(campaign_bundle, dict)
             or campaign_bundle.get("schema") != "ae-campaign-bundle/v1"
         ):
-            raise RigSequenceBundleError("Unsupported AE campaign bundle schema.")
+            raise RigSequenceBundleError("지원하지 않는 테스트 실행 정보 형식입니다.")
         snapshot = campaign_bundle.get("snapshot")
         preflight = campaign_bundle.get("preflight")
-        if not isinstance(snapshot, dict) or snapshot.get("schema") != "ae-test-campaign/v1":
-            raise RigSequenceBundleError("Rig SEQ package has an invalid AE campaign snapshot.")
+        if (
+            not isinstance(snapshot, dict)
+            or snapshot.get("schema") != "ae-test-campaign/v1"
+        ):
+            raise RigSequenceBundleError(
+                "검사 완료 SEQ의 테스트 정보가 올바르지 않습니다."
+            )
         if (
             not isinstance(preflight, dict)
             or preflight.get("schema") != "ae-campaign-preflight/v1"
         ):
-            raise RigSequenceBundleError("Rig SEQ package has an invalid AE preflight report.")
+            raise RigSequenceBundleError(
+                "검사 완료 SEQ의 사전 점검 결과가 올바르지 않습니다."
+            )
         campaign_id = str(snapshot.get("campaign_id") or "")
         if not campaign_id or campaign_id != str(preflight.get("campaign_id") or ""):
-            raise RigSequenceBundleError("AE campaign and preflight IDs do not match.")
+            raise RigSequenceBundleError(
+                "테스트 정보와 사전 점검 결과의 식별값이 다릅니다."
+            )
         if preflight.get("ok") is not True:
-            raise RigSequenceBundleError("AE campaign preflight did not pass.")
+            raise RigSequenceBundleError("테스트 사전 점검을 통과하지 못했습니다.")
         expected_campaign_sha = str(campaign_bundle.get("snapshot_sha256") or "")
         if not expected_campaign_sha or _json_digest(snapshot) != expected_campaign_sha:
-            raise RigSequenceBundleError("AE campaign snapshot checksum mismatch.")
+            raise RigSequenceBundleError("테스트 정보의 확인값이 일치하지 않습니다.")
 
     return RigSequenceBundle(
         manifest=manifest,

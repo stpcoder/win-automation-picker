@@ -104,7 +104,7 @@ class AEWorkbenchMixin:
     def _browse_workbench_project(self) -> None:
         path = filedialog.askopenfilename(
             title="AE Workbench 작업 파일 열기",
-            filetypes=[("AE Workbench", "*.aework.json"), ("JSON", "*.json"), ("All files", "*.*")],
+            filetypes=[("AE 작업", "*.aework.json"), ("JSON", "*.json"), ("모든 파일", "*.*")],
         )
         if not path:
             return
@@ -156,14 +156,14 @@ class AEWorkbenchMixin:
         self.wb_seq_recipe_var.set(str(source))
         if not self.wb_seq_package_var.get().strip():
             name = source.name.removesuffix(".hseq.json")
-            self.wb_seq_package_var.set(str(source.with_name(f"{name}.rigseq.zip")))
+            self.wb_seq_package_var.set(str(source.with_name(f"{name}.fixtureseq.zip")))
         self._workbench_uploaded = False
         self._refresh_workbench_state()
 
     def _browse_workbench_seq_package(self) -> None:
         path = filedialog.askopenfilename(
-            title="검증된 Rig SEQ 패키지 선택",
-            filetypes=[("Rig SEQ package", "*.rigseq.zip"), ("ZIP", "*.zip"), ("All files", "*.*")],
+            title="검사 완료 SEQ 선택",
+            filetypes=[("검사 완료 SEQ", "*.fixtureseq.zip"), ("ZIP", "*.zip"), ("모든 파일", "*.*")],
         )
         if path:
             self.wb_seq_package_var.set(path)
@@ -178,12 +178,12 @@ class AEWorkbenchMixin:
 
     def _browse_workbench_macro(self) -> None:
         path = filedialog.askopenfilename(
-            title="Scratch 매크로 프로젝트 선택",
+            title="자동 실행 순서 파일 선택",
             filetypes=[
-                ("Macro project or export", "*.json *.py"),
-                ("Macro project", "*.json"),
+                ("자동 실행 순서 또는 Python", "*.json *.py"),
+                ("자동 실행 순서", "*.json"),
                 ("Exported Python", "*.py"),
-                ("All files", "*.*"),
+                ("모든 파일", "*.*"),
             ],
         )
         if not path:
@@ -199,10 +199,10 @@ class AEWorkbenchMixin:
                 return
             imported_export = source
             destination = filedialog.asksaveasfilename(
-                title="편집 가능한 매크로 프로젝트 저장",
-                initialfile=f"{source.stem}.macro.json",
+                title="편집 가능한 자동 실행 순서 저장",
+                initialfile=f"{source.stem}.automation.json",
                 defaultextension=".json",
-                filetypes=[("Macro project", "*.json"), ("All files", "*.*")],
+                filetypes=[("자동 실행 순서", "*.json"), ("모든 파일", "*.*")],
             )
             if not destination:
                 return
@@ -257,7 +257,7 @@ class AEWorkbenchMixin:
             )
             self._sequence_processes = [item for item in self._sequence_processes if item.poll() is None]
             self._sequence_processes.append(process)
-            self._set_readonly_text(self.wb_seq_report_text, "SEQ Generator를 열었습니다.")
+            self._set_readonly_text(self.wb_seq_report_text, "SEQ 편집기를 열었습니다.")
         except BaseException as exc:
             self._show_error(exc)
 
@@ -277,10 +277,10 @@ class AEWorkbenchMixin:
         if not output:
             source = Path(recipe)
             output = filedialog.asksaveasfilename(
-                title="Rig SEQ 패키지 저장",
-                initialfile=f"{source.name.removesuffix('.hseq.json')}.rigseq.zip",
-                defaultextension=".rigseq.zip",
-                filetypes=[("Rig SEQ package", "*.rigseq.zip"), ("ZIP", "*.zip")],
+                title="검사 완료 SEQ 저장",
+                initialfile=f"{source.name.removesuffix('.hseq.json')}.fixtureseq.zip",
+                defaultextension=".fixtureseq.zip",
+                filetypes=[("검사 완료 SEQ", "*.fixtureseq.zip"), ("ZIP", "*.zip")],
             )
             if not output:
                 return
@@ -351,10 +351,10 @@ class AEWorkbenchMixin:
 
     def _new_workbench_macro(self) -> None:
         path = filedialog.asksaveasfilename(
-            title="새 Scratch 매크로 프로젝트",
-            initialfile="sk-commander-launcher.macro.json",
+            title="새 자동 실행 순서 파일",
+            initialfile="sk-commander-automation.json",
             defaultextension=".json",
-            filetypes=[("Macro project", "*.json"), ("All files", "*.*")],
+            filetypes=[("자동 실행 순서", "*.json"), ("모든 파일", "*.*")],
         )
         if not path:
             return
@@ -374,7 +374,7 @@ class AEWorkbenchMixin:
     def _workbench_macro_source(self) -> Path:
         value = self.wb_macro_project_var.get().strip()
         if not value:
-            raise FileNotFoundError("매크로 프로젝트를 먼저 선택하세요.")
+            raise FileNotFoundError("자동 실행 순서 파일을 먼저 선택하세요.")
         return resolve_workbench_path(
             value,
             self.workbench_path_var.get().strip() or None,
@@ -385,8 +385,36 @@ class AEWorkbenchMixin:
         stem = source.stem.removesuffix(".macro")
         return source.with_name(f"{stem}.py")
 
-    def _open_workbench_macro_editor(self) -> None:
+    def _open_workbench_macro_editor(
+        self,
+        *,
+        fixture_channel: str = "",
+        mapping_mode: bool = False,
+    ) -> None:
         path = self.wb_macro_project_var.get().strip()
+        if not path and mapping_mode:
+            workspace = Path(
+                self.workbench_path_var.get().strip() or self._default_workbench_path()
+            ).expanduser()
+            source = workspace.resolve().parent / "sk-commander-status.json"
+            try:
+                source.parent.mkdir(parents=True, exist_ok=True)
+                if not source.exists():
+                    save_automation_project(
+                        source,
+                        AutomationProject(recipe=AutomationRecipe()),
+                    )
+            except BaseException as exc:
+                self._show_error(exc)
+                return
+            self.wb_macro_project_var.set(str(source))
+            self.wb_macro_export_var.set(str(self._default_macro_export_path(source)))
+            self._workbench_project = replace(
+                self._workbench_from_fields(),
+                macro_export_source_sha256="",
+            )
+            self._save_workbench_project(silent=True)
+            path = str(source)
         if not path:
             self._browse_workbench_macro()
             path = self.wb_macro_project_var.get().strip()
@@ -394,7 +422,7 @@ class AEWorkbenchMixin:
             return
         source = self._workbench_macro_source()
         if not source.is_file():
-            self._show_error(FileNotFoundError(f"매크로 프로젝트를 찾을 수 없습니다: {source}"))
+            self._show_error(FileNotFoundError(f"자동 실행 순서 파일을 찾을 수 없습니다: {source}"))
             return
         if self._macro_editor is not None:
             try:
@@ -402,8 +430,8 @@ class AEWorkbenchMixin:
                     current_path = getattr(self._macro_editor, "_project_path", None)
                     if current_path is not None and Path(current_path).resolve() != source.resolve():
                         if not messagebox.askyesno(
-                            "다른 매크로 열기",
-                            "현재 Scratch 편집 창을 닫고 선택한 매크로를 열까요?",
+                            "다른 자동 실행 순서 열기",
+                            "현재 순서 편집 창을 닫고 선택한 파일을 열까요?",
                             parent=self,
                         ):
                             self._macro_editor.lift()
@@ -415,6 +443,11 @@ class AEWorkbenchMixin:
                             return
                         self._macro_editor = None
                     else:
+                        self._configure_mapping_editor(
+                            self._macro_editor,
+                            fixture_channel,
+                            mapping_mode,
+                        )
                         self._macro_editor.lift()
                         self._macro_editor.focus_force()
                         return
@@ -434,6 +467,7 @@ class AEWorkbenchMixin:
             self._show_error(exc)
             return
         self._macro_editor = editor
+        self._configure_mapping_editor(editor, fixture_channel, mapping_mode)
 
         def cleared(event: Any) -> None:
             if event.widget is editor:
@@ -442,6 +476,30 @@ class AEWorkbenchMixin:
         editor.bind("<Destroy>", cleared, add="+")
         editor.transient(self)
         editor.lift()
+
+    @staticmethod
+    def _configure_mapping_editor(
+        editor: Any,
+        fixture_channel: str,
+        mapping_mode: bool,
+    ) -> None:
+        if fixture_channel and hasattr(editor, "monitor_channel_labels_var"):
+            editor.monitor_channel_labels_var.set(fixture_channel)
+        if mapping_mode and hasattr(editor, "monitor_default_tab_var"):
+            editor.monitor_default_tab_var.set("SK Commander 상태")
+        if mapping_mode and hasattr(editor, "status"):
+            target = fixture_channel or "선택한 실장기"
+            editor.status.set(
+                f"{target} 항목 연결 중 · 상태 규칙을 추가한 뒤 저장하세요"
+            )
+        if mapping_mode:
+            target = fixture_channel or "선택한 실장기"
+            editor.title(f"SK Commander 항목 연결 | {target}")
+        if mapping_mode and hasattr(editor, "main_notebook"):
+            try:
+                editor.main_notebook.select(editor.blocks_tab)
+            except (AttributeError, tk.TclError):
+                pass
 
     def _workbench_macro_saved(self, path: Path, _project: AutomationProject) -> None:
         previous = self.wb_macro_project_var.get().strip()
@@ -460,6 +518,9 @@ class AEWorkbenchMixin:
         self._workbench_uploaded = False
         self._save_workbench_project(silent=True)
         self._refresh_workbench_state()
+        refresh_setup = getattr(self, "_refresh_setup_guide", None)
+        if callable(refresh_setup):
+            refresh_setup()
 
     def _validate_workbench_macro(self) -> None:
         try:
@@ -470,7 +531,7 @@ class AEWorkbenchMixin:
         lines = [
             "PASS" if inspection.ok else "FAIL",
             f"블록: {inspection.step_count}",
-            f"PC별 변수: {', '.join(inspection.variable_names) or '-'}",
+            f"실장기별 입력값: {', '.join(inspection.variable_names) or '-'}",
         ]
         lines.extend(f"- {issue}" for issue in inspection.issues)
         self._set_readonly_text(self.wb_macro_report_text, "\n".join(lines))
@@ -487,7 +548,7 @@ class AEWorkbenchMixin:
         output = self.wb_macro_export_var.get().strip()
         if not output:
             output = filedialog.asksaveasfilename(
-                title="실행 가능한 Python 매크로 저장",
+                title="실행 가능한 Python 파일 저장",
                 initialfile=self._default_macro_export_path(inspection.path).name,
                 defaultextension=".py",
                 filetypes=[("Python", "*.py"), ("All files", "*.*")],
@@ -555,7 +616,7 @@ class AEWorkbenchMixin:
             self._show_error(exc)
             return
         if not messagebox.askyesno(
-            "매크로 로컬 시험",
+            "자동 실행 순서 테스트",
             f"이 PC에서 블록 {inspection.step_count}개를 실제 실행할까요?",
             parent=self,
         ):
@@ -565,7 +626,7 @@ class AEWorkbenchMixin:
         self._macro_test_stop = stop_event
         self.wb_macro_test_button.configure(state="disabled")
         self.wb_macro_stop_button.configure(state="normal")
-        self._set_readonly_text(self.wb_macro_report_text, "로컬 시험 시작")
+        self._set_readonly_text(self.wb_macro_report_text, "이 PC에서 테스트 시작")
 
         def worker() -> None:
             try:
@@ -590,12 +651,12 @@ class AEWorkbenchMixin:
                         {
                             "ok": False,
                             "stopped": stop_event.is_set(),
-                            "message": "Stopped · 로컬 시험 중단" if stop_event.is_set() else str(exc),
+                            "message": "중지됨 · 이 PC 테스트 중단" if stop_event.is_set() else str(exc),
                         },
                     )
                 )
             else:
-                self._queue.put(("workbench_macro_done", {"ok": True, "message": "로컬 시험 완료"}))
+                self._queue.put(("workbench_macro_done", {"ok": True, "message": "이 PC 테스트 완료"}))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -605,7 +666,7 @@ class AEWorkbenchMixin:
             return {}
         values = json.loads(raw)
         if not isinstance(values, dict):
-            raise ValueError("시험 변수 데이터가 올바르지 않습니다.")
+            raise ValueError("테스트 입력값 데이터가 올바르지 않습니다.")
         return {str(key): str(value) for key, value in values.items()}
 
     def _workbench_test_variable_defaults(self) -> dict[str, str]:
@@ -626,7 +687,7 @@ class AEWorkbenchMixin:
         try:
             values = self._workbench_test_variable_defaults()
         except (json.JSONDecodeError, ValueError):
-            self.wb_macro_values_summary_var.set("시험 변수 데이터 오류")
+            self.wb_macro_values_summary_var.set("테스트 입력값 데이터 오류")
             return
         if not values:
             self.wb_macro_values_summary_var.set("사용할 변수 없음")
@@ -644,13 +705,13 @@ class AEWorkbenchMixin:
             return
         if not values:
             messagebox.showinfo(
-                "시험 변수",
-                "현재 매크로에는 PC별 입력 변수가 없습니다.",
+                "테스트 입력값",
+                "현재 자동 실행 순서에는 실장기별 입력값이 없습니다.",
                 parent=self,
             )
             return
         edited = self._ask_field_values(
-            "시험 변수 편집",
+            "테스트 입력값 편집",
             [(key, key, value) for key, value in values.items()],
         )
         if edited is None:
@@ -695,10 +756,10 @@ class AEWorkbenchMixin:
     def _add_workbench_shortcut(self) -> None:
         path = self.wb_macro_project_var.get().strip()
         if not path:
-            self._show_error(ValueError("매크로 프로젝트를 먼저 선택하세요."))
+            self._show_error(ValueError("자동 실행 순서 파일을 먼저 선택하세요."))
             return
         name = simpledialog.askstring(
-            "매크로 버튼 만들기",
+            "실행 버튼 만들기",
             "버튼 이름",
             initialvalue=Path(path).stem,
             parent=self,
@@ -741,10 +802,10 @@ class AEWorkbenchMixin:
             None,
         )
         if shortcut is None:
-            messagebox.showinfo("매크로 버튼", "수정할 버튼을 먼저 선택하세요.", parent=self)
+            messagebox.showinfo("실행 버튼", "수정할 버튼을 먼저 선택하세요.", parent=self)
             return
         values = self._ask_field_values(
-            "매크로 버튼 수정",
+            "실행 버튼 수정",
             [
                 ("name", "버튼 이름", shortcut.name),
                 ("notes", "메모", shortcut.notes),
@@ -766,7 +827,7 @@ class AEWorkbenchMixin:
     def _move_workbench_shortcut(self, delta: int) -> None:
         name = getattr(self, "_selected_shortcut_name", "")
         if not name:
-            messagebox.showinfo("매크로 버튼", "이동할 버튼을 먼저 선택하세요.", parent=self)
+            messagebox.showinfo("실행 버튼", "이동할 버튼을 먼저 선택하세요.", parent=self)
             return
         try:
             self._workbench_project = self._workbench_from_fields().move_shortcut(name, delta)
@@ -819,17 +880,21 @@ class AEWorkbenchMixin:
         else:
             self._set_badge(self.wb_seq_badge, "확인 필요", "#b45309")
         if readiness.macro_ready:
-            self._set_badge(self.wb_macro_badge, "MACRO PASS", "#15803d")
+            self._set_badge(self.wb_macro_badge, "순서 PASS", "#15803d")
         else:
             self._set_badge(self.wb_macro_badge, "확인 필요", "#b45309")
 
         if readiness.ready_to_upload:
             self._set_badge(self.wb_ready_badge, "등록 가능", "#15803d")
-            self.wb_ready_var.set("SEQ와 매크로 source/export hash가 일치합니다.")
+            self.wb_ready_var.set("SEQ와 자동 실행 순서의 최신 파일이 준비되었습니다.")
             self.wb_upload_button.configure(state="normal")
         else:
             self._set_badge(self.wb_ready_badge, "준비 전", "#64748b")
-            self.wb_ready_var.set(readiness.issues[0] if readiness.issues else "SEQ와 매크로를 준비하세요.")
+            self.wb_ready_var.set(
+                readiness.issues[0]
+                if readiness.issues
+                else "SEQ와 자동 실행 순서를 준비하세요."
+            )
             self.wb_upload_button.configure(state="disabled")
 
         stage_ready = [
@@ -848,7 +913,7 @@ class AEWorkbenchMixin:
     def _upload_workbench_artifacts(self) -> None:
         readiness = self._refresh_workbench_state()
         if not readiness.ready_to_upload:
-            self._show_error(ValueError("준비 상태 확인을 통과한 뒤 서버 라이브러리에 등록하세요."))
+            self._show_error(ValueError("오류 검사를 통과한 뒤 통신 서버에 등록하세요."))
             return
         try:
             project = self._workbench_from_fields()
@@ -917,7 +982,7 @@ class AEWorkbenchMixin:
                 )
             )
 
-        self._start_worker("SEQ와 매크로 업로드", worker)
+        self._start_worker("SEQ와 자동 실행 순서 등록", worker)
 
     def _open_workbench_run_table(self) -> None:
         self._show_today_work()
@@ -925,10 +990,10 @@ class AEWorkbenchMixin:
     def _edit_selected_remote_macro(self) -> None:
         package = self._selected_package()
         if package is None:
-            self._show_error(ValueError("서버 목록에서 매크로를 선택하세요."))
+            self._show_error(ValueError("통신 서버 목록에서 자동 실행 순서를 선택하세요."))
             return
         if package.runner != "workflow":
-            self._show_error(ValueError("Scratch 편집은 Picker에서 내보낸 FLOW 패키지만 지원합니다."))
+            self._show_error(ValueError("순서 편집은 자동 실행 순서 파일만 지원합니다."))
             return
         try:
             _config, backend, _local_root = self._snapshot_backend()
@@ -941,7 +1006,7 @@ class AEWorkbenchMixin:
             destination_dir = workspace.parent / "macros"
             destination = destination_dir / f"{Path(package.name).stem}.macro.json"
             if destination.exists() and not messagebox.askyesno(
-                "서버 매크로 불러오기",
+                "통신 서버의 자동 실행 순서 불러오기",
                 f"기존 프로젝트를 덮어쓸까요?\n{destination}",
                 parent=self,
             ):
@@ -976,7 +1041,7 @@ class AEWorkbenchMixin:
             self._append_readonly_text(self.wb_macro_report_text, message)
             self._set_badge(
                 self.wb_macro_badge,
-                "시험 PASS" if ok else ("시험 중단" if stopped else "시험 FAIL"),
+                "테스트 PASS" if ok else ("테스트 중단" if stopped else "테스트 FAIL"),
                 "#15803d" if ok else ("#b45309" if stopped else "#b91c1c"),
             )
             return True

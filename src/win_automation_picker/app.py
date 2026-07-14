@@ -62,8 +62,98 @@ from .recipe import (
     validate_recipe,
 )
 from .scratch_editor import ScratchPaletteItem, ScratchWorkspace
-from .recording import RecordedAction, exact_variable, recipe_variables, recording_to_steps
-from .selector import CLICK_CONTROL_TYPES, TYPE_CONTROL_TYPES, UISelector, WindowMarker, selector_for_action
+from .recording import (
+    RecordedAction,
+    exact_variable,
+    recipe_variables,
+    recording_to_steps,
+)
+from .selector import (
+    CLICK_CONTROL_TYPES,
+    TYPE_CONTROL_TYPES,
+    UISelector,
+    WindowMarker,
+    selector_for_action,
+)
+
+
+MONITOR_FIELD_ROLES = {
+    "일반 상태 판정": "monitor",
+    "실장기 번호": "sk_channel",
+    "SoC": "sk_soc",
+    "장착 자재 ID": "sk_dram",
+    "테스트 이름": "sk_test",
+    "테스트 상태": "sk_test_state",
+    "부팅 단계 (BL1/BL2/LK/OS)": "sk_boot_stage",
+}
+MONITOR_ROLE_FIELDS = {value: key for key, value in MONITOR_FIELD_ROLES.items()}
+
+INPUT_METHOD_OPTIONS = {
+    "한 번에 입력": "paste",
+    "한 글자씩 입력": "keys",
+}
+INPUT_METHOD_LABELS = {value: key for key, value in INPUT_METHOD_OPTIONS.items()}
+BLOCK_COLOR_MODE_OPTIONS = {
+    "동작 종류": "event",
+    "프로그램 창": "window",
+}
+BLOCK_COLOR_OPTIONS = {
+    "자동": "auto",
+    "파랑": "blue",
+    "초록": "green",
+    "보라": "purple",
+    "주황": "orange",
+    "빨강": "red",
+    "청록": "teal",
+    "회색": "gray",
+}
+BLOCK_COLOR_LABELS = {value: key for key, value in BLOCK_COLOR_OPTIONS.items()}
+CONDITION_OPERATOR_OPTIONS = {
+    "포함": "contains",
+    "같음": "equals",
+    "앞부분이 같음": "starts_with",
+    "뒷부분이 같음": "ends_with",
+    "정규식": "regex",
+    "비어 있지 않음": "not_empty",
+}
+CONDITION_OPERATOR_LABELS = {
+    value: key for key, value in CONDITION_OPERATOR_OPTIONS.items()
+}
+WINDOW_MARKER_OPTIONS = {
+    "창 제목에 포함": "contains",
+    "창 제목과 같음": "equals",
+    "정규식": "regex",
+}
+WINDOW_MARKER_LABELS = {value: key for key, value in WINDOW_MARKER_OPTIONS.items()}
+ELEMENT_ROLE_OPTIONS = {
+    "자동 판단": "auto",
+    "버튼": "button",
+    "입력 칸": "input",
+    "메뉴": "menu",
+    "체크박스": "checkbox",
+    "선택 버튼": "radio",
+    "선택 목록": "dropdown",
+    "표 / 목록": "table",
+    "텍스트": "text",
+    "프로그램 창": "window",
+    "키 조합": "hotkey",
+    "SK Commander SEQ": "sk_seq_path",
+    "SK Commander Load": "sk_load",
+    "SK Commander Start": "sk_start",
+    "SK Commander Stop": "sk_stop",
+    "SK Commander Reset": "sk_reset",
+    "SK Commander Power Reset": "sk_power_reset",
+    "SK Commander 시리얼 화면": "sk_serial_monitor",
+    "SK Commander Grid 상태": "sk_grid_status",
+    "실장기 번호": "sk_channel",
+    "SoC": "sk_soc",
+    "장착 자재 ID": "sk_dram",
+    "테스트 이름": "sk_test",
+    "테스트 상태": "sk_test_state",
+    "부팅 단계": "sk_boot_stage",
+    "기타": "other",
+}
+ELEMENT_ROLE_LABELS = {value: key for key, value in ELEMENT_ROLE_OPTIONS.items()}
 
 
 class ToolTip:
@@ -131,7 +221,8 @@ class PickerApp(tk.Toplevel):
         *,
         project_path: str | Path | None = None,
         on_project_saved: Callable[[Path, AutomationProject], None] | None = None,
-        on_create_shortcut: Callable[[str, Path, AutomationProject], None] | None = None,
+        on_create_shortcut: Callable[[str, Path, AutomationProject], None]
+        | None = None,
     ) -> None:
         standalone_root: tk.Tk | None = None
         if master is None:
@@ -139,7 +230,7 @@ class PickerApp(tk.Toplevel):
             standalone_root.withdraw()
             master = standalone_root
         super().__init__(master)
-        self.title("Win Automation Picker")
+        self.title("자동 실행 순서 만들기")
         self.geometry("1440x900")
         self.minsize(1080, 700)
 
@@ -220,7 +311,11 @@ class PickerApp(tk.Toplevel):
         except tk.TclError:
             pass
 
-        font = ("Segoe UI", 10) if sys.platform.startswith("win") else ("TkDefaultFont", 10)
+        font = (
+            ("Segoe UI", 10)
+            if sys.platform.startswith("win")
+            else ("TkDefaultFont", 10)
+        )
         style.configure(".", font=font)
         style.configure("TFrame", background="#f4f7fb")
         style.configure("Panel.TFrame", background="#ffffff")
@@ -228,11 +323,31 @@ class PickerApp(tk.Toplevel):
         style.configure("TLabel", background="#f4f7fb", foreground="#111827")
         style.configure("Panel.TLabel", background="#ffffff", foreground="#111827")
         style.configure("Muted.TLabel", background="#ffffff", foreground="#6b7280")
-        style.configure("PanelTitle.TLabel", background="#ffffff", foreground="#111827", font=(font[0], 11, "bold"))
+        style.configure(
+            "PanelTitle.TLabel",
+            background="#ffffff",
+            foreground="#111827",
+            font=(font[0], 11, "bold"),
+        )
         style.configure("TButton", padding=(9, 5))
-        style.configure("Primary.TButton", padding=(10, 6), background="#2563eb", foreground="#ffffff")
-        style.configure("Success.TButton", padding=(10, 6), background="#0f766e", foreground="#ffffff")
-        style.configure("Danger.TButton", padding=(10, 6), background="#dc2626", foreground="#ffffff")
+        style.configure(
+            "Primary.TButton",
+            padding=(10, 6),
+            background="#2563eb",
+            foreground="#ffffff",
+        )
+        style.configure(
+            "Success.TButton",
+            padding=(10, 6),
+            background="#0f766e",
+            foreground="#ffffff",
+        )
+        style.configure(
+            "Danger.TButton",
+            padding=(10, 6),
+            background="#dc2626",
+            foreground="#ffffff",
+        )
         style.map(
             "Primary.TButton",
             background=[("active", "#1d4ed8"), ("disabled", "#93c5fd")],
@@ -255,7 +370,11 @@ class PickerApp(tk.Toplevel):
         style.configure("Treeview", rowheight=24)
 
     def _style_text_widget(self, widget: tk.Text) -> tk.Text:
-        font = ("Segoe UI", 10) if sys.platform.startswith("win") else ("TkDefaultFont", 10)
+        font = (
+            ("Segoe UI", 10)
+            if sys.platform.startswith("win")
+            else ("TkDefaultFont", 10)
+        )
         widget.configure(
             background="#ffffff",
             foreground="#111827",
@@ -297,7 +416,7 @@ class PickerApp(tk.Toplevel):
 
         brand = tk.Label(
             top,
-            text="WIN AUTOMATION",
+            text="자동 실행 순서",
             background="#0f172a",
             foreground="#ffffff",
             padx=12,
@@ -305,16 +424,26 @@ class PickerApp(tk.Toplevel):
             font=("TkDefaultFont", 11, "bold"),
         )
         brand.grid(row=0, column=0, sticky="w", padx=(0, 10))
-        self.status = tk.StringVar(value="새 매크로")
+        self.status = tk.StringVar(value="새 자동 실행 순서")
         ttk.Label(top, textvariable=self.status, anchor="w", style="Panel.TLabel").grid(
             row=0, column=1, sticky="ew"
         )
-        ttk.Button(top, text="불러오기", command=self._load_workflow).grid(row=0, column=2, padx=(4, 0))
-        ttk.Button(top, text="저장", command=self._save_workflow).grid(row=0, column=3, padx=(4, 0))
-        ttk.Button(top, text="Python 내보내기", command=self._export_python_script).grid(row=0, column=4, padx=(4, 8))
-        self.run_once_button = ttk.Button(top, text="실행", command=self._run_once, style="Primary.TButton")
+        ttk.Button(top, text="불러오기", command=self._load_workflow).grid(
+            row=0, column=2, padx=(4, 0)
+        )
+        ttk.Button(top, text="저장", command=self._save_workflow).grid(
+            row=0, column=3, padx=(4, 0)
+        )
+        ttk.Button(
+            top, text="Python 내보내기", command=self._export_python_script
+        ).grid(row=0, column=4, padx=(4, 8))
+        self.run_once_button = ttk.Button(
+            top, text="실행", command=self._run_once, style="Primary.TButton"
+        )
         self.run_once_button.grid(row=0, column=7, padx=(0, 5))
-        self.run_rows_button = ttk.Button(top, text="데이터 실행", command=self._run_rows)
+        self.run_rows_button = ttk.Button(
+            top, text="데이터 실행", command=self._run_rows
+        )
         self.run_rows_button.grid(row=0, column=8, padx=(0, 5))
         self.stop_button = ttk.Button(
             top,
@@ -327,24 +456,37 @@ class PickerApp(tk.Toplevel):
         file_menu_button = ttk.Menubutton(top, text="더보기")
         file_menu_button.grid(row=0, column=10)
         file_menu = tk.Menu(file_menu_button, tearoff=False)
-        file_menu.add_command(label="워크플로 저장", command=self._save_workflow)
-        file_menu.add_command(label="다른 이름으로 저장", command=lambda: self._save_workflow(save_as=True))
-        file_menu.add_command(label="워크플로 불러오기", command=self._load_workflow)
-        file_menu.add_command(label="실행 가능한 Python 내보내기", command=self._export_python_script)
+        file_menu.add_command(label="자동 실행 순서 저장", command=self._save_workflow)
+        file_menu.add_command(
+            label="다른 이름으로 저장",
+            command=lambda: self._save_workflow(save_as=True),
+        )
+        file_menu.add_command(
+            label="자동 실행 순서 불러오기", command=self._load_workflow
+        )
+        file_menu.add_command(
+            label="실행 가능한 Python 내보내기", command=self._export_python_script
+        )
         file_menu.add_separator()
-        file_menu.add_command(label="현재 대상 클릭 시험", command=self._click_current)
-        file_menu.add_command(label="현재 대상 입력 시험", command=self._type_current)
+        file_menu.add_command(
+            label="현재 대상 클릭 테스트", command=self._click_current
+        )
+        file_menu.add_command(label="현재 대상 입력 테스트", command=self._type_current)
         file_menu.add_separator()
         file_menu.add_command(label="대기 블록 추가", command=self._add_wait_step)
         file_menu.add_command(label="Enter 블록 추가", command=self._add_enter_step)
-        file_menu.add_command(label="사용자 키 블록 추가", command=self._add_key_step_from_dialog)
+        file_menu.add_command(
+            label="사용자 키 블록 추가", command=self._add_key_step_from_dialog
+        )
         file_menu.add_separator()
         file_menu.add_command(label="대상 선택자 복사", command=self._copy_selector)
         file_menu.add_command(label="대상 선택자 저장", command=self._save_selector)
         file_menu.add_command(label="대상 선택자 불러오기", command=self._load_selector)
         file_menu.add_separator()
         file_menu.add_command(label="JSON 변경 적용", command=self._apply_workflow_json)
-        file_menu.add_command(label="모든 블록 지우기...", command=self._confirm_clear_workflow)
+        file_menu.add_command(
+            label="모든 블록 지우기...", command=self._confirm_clear_workflow
+        )
         file_menu_button["menu"] = file_menu
 
         quick = ttk.Frame(top, style="Panel.TFrame")
@@ -365,13 +507,13 @@ class PickerApp(tk.Toplevel):
         )
         self.stop_recording_button.grid(row=0, column=1, padx=(0, 10), pady=(0, 6))
         self.recording_status_var = tk.StringVar(value="녹화 대기")
-        ttk.Label(quick, textvariable=self.recording_status_var, style="Panel.TLabel").grid(
-            row=0, column=2, columnspan=2, sticky="w", pady=(0, 6)
-        )
+        ttk.Label(
+            quick, textvariable=self.recording_status_var, style="Panel.TLabel"
+        ).grid(row=0, column=2, columnspan=2, sticky="w", pady=(0, 6))
         self.record_variable_inputs_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
             quick,
-            text="입력값을 PC별 변수로",
+            text="입력값을 실장기별 값으로",
             variable=self.record_variable_inputs_var,
         ).grid(row=0, column=4, padx=(8, 10), pady=(0, 6))
         self.record_delays_var = tk.BooleanVar(value=True)
@@ -382,7 +524,9 @@ class PickerApp(tk.Toplevel):
         ).grid(row=0, column=5, padx=(0, 6), pady=(0, 6))
 
         quick.columnconfigure(5, weight=1)
-        self.pick_button = ttk.Button(quick, text="대상 확인", command=lambda: self._start_pick("inspect"))
+        self.pick_button = ttk.Button(
+            quick, text="대상 확인", command=lambda: self._start_pick("inspect")
+        )
         self.pick_button.grid(row=1, column=0, padx=(0, 5))
         self.record_click_button = ttk.Button(
             quick,
@@ -405,95 +549,90 @@ class PickerApp(tk.Toplevel):
             state="disabled",
         )
         self.cancel_pick_button.grid(row=1, column=3, padx=(0, 12))
-        ttk.Label(quick, text="수동 입력값", style="Panel.TLabel").grid(row=1, column=4, padx=(0, 5))
+        ttk.Label(quick, text="수동 입력값", style="Panel.TLabel").grid(
+            row=1, column=4, padx=(0, 5)
+        )
         self.input_text = ttk.Entry(quick, width=28)
         self.input_text.grid(row=1, column=5, sticky="ew", padx=(0, 6))
         self.clear_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(quick, text="기존값 지우기", variable=self.clear_var).grid(row=1, column=6, padx=(0, 6))
-        self.input_method_var = tk.StringVar(value="paste")
+        ttk.Checkbutton(quick, text="기존값 지우기", variable=self.clear_var).grid(
+            row=1, column=6, padx=(0, 6)
+        )
+        self.input_method_var = tk.StringVar(value="한 번에 입력")
         ttk.Combobox(
             quick,
             textvariable=self.input_method_var,
-            values=("paste", "keys"),
-            width=7,
+            values=tuple(INPUT_METHOD_OPTIONS),
+            width=12,
             state="readonly",
         ).grid(row=1, column=7, padx=(0, 10))
         self.first_row_headers_var = tk.BooleanVar(value=True)
         self.row_delay_var = tk.StringVar(value="0.2")
-        ttk.Button(quick, text="대상 고급 설정", command=self._toggle_target_setup).grid(row=1, column=8)
+        ttk.Button(
+            quick, text="대상 고급 설정", command=self._toggle_target_setup
+        ).grid(row=1, column=8)
 
         agent_toolbar = ttk.Frame(self, padding=(12, 8), style="Panel.TFrame")
         agent_toolbar.grid(row=1, column=0, sticky="ew")
         agent_toolbar.columnconfigure(5, weight=1)
 
-        ttk.Label(agent_toolbar, text="대상 이름", style="Panel.TLabel").grid(row=0, column=0, padx=(0, 6))
+        ttk.Label(agent_toolbar, text="대상 이름", style="Panel.TLabel").grid(
+            row=0, column=0, padx=(0, 6)
+        )
         self.element_name_var = tk.StringVar(value="")
         ttk.Entry(agent_toolbar, textvariable=self.element_name_var, width=24).grid(
             row=0, column=1, sticky="ew", padx=(0, 10)
         )
 
-        ttk.Label(agent_toolbar, text="유형 / 역할", style="Panel.TLabel").grid(row=0, column=2, padx=(0, 6))
-        self.element_role_var = tk.StringVar(value="auto")
+        ttk.Label(agent_toolbar, text="유형 / 역할", style="Panel.TLabel").grid(
+            row=0, column=2, padx=(0, 6)
+        )
+        self.element_role_var = tk.StringVar(value="자동 판단")
         self.element_role_combo = ttk.Combobox(
             agent_toolbar,
             textvariable=self.element_role_var,
-            values=(
-                "auto",
-                "button",
-                "input",
-                "menu",
-                "checkbox",
-                "radio",
-                "dropdown",
-                "table",
-                "text",
-                "window",
-                "hotkey",
-                "sk_seq_path",
-                "sk_load",
-                "sk_start",
-                "sk_stop",
-                "sk_reset",
-                "sk_power_reset",
-                "sk_serial_monitor",
-                "sk_grid_status",
-                "other",
-            ),
-            width=17,
+            values=tuple(ELEMENT_ROLE_OPTIONS),
+            width=24,
             state="readonly",
         )
         self.element_role_combo.grid(row=0, column=3, padx=(0, 10))
 
-        ttk.Label(agent_toolbar, text="메모", style="Panel.TLabel").grid(row=0, column=4, padx=(0, 6))
+        ttk.Label(agent_toolbar, text="메모", style="Panel.TLabel").grid(
+            row=0, column=4, padx=(0, 6)
+        )
         self.element_notes_var = tk.StringVar(value="")
         ttk.Entry(agent_toolbar, textvariable=self.element_notes_var).grid(
             row=0, column=5, sticky="ew", padx=(0, 10)
         )
-        ttk.Button(agent_toolbar, text="대상 정보 적용", command=self._apply_metadata_to_selected_step).grid(
-            row=0, column=6, padx=(0, 8)
-        )
+        ttk.Button(
+            agent_toolbar,
+            text="대상 정보 적용",
+            command=self._apply_metadata_to_selected_step,
+        ).grid(row=0, column=6, padx=(0, 8))
 
         ttk.Label(agent_toolbar, text="창 구분", style="Panel.TLabel").grid(
             row=1, column=0, sticky="w", pady=(6, 0), padx=(0, 6)
         )
-        self.window_marker_mode_var = tk.StringVar(value="contains")
+        self.window_marker_mode_var = tk.StringVar(value="창 제목에 포함")
         ttk.Combobox(
             agent_toolbar,
             textvariable=self.window_marker_mode_var,
-            values=("contains", "equals", "regex"),
-            width=9,
+            values=tuple(WINDOW_MARKER_OPTIONS),
+            width=14,
             state="readonly",
         ).grid(row=1, column=1, sticky="w", pady=(6, 0), padx=(0, 6))
         self.window_marker_var = tk.StringVar(value="")
         ttk.Entry(agent_toolbar, textvariable=self.window_marker_var, width=24).grid(
             row=1, column=2, columnspan=2, sticky="ew", pady=(6, 0), padx=(0, 10)
         )
-        ttk.Button(agent_toolbar, text="창 구분 적용", command=self._apply_marker_to_current_selector).grid(
-            row=1, column=4, sticky="w", pady=(6, 0), padx=(0, 8)
-        )
-        ttk.Button(agent_toolbar, text="후보 창 확인", command=self._debug_windows).grid(
-            row=1, column=5, sticky="w", pady=(6, 0), padx=(0, 8)
-        )
+        ttk.Button(
+            agent_toolbar,
+            text="창 구분 적용",
+            command=self._apply_marker_to_current_selector,
+        ).grid(row=1, column=4, sticky="w", pady=(6, 0), padx=(0, 8))
+        ttk.Button(
+            agent_toolbar, text="후보 창 확인", command=self._debug_windows
+        ).grid(row=1, column=5, sticky="w", pady=(6, 0), padx=(0, 8))
         self.target_setup_panel = agent_toolbar
         self._target_setup_visible = False
         agent_toolbar.grid_remove()
@@ -516,17 +655,21 @@ class PickerApp(tk.Toplevel):
         workflow_frame.rowconfigure(0, weight=1)
         workflow_frame.columnconfigure(0, weight=1)
         self.workflow_text = self._text_area(workflow_frame, wrap="none", row=0)
-        left.add(workflow_frame, text="워크플로 JSON")
+        left.add(workflow_frame, text="자동 실행 순서 JSON")
 
         data_frame = ttk.Frame(left, padding=6)
         data_frame.rowconfigure(1, weight=1)
         data_frame.columnconfigure(0, weight=1)
         data_controls = ttk.Frame(data_frame)
         data_controls.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-        ttk.Checkbutton(data_controls, text="첫 행을 열 이름으로 사용", variable=self.first_row_headers_var).grid(
-            row=0, column=0, padx=(0, 12)
+        ttk.Checkbutton(
+            data_controls,
+            text="첫 행을 열 이름으로 사용",
+            variable=self.first_row_headers_var,
+        ).grid(row=0, column=0, padx=(0, 12))
+        ttk.Label(data_controls, text="행 사이 대기(초)").grid(
+            row=0, column=1, padx=(0, 5)
         )
-        ttk.Label(data_controls, text="행 사이 대기(초)").grid(row=0, column=1, padx=(0, 5))
         ttk.Spinbox(
             data_controls,
             from_=0,
@@ -543,15 +686,21 @@ class PickerApp(tk.Toplevel):
         details_frame.rowconfigure(1, weight=1)
         details_frame.rowconfigure(3, weight=1)
         details_frame.columnconfigure(0, weight=1)
-        ttk.Label(details_frame, text="대상 경로").grid(row=0, column=0, sticky="w", pady=(0, 4))
+        ttk.Label(details_frame, text="대상 경로").grid(
+            row=0, column=0, sticky="w", pady=(0, 4)
+        )
         self.path_text = self._text_area(details_frame, wrap="word", height=7, row=1)
-        ttk.Label(details_frame, text="Python 코드 조각").grid(row=2, column=0, sticky="w", pady=(0, 4))
-        self.snippet_text = self._text_area(details_frame, wrap="none", height=10, row=3)
+        ttk.Label(details_frame, text="Python 코드 조각").grid(
+            row=2, column=0, sticky="w", pady=(0, 4)
+        )
+        self.snippet_text = self._text_area(
+            details_frame, wrap="none", height=10, row=3
+        )
         left.add(details_frame, text="대상 경로")
 
         blocks_frame = ttk.Frame(right, padding=0)
         self._build_scratch_tab(blocks_frame)
-        right.add(blocks_frame, text="매크로 만들기")
+        right.add(blocks_frame, text="자동 실행 순서 만들기")
 
         monitor_profile_frame = ttk.Frame(right, padding=8)
         monitor_profile_frame.rowconfigure(3, weight=1)
@@ -567,8 +716,12 @@ class PickerApp(tk.Toplevel):
         self.monitor_live_state_var = tk.StringVar(value="대기")
         self.monitor_updated_var = tk.StringVar(value="아직 확인하지 않음")
         self.monitor_interval_var = tk.StringVar(value="5")
-        ttk.Label(profile_toolbar, textvariable=self.monitor_live_state_var).grid(row=0, column=1, sticky="w", padx=(12, 4))
-        ttk.Label(profile_toolbar, textvariable=self.monitor_updated_var).grid(row=0, column=2, sticky="w", padx=(0, 12))
+        ttk.Label(profile_toolbar, textvariable=self.monitor_live_state_var).grid(
+            row=0, column=1, sticky="w", padx=(12, 4)
+        )
+        ttk.Label(profile_toolbar, textvariable=self.monitor_updated_var).grid(
+            row=0, column=2, sticky="w", padx=(0, 12)
+        )
         profile_toolbar.columnconfigure(2, weight=1)
         ttk.Label(profile_toolbar, text="주기(초)").grid(row=0, column=3, padx=(0, 4))
         ttk.Spinbox(
@@ -579,21 +732,27 @@ class PickerApp(tk.Toplevel):
             textvariable=self.monitor_interval_var,
             width=5,
         ).grid(row=0, column=4, padx=(0, 6))
-        ttk.Button(profile_toolbar, text="한 번 확인", command=self._run_monitor_check_once).grid(
-            row=0, column=5, padx=(0, 6)
-        )
+        ttk.Button(
+            profile_toolbar, text="한 번 확인", command=self._run_monitor_check_once
+        ).grid(row=0, column=5, padx=(0, 6))
         ttk.Button(
             profile_toolbar,
-            text="자동 시작",
+            text="테스트 모니터링 시작",
             command=self._start_live_monitor,
             style="Primary.TButton",
         ).grid(row=0, column=6, padx=(0, 6))
-        ttk.Button(profile_toolbar, text="중지", command=self._stop_live_monitor).grid(row=0, column=7)
-        profile_config = ttk.Labelframe(monitor_profile_frame, text="보드와 규칙", padding=(8, 6))
+        ttk.Button(profile_toolbar, text="중지", command=self._stop_live_monitor).grid(
+            row=0, column=7
+        )
+        profile_config = ttk.Labelframe(
+            monitor_profile_frame, text="보드와 규칙", padding=(8, 6)
+        )
         profile_config.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         profile_config.columnconfigure(1, weight=1)
         profile_config.columnconfigure(3, weight=1)
-        ttk.Label(profile_config, text="보드").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        ttk.Label(profile_config, text="보드").grid(
+            row=0, column=0, sticky="w", padx=(0, 6)
+        )
         self.monitor_default_tab_var = tk.StringVar(value="SK Commander")
         ttk.Entry(profile_config, textvariable=self.monitor_default_tab_var).grid(
             row=0,
@@ -601,7 +760,9 @@ class PickerApp(tk.Toplevel):
             sticky="ew",
             padx=(0, 10),
         )
-        ttk.Label(profile_config, text="장비 / CH 목록").grid(row=0, column=2, sticky="w", padx=(0, 6))
+        ttk.Label(profile_config, text="실장기 목록").grid(
+            row=0, column=2, sticky="w", padx=(0, 6)
+        )
         self.monitor_channel_labels_var = tk.StringVar(value="CH1, CH2, CH3, CH4")
         ttk.Entry(profile_config, textvariable=self.monitor_channel_labels_var).grid(
             row=0,
@@ -616,7 +777,7 @@ class PickerApp(tk.Toplevel):
         ).grid(row=0, column=4, padx=(0, 6))
         ttk.Button(
             profile_config,
-            text="CH 비우기",
+            text="실장기 선택 지우기",
             command=self._clear_selected_monitor_channels,
         ).grid(row=0, column=5)
         rule_actions = ttk.Frame(profile_config)
@@ -642,11 +803,15 @@ class PickerApp(tk.Toplevel):
             command=lambda: self._group_selected_monitor_rows("any"),
         ).grid(row=0, column=3)
 
-        view_config = ttk.Labelframe(monitor_profile_frame, text="보드 화면 구성", padding=(8, 6))
+        view_config = ttk.Labelframe(
+            monitor_profile_frame, text="보드 화면 구성", padding=(8, 6)
+        )
         view_config.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         view_config.columnconfigure(1, weight=1)
         view_config.columnconfigure(5, weight=1)
-        ttk.Label(view_config, text="화면 이름").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        ttk.Label(view_config, text="화면 이름").grid(
+            row=0, column=0, sticky="w", padx=(0, 6)
+        )
         self.monitor_view_name_var = tk.StringVar(value="SK Commander Board")
         ttk.Entry(view_config, textvariable=self.monitor_view_name_var).grid(
             row=0,
@@ -655,11 +820,11 @@ class PickerApp(tk.Toplevel):
             padx=(0, 10),
         )
         ttk.Label(view_config, text="행").grid(row=0, column=2, sticky="w", padx=(0, 6))
-        self.monitor_view_rows_var = tk.StringVar(value="장비 / CH")
+        self.monitor_view_rows_var = tk.StringVar(value="실장기")
         ttk.Combobox(
             view_config,
             textvariable=self.monitor_view_rows_var,
-            values=("장비 / CH", "상태", "보드", "블록"),
+            values=("실장기", "상태", "보드", "블록"),
             width=9,
             state="readonly",
         ).grid(row=0, column=3, sticky="w", padx=(0, 10))
@@ -668,7 +833,7 @@ class PickerApp(tk.Toplevel):
         ttk.Combobox(
             view_config,
             textvariable=self.monitor_view_columns_var,
-            values=("상태", "장비 / CH", "보드"),
+            values=("상태", "실장기", "보드"),
             width=9,
             state="readonly",
         ).grid(row=0, column=5, sticky="w", padx=(0, 10))
@@ -682,7 +847,9 @@ class PickerApp(tk.Toplevel):
             text="자동 구성",
             command=self._auto_monitor_view_layout,
         ).grid(row=0, column=7)
-        ttk.Label(view_config, text="보드 순서").grid(row=1, column=0, sticky="w", padx=(0, 6), pady=(6, 0))
+        ttk.Label(view_config, text="보드 순서").grid(
+            row=1, column=0, sticky="w", padx=(0, 6), pady=(6, 0)
+        )
         self.monitor_view_tabs_var = tk.StringVar(value="")
         ttk.Entry(view_config, textvariable=self.monitor_view_tabs_var).grid(
             row=1,
@@ -692,8 +859,12 @@ class PickerApp(tk.Toplevel):
             padx=(0, 10),
             pady=(6, 0),
         )
-        ttk.Label(view_config, text="상태 순서").grid(row=1, column=4, sticky="w", padx=(0, 6), pady=(6, 0))
-        self.monitor_view_states_var = tk.StringVar(value="RUNNING, PASS, FAIL, READY, UNKNOWN")
+        ttk.Label(view_config, text="상태 순서").grid(
+            row=1, column=4, sticky="w", padx=(0, 6), pady=(6, 0)
+        )
+        self.monitor_view_states_var = tk.StringVar(
+            value="RUNNING, PASS, FAIL, READY, UNKNOWN"
+        )
         ttk.Entry(view_config, textvariable=self.monitor_view_states_var).grid(
             row=1,
             column=5,
@@ -702,7 +873,15 @@ class PickerApp(tk.Toplevel):
             pady=(6, 0),
         )
 
-        profile_columns = ("result", "tab", "channel", "state", "logic", "block", "actual")
+        profile_columns = (
+            "result",
+            "tab",
+            "channel",
+            "state",
+            "logic",
+            "block",
+            "actual",
+        )
         self.monitor_profile_tree = ttk.Treeview(
             monitor_profile_frame,
             columns=profile_columns,
@@ -712,7 +891,7 @@ class PickerApp(tk.Toplevel):
         profile_headings = {
             "result": "결과",
             "tab": "보드",
-            "channel": "장비 / CH",
+            "channel": "실장기",
             "state": "상태",
             "logic": "판정",
             "block": "규칙 이름",
@@ -729,7 +908,9 @@ class PickerApp(tk.Toplevel):
         }
         for column in profile_columns:
             self.monitor_profile_tree.heading(column, text=profile_headings[column])
-            self.monitor_profile_tree.column(column, width=profile_widths[column], anchor="w")
+            self.monitor_profile_tree.column(
+                column, width=profile_widths[column], anchor="w"
+            )
         self.monitor_profile_tree.grid(row=3, column=0, sticky="nsew", pady=(0, 8))
         profile_scroll = ttk.Scrollbar(
             monitor_profile_frame,
@@ -738,13 +919,21 @@ class PickerApp(tk.Toplevel):
         )
         profile_scroll.grid(row=3, column=1, sticky="ns", pady=(0, 8))
         self.monitor_profile_tree.configure(yscrollcommand=profile_scroll.set)
-        self.monitor_profile_tree.tag_configure("ok", background="#dcfce7", foreground="#166534")
-        self.monitor_profile_tree.tag_configure("fail", background="#fee2e2", foreground="#991b1b")
-        self.monitor_profile_tree.tag_configure("pending", background="#f8fafc", foreground="#475569")
+        self.monitor_profile_tree.tag_configure(
+            "ok", background="#dcfce7", foreground="#166534"
+        )
+        self.monitor_profile_tree.tag_configure(
+            "fail", background="#fee2e2", foreground="#991b1b"
+        )
+        self.monitor_profile_tree.tag_configure(
+            "pending", background="#f8fafc", foreground="#475569"
+        )
         self.monitor_profile_tree.bind("<<TreeviewSelect>>", self._select_monitor_rule)
         self.monitor_profile_tree.bind("<Double-Button-1>", self._select_monitor_rule)
 
-        dashboard_frame = ttk.Labelframe(monitor_profile_frame, text="상태 보드 미리보기", padding=(8, 6))
+        dashboard_frame = ttk.Labelframe(
+            monitor_profile_frame, text="상태 보드 미리보기", padding=(8, 6)
+        )
         dashboard_frame.grid(row=4, column=0, columnspan=2, sticky="nsew")
         dashboard_frame.rowconfigure(0, weight=1)
         dashboard_frame.columnconfigure(0, weight=1)
@@ -757,25 +946,29 @@ class PickerApp(tk.Toplevel):
         steps_frame = ttk.Frame(left, padding=6)
         steps_frame.rowconfigure(0, weight=1)
         steps_frame.columnconfigure(0, weight=1)
-        self.steps_list = tk.Listbox(steps_frame, activestyle="dotbox", selectmode="extended")
+        self.steps_list = tk.Listbox(
+            steps_frame, activestyle="dotbox", selectmode="extended"
+        )
         self._style_listbox(self.steps_list)
         self.steps_list.grid(row=0, column=0, sticky="nsew")
         self.steps_list.bind("<<ListboxSelect>>", self._load_selected_step_metadata)
         self.steps_list.bind("<Delete>", self._delete_selected_step_event)
         self.steps_list.bind("<Alt-Up>", self._move_selected_step_up_event)
         self.steps_list.bind("<Alt-Down>", self._move_selected_step_down_event)
-        step_scroll = ttk.Scrollbar(steps_frame, orient="vertical", command=self.steps_list.yview)
+        step_scroll = ttk.Scrollbar(
+            steps_frame, orient="vertical", command=self.steps_list.yview
+        )
         step_scroll.grid(row=0, column=1, sticky="ns")
         self.steps_list.configure(yscrollcommand=step_scroll.set)
         step_controls = ttk.Frame(steps_frame)
         step_controls.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
         step_controls.columnconfigure(3, weight=1)
-        ttk.Button(step_controls, text="위로", command=lambda: self._move_selected_step(-1)).grid(
-            row=0, column=0, padx=(0, 6)
-        )
-        ttk.Button(step_controls, text="아래로", command=lambda: self._move_selected_step(1)).grid(
-            row=0, column=1, padx=(0, 6)
-        )
+        ttk.Button(
+            step_controls, text="위로", command=lambda: self._move_selected_step(-1)
+        ).grid(row=0, column=0, padx=(0, 6))
+        ttk.Button(
+            step_controls, text="아래로", command=lambda: self._move_selected_step(1)
+        ).grid(row=0, column=1, padx=(0, 6))
         ttk.Button(step_controls, text="삭제", command=self._delete_selected_step).grid(
             row=0, column=2, padx=(0, 6)
         )
@@ -787,7 +980,9 @@ class PickerApp(tk.Toplevel):
         self.elements_list = tk.Listbox(elements_frame, activestyle="dotbox")
         self._style_listbox(self.elements_list)
         self.elements_list.grid(row=0, column=0, sticky="nsew")
-        elements_scroll = ttk.Scrollbar(elements_frame, orient="vertical", command=self.elements_list.yview)
+        elements_scroll = ttk.Scrollbar(
+            elements_frame, orient="vertical", command=self.elements_list.yview
+        )
         elements_scroll.grid(row=0, column=1, sticky="ns")
         self.elements_list.configure(yscrollcommand=elements_scroll.set)
         left.add(elements_frame, text="대상 목록")
@@ -795,25 +990,27 @@ class PickerApp(tk.Toplevel):
         monitor_frame = ttk.Frame(right, padding=6)
         monitor_frame.columnconfigure(1, weight=1)
         monitor_frame.rowconfigure(7, weight=1)
-        self.monitor_state = tk.StringVar(value="Idle")
+        self.monitor_state = tk.StringVar(value="대기")
         self.monitor_mode = tk.StringVar(value="-")
         self.monitor_steps = tk.StringVar(value="0")
         self.monitor_window = tk.StringVar(value="-")
         self.monitor_target = tk.StringVar(value="-")
         self.monitor_point = tk.StringVar(value="-")
-        self._monitor_row(monitor_frame, 0, "State", self.monitor_state)
-        self._monitor_row(monitor_frame, 1, "Mode", self.monitor_mode)
-        self._monitor_row(monitor_frame, 2, "Steps", self.monitor_steps)
-        self._monitor_row(monitor_frame, 3, "Window", self.monitor_window)
-        self._monitor_row(monitor_frame, 4, "Target", self.monitor_target)
-        self._monitor_row(monitor_frame, 5, "Point", self.monitor_point)
+        self._monitor_row(monitor_frame, 0, "상태", self.monitor_state)
+        self._monitor_row(monitor_frame, 1, "동작", self.monitor_mode)
+        self._monitor_row(monitor_frame, 2, "순서", self.monitor_steps)
+        self._monitor_row(monitor_frame, 3, "창", self.monitor_window)
+        self._monitor_row(monitor_frame, 4, "대상", self.monitor_target)
+        self._monitor_row(monitor_frame, 5, "위치", self.monitor_point)
         ttk.Button(monitor_frame, text="기록 비우기", command=self._clear_monitor).grid(
             row=6, column=0, columnspan=2, sticky="ew", pady=(6, 6)
         )
         self.monitor_list = tk.Listbox(monitor_frame, activestyle="dotbox")
         self._style_listbox(self.monitor_list)
         self.monitor_list.grid(row=7, column=0, columnspan=2, sticky="nsew")
-        monitor_scroll = ttk.Scrollbar(monitor_frame, orient="vertical", command=self.monitor_list.yview)
+        monitor_scroll = ttk.Scrollbar(
+            monitor_frame, orient="vertical", command=self.monitor_list.yview
+        )
         monitor_scroll.grid(row=7, column=2, sticky="ns")
         self.monitor_list.configure(yscrollcommand=monitor_scroll.set)
         right.add(monitor_frame, text="실행 기록")
@@ -821,10 +1018,12 @@ class PickerApp(tk.Toplevel):
         capture_detail_frame = ttk.Frame(left, padding=6)
         capture_detail_frame.rowconfigure(0, weight=1)
         capture_detail_frame.columnconfigure(0, weight=1)
-        self.capture_check_text = self._text_area(capture_detail_frame, wrap="word", row=0)
+        self.capture_check_text = self._text_area(
+            capture_detail_frame, wrap="word", row=0
+        )
         self._replace_text(
             self.capture_check_text,
-            "No capture yet.\n\nRecord or inspect a target to see capture quality checks.",
+            "아직 선택한 대상이 없습니다.\n\n대상 확인이나 녹화를 실행하면 인식 결과가 표시됩니다.",
         )
         left.add(capture_detail_frame, text="캡처 진단")
 
@@ -836,13 +1035,15 @@ class PickerApp(tk.Toplevel):
 
         ftp_frame = ttk.Frame(right, padding=8)
         self._build_ftp_tab(ftp_frame)
-        right.add(ftp_frame, text="배포")
+        right.add(ftp_frame, text="통신 · 실행")
 
         log_frame = ttk.Frame(self, padding=(10, 0, 10, 10))
         log_frame.grid(row=3, column=0, sticky="ew")
         log_frame.columnconfigure(0, weight=1)
         self.log = tk.StringVar(value="")
-        ttk.Label(log_frame, textvariable=self.log, anchor="w").grid(row=0, column=0, sticky="ew")
+        ttk.Label(log_frame, textvariable=self.log, anchor="w").grid(
+            row=0, column=0, sticky="ew"
+        )
 
         right.select(blocks_frame)
         self._refresh_recipe_views()
@@ -854,14 +1055,22 @@ class PickerApp(tk.Toplevel):
         studio_bar = ttk.Frame(parent, padding=(12, 10, 12, 8), style="Panel.TFrame")
         studio_bar.grid(row=0, column=0, sticky="ew")
         studio_bar.columnconfigure(1, weight=1)
-        ttk.Label(studio_bar, text="블록 작업실", style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
-        self.workspace_summary_var = tk.StringVar(value="블록 0개")
-        ttk.Label(studio_bar, textvariable=self.workspace_summary_var, style="Muted.TLabel").grid(
-            row=0, column=1, sticky="w", padx=(10, 0)
+        ttk.Label(studio_bar, text="블록 작업실", style="PanelTitle.TLabel").grid(
+            row=0, column=0, sticky="w"
         )
-        ttk.Button(studio_bar, text="되돌리기", command=self._undo_recipe).grid(row=0, column=2, padx=(0, 6))
-        ttk.Button(studio_bar, text="다시 실행", command=self._redo_recipe).grid(row=0, column=3, padx=(0, 12))
-        ttk.Label(studio_bar, text="보기", style="Panel.TLabel").grid(row=0, column=4, padx=(0, 6))
+        self.workspace_summary_var = tk.StringVar(value="블록 0개")
+        ttk.Label(
+            studio_bar, textvariable=self.workspace_summary_var, style="Muted.TLabel"
+        ).grid(row=0, column=1, sticky="w", padx=(10, 0))
+        ttk.Button(studio_bar, text="되돌리기", command=self._undo_recipe).grid(
+            row=0, column=2, padx=(0, 6)
+        )
+        ttk.Button(studio_bar, text="다시 실행", command=self._redo_recipe).grid(
+            row=0, column=3, padx=(0, 12)
+        )
+        ttk.Label(studio_bar, text="보기", style="Panel.TLabel").grid(
+            row=0, column=4, padx=(0, 6)
+        )
         self.block_density_var = tk.StringVar(value="작게")
         density_combo = ttk.Combobox(
             studio_bar,
@@ -873,22 +1082,28 @@ class PickerApp(tk.Toplevel):
         density_combo.grid(row=0, column=5, padx=(0, 10))
         density_combo.bind(
             "<<ComboboxSelected>>",
-            lambda _event: self.block_workspace.set_density(self.block_density_var.get()),
+            lambda _event: self.block_workspace.set_density(
+                self.block_density_var.get()
+            ),
         )
-        ttk.Label(studio_bar, text="색상 기준", style="Panel.TLabel").grid(row=0, column=6, padx=(0, 6))
-        self.block_color_mode_var = tk.StringVar(value="event")
+        ttk.Label(studio_bar, text="색상 기준", style="Panel.TLabel").grid(
+            row=0, column=6, padx=(0, 6)
+        )
+        self.block_color_mode_var = tk.StringVar(value="동작 종류")
         ttk.Combobox(
             studio_bar,
             textvariable=self.block_color_mode_var,
-            values=("event", "window"),
-            width=8,
+            values=tuple(BLOCK_COLOR_MODE_OPTIONS),
+            width=10,
             state="readonly",
         ).grid(row=0, column=7)
-        self.block_color_mode_var.trace_add("write", lambda *_: self._refresh_block_canvas())
+        self.block_color_mode_var.trace_add(
+            "write", lambda *_: self._refresh_block_canvas()
+        )
         if self._on_create_shortcut is not None:
             ttk.Button(
                 studio_bar,
-                text="Rig 버튼으로 등록",
+                text="실행 버튼으로 등록",
                 command=self._request_workbench_shortcut,
                 style="Success.TButton",
             ).grid(row=0, column=8, padx=(10, 0))
@@ -896,18 +1111,26 @@ class PickerApp(tk.Toplevel):
         body = ttk.PanedWindow(parent, orient=tk.HORIZONTAL)
         body.grid(row=1, column=0, sticky="nsew")
 
-        palette = ttk.Frame(body, padding=(10, 10, 8, 10), style="Panel.TFrame", width=214)
+        palette = ttk.Frame(
+            body, padding=(10, 10, 8, 10), style="Panel.TFrame", width=214
+        )
         palette.grid_propagate(False)
         palette.columnconfigure(0, weight=1)
         palette.rowconfigure(1, weight=1)
-        ttk.Label(palette, text="블록", style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 8))
+        ttk.Label(palette, text="블록", style="PanelTitle.TLabel").grid(
+            row=0, column=0, sticky="w", pady=(0, 8)
+        )
         palette_tabs = ttk.Notebook(palette)
         self.scratch_palette_notebook = palette_tabs
         palette_tabs.grid(row=1, column=0, sticky="nsew")
         event_palette = ttk.Frame(palette_tabs, padding=(7, 9), style="Panel.TFrame")
         control_palette = ttk.Frame(palette_tabs, padding=(7, 9), style="Panel.TFrame")
         monitor_palette = ttk.Frame(palette_tabs, padding=(7, 9), style="Panel.TFrame")
-        for tab, label in ((event_palette, "이벤트"), (control_palette, "제어"), (monitor_palette, "감시")):
+        for tab, label in (
+            (event_palette, "이벤트"),
+            (control_palette, "제어"),
+            (monitor_palette, "감시"),
+        ):
             tab.columnconfigure(0, weight=1)
             palette_tabs.add(tab, text=label)
 
@@ -920,7 +1143,9 @@ class PickerApp(tk.Toplevel):
         quality.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         quality.columnconfigure(1, weight=1)
         self.capture_quality_var = tk.StringVar(value="캡처 대기")
-        self.capture_message_var = tk.StringVar(value="대상을 캡처하면 안정성을 바로 확인합니다.")
+        self.capture_message_var = tk.StringVar(
+            value="대상을 캡처하면 안정성을 바로 확인합니다."
+        )
         self.capture_detail_var = tk.StringVar(value="-")
         self.capture_badge = tk.Label(
             quality,
@@ -932,12 +1157,12 @@ class PickerApp(tk.Toplevel):
             font=("TkDefaultFont", 9, "bold"),
         )
         self.capture_badge.grid(row=0, column=0, sticky="w", padx=(0, 9))
-        ttk.Label(quality, textvariable=self.capture_message_var, style="Panel.TLabel").grid(
-            row=0, column=1, sticky="ew"
-        )
-        ttk.Button(quality, text="선택 대상 다시 잡기", command=self._retarget_selected_block).grid(
-            row=0, column=2, padx=(8, 0)
-        )
+        ttk.Label(
+            quality, textvariable=self.capture_message_var, style="Panel.TLabel"
+        ).grid(row=0, column=1, sticky="ew")
+        ttk.Button(
+            quality, text="선택 대상 다시 잡기", command=self._retarget_selected_block
+        ).grid(row=0, column=2, padx=(8, 0))
 
         canvas_shell = ttk.Frame(workspace, style="CanvasPanel.TFrame")
         canvas_shell.grid(row=1, column=0, sticky="nsew")
@@ -958,11 +1183,15 @@ class PickerApp(tk.Toplevel):
         )
         self.blocks_canvas = self.block_workspace
         self.block_workspace.grid(row=0, column=0, sticky="nsew")
-        canvas_scroll = ttk.Scrollbar(canvas_shell, orient="vertical", command=self.block_workspace.yview)
+        canvas_scroll = ttk.Scrollbar(
+            canvas_shell, orient="vertical", command=self.block_workspace.yview
+        )
         canvas_scroll.grid(row=0, column=1, sticky="ns")
         self.block_workspace.configure(yscrollcommand=canvas_scroll.set)
 
-        recording_panel = ttk.Labelframe(workspace, text="녹화 타임라인", padding=(8, 6))
+        recording_panel = ttk.Labelframe(
+            workspace, text="녹화 타임라인", padding=(8, 6)
+        )
         recording_panel.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         recording_panel.columnconfigure(0, weight=1)
         recording_columns = ("time", "app", "action", "target", "value", "mode")
@@ -991,25 +1220,46 @@ class PickerApp(tk.Toplevel):
         }
         for column in recording_columns:
             self.recording_tree.heading(column, text=recording_headings[column])
-            self.recording_tree.column(column, width=recording_widths[column], anchor="w", stretch=column != "time")
+            self.recording_tree.column(
+                column,
+                width=recording_widths[column],
+                anchor="w",
+                stretch=column != "time",
+            )
         self.recording_tree.grid(row=0, column=0, sticky="ew")
-        recording_scroll = ttk.Scrollbar(recording_panel, orient="vertical", command=self.recording_tree.yview)
+        recording_scroll = ttk.Scrollbar(
+            recording_panel, orient="vertical", command=self.recording_tree.yview
+        )
         recording_scroll.grid(row=0, column=1, sticky="ns")
-        recording_scroll_x = ttk.Scrollbar(recording_panel, orient="horizontal", command=self.recording_tree.xview)
+        recording_scroll_x = ttk.Scrollbar(
+            recording_panel, orient="horizontal", command=self.recording_tree.xview
+        )
         recording_scroll_x.grid(row=1, column=0, sticky="ew")
-        self.recording_tree.configure(yscrollcommand=recording_scroll.set, xscrollcommand=recording_scroll_x.set)
-        self.recording_tree.tag_configure("secure", background="#fff1f2", foreground="#9f1239")
-        self.recording_tree.tag_configure("input", background="#ecfdf5", foreground="#065f46")
-        self.recording_tree.bind("<Double-Button-1>", lambda _event: self._set_recorded_input_mode(True))
+        self.recording_tree.configure(
+            yscrollcommand=recording_scroll.set, xscrollcommand=recording_scroll_x.set
+        )
+        self.recording_tree.tag_configure(
+            "secure", background="#fff1f2", foreground="#9f1239"
+        )
+        self.recording_tree.tag_configure(
+            "input", background="#ecfdf5", foreground="#065f46"
+        )
+        self.recording_tree.bind(
+            "<Double-Button-1>", lambda _event: self._set_recorded_input_mode(True)
+        )
 
         recording_actions = ttk.Frame(recording_panel)
         recording_actions.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(6, 0))
-        self.recording_hint_var = tk.StringVar(value="연속 녹화를 시작하면 외부 프로그램의 클릭과 입력이 여기에 표시됩니다.")
-        ttk.Label(recording_actions, textvariable=self.recording_hint_var).grid(row=0, column=0, sticky="w")
+        self.recording_hint_var = tk.StringVar(
+            value="연속 녹화를 시작하면 외부 프로그램의 클릭과 입력이 여기에 표시됩니다."
+        )
+        ttk.Label(recording_actions, textvariable=self.recording_hint_var).grid(
+            row=0, column=0, sticky="w"
+        )
         recording_actions.columnconfigure(0, weight=1)
         ttk.Button(
             recording_actions,
-            text="선택 입력을 PC별 변수로",
+            text="선택 입력을 실장기별 값으로",
             command=lambda: self._set_recorded_input_mode(True),
         ).grid(row=0, column=1, padx=(8, 5))
         ttk.Button(
@@ -1017,43 +1267,59 @@ class PickerApp(tk.Toplevel):
             text="선택 입력을 고정값으로",
             command=lambda: self._set_recorded_input_mode(False),
         ).grid(row=0, column=2, padx=(0, 5))
-        ttk.Button(recording_actions, text="목록 비우기", command=self._clear_recording_timeline).grid(row=0, column=3)
+        ttk.Button(
+            recording_actions,
+            text="목록 비우기",
+            command=self._clear_recording_timeline,
+        ).grid(row=0, column=3)
         body.add(workspace, weight=1)
 
         inspector = ttk.Frame(body, padding=(12, 10), style="Panel.TFrame", width=292)
         inspector.grid_propagate(False)
         inspector.columnconfigure(0, weight=1)
         inspector.rowconfigure(2, weight=1)
-        ttk.Label(inspector, text="블록 설정", style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
-        self.block_kind_var = tk.StringVar(value="선택 없음")
-        ttk.Label(inspector, textvariable=self.block_kind_var, style="Muted.TLabel").grid(
-            row=1, column=0, sticky="w", pady=(2, 8)
+        ttk.Label(inspector, text="블록 설정", style="PanelTitle.TLabel").grid(
+            row=0, column=0, sticky="w"
         )
+        self.block_kind_var = tk.StringVar(value="선택 없음")
+        ttk.Label(
+            inspector, textvariable=self.block_kind_var, style="Muted.TLabel"
+        ).grid(row=1, column=0, sticky="w", pady=(2, 8))
 
-        inspector_canvas = tk.Canvas(inspector, background="#ffffff", highlightthickness=0, borderwidth=0)
+        inspector_canvas = tk.Canvas(
+            inspector, background="#ffffff", highlightthickness=0, borderwidth=0
+        )
         inspector_canvas.grid(row=2, column=0, sticky="nsew")
-        inspector_scroll = ttk.Scrollbar(inspector, orient="vertical", command=inspector_canvas.yview)
+        inspector_scroll = ttk.Scrollbar(
+            inspector, orient="vertical", command=inspector_canvas.yview
+        )
         inspector_scroll.grid(row=2, column=1, sticky="ns")
         inspector_canvas.configure(yscrollcommand=inspector_scroll.set)
         fields = ttk.Frame(inspector_canvas, style="Panel.TFrame")
         fields.columnconfigure(0, weight=1)
-        fields_window = inspector_canvas.create_window((0, 0), window=fields, anchor="nw")
+        fields_window = inspector_canvas.create_window(
+            (0, 0), window=fields, anchor="nw"
+        )
         fields.bind(
             "<Configure>",
-            lambda _event: inspector_canvas.configure(scrollregion=inspector_canvas.bbox("all")),
+            lambda _event: inspector_canvas.configure(
+                scrollregion=inspector_canvas.bbox("all")
+            ),
         )
         inspector_canvas.bind(
             "<Configure>",
-            lambda event: inspector_canvas.itemconfigure(fields_window, width=event.width),
+            lambda event: inspector_canvas.itemconfigure(
+                fields_window, width=event.width
+            ),
         )
 
         self.block_name_var = tk.StringVar(value="")
-        self.block_color_var = tk.StringVar(value="auto")
+        self.block_color_var = tk.StringVar(value="자동")
         self.block_repeat_var = tk.StringVar(value="2")
         self.block_seconds_var = tk.StringVar(value="0.5")
         self.block_keys_var = tk.StringVar(value="{ENTER}")
         self.block_text_var = tk.StringVar(value="")
-        self.block_condition_operator_var = tk.StringVar(value="contains")
+        self.block_condition_operator_var = tk.StringVar(value="포함")
         self.block_condition_value_var = tk.StringVar(value="")
         self.block_tolerance_var = tk.StringVar(value="24")
         self.block_invert_var = tk.BooleanVar(value=False)
@@ -1061,30 +1327,49 @@ class PickerApp(tk.Toplevel):
         self.block_monitor_tab_var = tk.StringVar(value="")
         self.block_monitor_channel_var = tk.StringVar(value="")
         self.block_monitor_state_var = tk.StringVar(value="")
+        self.block_monitor_field_var = tk.StringVar(value="일반 상태 판정")
 
-        self.block_name_entry = self._inspector_entry(fields, 0, "이름", self.block_name_var)
-        self.block_name_entry.bind("<Return>", lambda _event: self._apply_block_metadata())
+        self.block_name_entry = self._inspector_entry(
+            fields, 0, "이름", self.block_name_var
+        )
+        self.block_name_entry.bind(
+            "<Return>", lambda _event: self._apply_block_metadata()
+        )
         self.block_color_combo = self._inspector_combo(
             fields,
             1,
             "블록 색상",
             self.block_color_var,
-            ("auto", "blue", "green", "purple", "orange", "red", "teal", "gray"),
+            tuple(BLOCK_COLOR_OPTIONS),
         )
-        self.block_text_entry = self._inspector_entry(fields, 2, "입력할 텍스트", self.block_text_var)
-        self.block_seconds_entry = self._inspector_entry(fields, 3, "대기 시간(초)", self.block_seconds_var)
-        self.block_keys_entry = self._inspector_entry(fields, 4, "키 조합", self.block_keys_var)
-        self.block_repeat_entry = self._inspector_entry(fields, 5, "반복 횟수", self.block_repeat_var)
+        self.block_text_entry = self._inspector_entry(
+            fields, 2, "입력할 텍스트", self.block_text_var
+        )
+        self.block_seconds_entry = self._inspector_entry(
+            fields, 3, "대기 시간(초)", self.block_seconds_var
+        )
+        self.block_keys_entry = self._inspector_entry(
+            fields, 4, "키 조합", self.block_keys_var
+        )
+        self.block_repeat_entry = self._inspector_entry(
+            fields, 5, "반복 횟수", self.block_repeat_var
+        )
         self.block_operator_combo = self._inspector_combo(
             fields,
             6,
             "조건",
             self.block_condition_operator_var,
-            ("contains", "equals", "starts_with", "ends_with", "regex", "not_empty"),
+            tuple(CONDITION_OPERATOR_OPTIONS),
         )
-        self.block_condition_entry = self._inspector_entry(fields, 7, "기대값", self.block_condition_value_var)
-        self.block_tolerance_entry = self._inspector_entry(fields, 8, "색상 오차", self.block_tolerance_var)
-        self.block_invert_check = ttk.Checkbutton(fields, text="조건 결과 반전", variable=self.block_invert_var)
+        self.block_condition_entry = self._inspector_entry(
+            fields, 7, "기대값", self.block_condition_value_var
+        )
+        self.block_tolerance_entry = self._inspector_entry(
+            fields, 8, "색상 오차", self.block_tolerance_var
+        )
+        self.block_invert_check = ttk.Checkbutton(
+            fields, text="조건 결과 반전", variable=self.block_invert_var
+        )
         self.block_invert_check.grid(row=18, column=0, sticky="w", pady=(4, 9))
         self.block_input_mode_var = tk.StringVar(value="fixed")
         self.block_variable_var = tk.StringVar(value="")
@@ -1099,20 +1384,22 @@ class PickerApp(tk.Toplevel):
         ).grid(row=0, column=0, sticky="w", padx=(0, 8))
         ttk.Radiobutton(
             self.block_input_mode_frame,
-            text="PC별 변수",
+            text="실장기별 입력값",
             value="variable",
             variable=self.block_input_mode_var,
         ).grid(row=0, column=1, sticky="w")
-        ttk.Label(self.block_input_mode_frame, text="변수 이름", style="Panel.TLabel").grid(
-            row=1, column=0, sticky="w", pady=(5, 0), padx=(0, 8)
-        )
-        ttk.Entry(self.block_input_mode_frame, textvariable=self.block_variable_var).grid(
-            row=1, column=1, sticky="ew", pady=(5, 0)
-        )
+        ttk.Label(
+            self.block_input_mode_frame, text="변수 이름", style="Panel.TLabel"
+        ).grid(row=1, column=0, sticky="w", pady=(5, 0), padx=(0, 8))
+        ttk.Entry(
+            self.block_input_mode_frame, textvariable=self.block_variable_var
+        ).grid(row=1, column=1, sticky="ew", pady=(5, 0))
         self.block_input_mode_frame.grid_remove()
 
         ttk.Separator(fields).grid(row=19, column=0, sticky="ew", pady=(2, 10))
-        ttk.Label(fields, text="대상", style="PanelTitle.TLabel").grid(row=20, column=0, sticky="w")
+        ttk.Label(fields, text="대상", style="PanelTitle.TLabel").grid(
+            row=20, column=0, sticky="w"
+        )
         ttk.Label(
             fields,
             textvariable=self.block_target_var,
@@ -1124,78 +1411,179 @@ class PickerApp(tk.Toplevel):
         target_actions.grid(row=22, column=0, sticky="ew", pady=(0, 10))
         for column in (0, 1):
             target_actions.columnconfigure(column, weight=1)
-        ttk.Button(target_actions, text="대상 다시 선택", command=self._retarget_selected_block).grid(
-            row=0, column=0, sticky="ew", padx=(0, 4)
-        )
-        ttk.Button(target_actions, text="현재 값 읽기", command=self._sample_selected_block_value).grid(
-            row=0, column=1, sticky="ew", padx=(4, 0)
-        )
-        ttk.Button(target_actions, text="선택 블록 시험", command=self._test_selected_block).grid(
-            row=1, column=0, columnspan=2, sticky="ew", pady=(5, 0)
-        )
+        ttk.Button(
+            target_actions, text="대상 다시 선택", command=self._retarget_selected_block
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(
+            target_actions,
+            text="현재 값 읽기",
+            command=self._sample_selected_block_value,
+        ).grid(row=0, column=1, sticky="ew", padx=(4, 0))
+        ttk.Button(
+            target_actions, text="선택 블록 테스트", command=self._test_selected_block
+        ).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(5, 0))
 
         self.block_monitor_separator = ttk.Separator(fields)
         self.block_monitor_separator.grid(row=23, column=0, sticky="ew", pady=(0, 10))
-        self.block_monitor_title = ttk.Label(fields, text="모니터 보드", style="PanelTitle.TLabel")
+        self.block_monitor_title = ttk.Label(
+            fields, text="모니터 보드", style="PanelTitle.TLabel"
+        )
         self.block_monitor_title.grid(row=24, column=0, sticky="w")
-        self.block_monitor_tab_entry = self._inspector_entry(fields, 13, "탭", self.block_monitor_tab_var, row_offset=12)
+        self.block_monitor_tab_entry = self._inspector_entry(
+            fields, 13, "탭", self.block_monitor_tab_var, row_offset=12
+        )
         self.block_monitor_channel_entry = self._inspector_entry(
-            fields, 14, "장비 / CH", self.block_monitor_channel_var, row_offset=12
+            fields, 14, "실장기", self.block_monitor_channel_var, row_offset=12
         )
         self.block_monitor_state_entry = self._inspector_entry(
             fields, 15, "표시 상태", self.block_monitor_state_var, row_offset=12
         )
+        monitor_field_label = ttk.Label(
+            fields, text="SK Commander에서 읽을 항목", style="Panel.TLabel"
+        )
+        monitor_field_label.grid(row=44, column=0, sticky="w", pady=(2, 3))
+        self.block_monitor_field_combo = ttk.Combobox(
+            fields,
+            textvariable=self.block_monitor_field_var,
+            values=tuple(MONITOR_FIELD_ROLES),
+            state="readonly",
+        )
+        setattr(self.block_monitor_field_combo, "_field_label", monitor_field_label)
+        self.block_monitor_field_combo.grid(row=45, column=0, sticky="ew", pady=(0, 7))
 
-        save_button = ttk.Button(fields, text="변경 적용", command=self._apply_block_metadata, style="Primary.TButton")
-        save_button.grid(row=44, column=0, sticky="ew", pady=(12, 6))
+        save_button = ttk.Button(
+            fields,
+            text="변경 적용",
+            command=self._apply_block_metadata,
+            style="Primary.TButton",
+        )
+        save_button.grid(row=48, column=0, sticky="ew", pady=(12, 6))
         move_actions = ttk.Frame(fields, style="Panel.TFrame")
-        move_actions.grid(row=45, column=0, sticky="ew")
+        move_actions.grid(row=49, column=0, sticky="ew")
         for column in (0, 1):
             move_actions.columnconfigure(column, weight=1)
-        ttk.Button(move_actions, text="위로", command=lambda: self._move_selected_step(-1)).grid(
-            row=0, column=0, sticky="ew", padx=(0, 3), pady=(0, 5)
-        )
-        ttk.Button(move_actions, text="아래로", command=lambda: self._move_selected_step(1)).grid(
-            row=0, column=1, sticky="ew", padx=(3, 0), pady=(0, 5)
-        )
-        ttk.Button(move_actions, text="앞 블록 안으로", command=self._nest_selected_block_in_previous).grid(
-            row=1, column=0, sticky="ew", padx=(0, 3)
-        )
-        ttk.Button(move_actions, text="컨테이너 밖으로", command=self._move_selected_block_out).grid(
-            row=1, column=1, sticky="ew", padx=(3, 0)
-        )
+        ttk.Button(
+            move_actions, text="위로", command=lambda: self._move_selected_step(-1)
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 3), pady=(0, 5))
+        ttk.Button(
+            move_actions, text="아래로", command=lambda: self._move_selected_step(1)
+        ).grid(row=0, column=1, sticky="ew", padx=(3, 0), pady=(0, 5))
+        ttk.Button(
+            move_actions,
+            text="앞 블록 안으로",
+            command=self._nest_selected_block_in_previous,
+        ).grid(row=1, column=0, sticky="ew", padx=(0, 3))
+        ttk.Button(
+            move_actions, text="컨테이너 밖으로", command=self._move_selected_block_out
+        ).grid(row=1, column=1, sticky="ew", padx=(3, 0))
 
         block_actions = ttk.Frame(fields, style="Panel.TFrame")
-        block_actions.grid(row=46, column=0, sticky="ew", pady=(6, 0))
+        block_actions.grid(row=50, column=0, sticky="ew", pady=(6, 0))
         for column in (0, 1, 2):
             block_actions.columnconfigure(column, weight=1)
-        ttk.Button(block_actions, text="복제", command=self._duplicate_selected_block).grid(
-            row=0, column=0, sticky="ew", padx=(0, 3)
-        )
-        ttk.Button(block_actions, text="풀기", command=self._unwrap_selected_repeat).grid(
-            row=0, column=1, sticky="ew", padx=3
-        )
+        ttk.Button(
+            block_actions, text="복제", command=self._duplicate_selected_block
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 3))
+        ttk.Button(
+            block_actions, text="풀기", command=self._unwrap_selected_repeat
+        ).grid(row=0, column=1, sticky="ew", padx=3)
         ttk.Button(block_actions, text="삭제", command=self._delete_selected_step).grid(
             row=0, column=2, sticky="ew", padx=(3, 0)
         )
         body.add(inspector, weight=0)
 
         palette_items = (
-            (event_palette, "capture_click", "클릭 녹화", "#2563eb", "클릭할 대상을 캡처합니다."),
-            (event_palette, "capture_type", "텍스트 입력", "#16a34a", "입력칸을 캡처합니다."),
-            (event_palette, "key", "키 누르기", "#7c3aed", "Enter, Tab, 단축키를 실행합니다."),
-            (event_palette, "wait", "기다리기", "#475569", "지정한 시간 동안 기다립니다."),
-            (control_palette, "repeat", "N번 반복", "#ea580c", "안쪽 블록을 지정 횟수만큼 반복합니다."),
-            (control_palette, "if_exists", "만약 대상이 있으면", "#ca8a04", "대상이 있을 때 안쪽 블록을 실행합니다."),
-            (control_palette, "if_text", "만약 텍스트라면", "#b45309", "텍스트 조건이 맞을 때 실행합니다."),
-            (control_palette, "if_color", "만약 색상이라면", "#be123c", "색상 조건이 맞을 때 실행합니다."),
-            (monitor_palette, "monitor_text", "텍스트 상태", "#0891b2", "텍스트를 읽어 상태를 기록합니다."),
-            (monitor_palette, "monitor_color", "색상 상태", "#0284c7", "화면 색상을 읽어 상태를 기록합니다."),
-            (monitor_palette, "monitor_all", "AND 조건 묶음", "#0f766e", "모든 안쪽 조건이 맞아야 통과합니다."),
-            (monitor_palette, "monitor_any", "OR 조건 묶음", "#0369a1", "안쪽 조건 중 하나가 맞으면 통과합니다."),
+            (
+                event_palette,
+                "capture_click",
+                "클릭 녹화",
+                "#2563eb",
+                "클릭할 대상을 캡처합니다.",
+            ),
+            (
+                event_palette,
+                "capture_type",
+                "텍스트 입력",
+                "#16a34a",
+                "입력칸을 캡처합니다.",
+            ),
+            (
+                event_palette,
+                "key",
+                "키 누르기",
+                "#7c3aed",
+                "Enter, Tab, 단축키를 실행합니다.",
+            ),
+            (
+                event_palette,
+                "wait",
+                "기다리기",
+                "#475569",
+                "지정한 시간 동안 기다립니다.",
+            ),
+            (
+                control_palette,
+                "repeat",
+                "N번 반복",
+                "#ea580c",
+                "안쪽 블록을 지정 횟수만큼 반복합니다.",
+            ),
+            (
+                control_palette,
+                "if_exists",
+                "만약 대상이 있으면",
+                "#ca8a04",
+                "대상이 있을 때 안쪽 블록을 실행합니다.",
+            ),
+            (
+                control_palette,
+                "if_text",
+                "만약 텍스트라면",
+                "#b45309",
+                "텍스트 조건이 맞을 때 실행합니다.",
+            ),
+            (
+                control_palette,
+                "if_color",
+                "만약 색상이라면",
+                "#be123c",
+                "색상 조건이 맞을 때 실행합니다.",
+            ),
+            (
+                monitor_palette,
+                "monitor_text",
+                "텍스트 상태",
+                "#0891b2",
+                "텍스트를 읽어 상태를 기록합니다.",
+            ),
+            (
+                monitor_palette,
+                "monitor_color",
+                "색상 상태",
+                "#0284c7",
+                "화면 색상을 읽어 상태를 기록합니다.",
+            ),
+            (
+                monitor_palette,
+                "monitor_all",
+                "AND 조건 묶음",
+                "#0f766e",
+                "모든 안쪽 조건이 맞아야 통과합니다.",
+            ),
+            (
+                monitor_palette,
+                "monitor_any",
+                "OR 조건 묶음",
+                "#0369a1",
+                "안쪽 조건 중 하나가 맞으면 통과합니다.",
+            ),
         )
         self.scratch_palette_items: dict[str, ScratchPaletteItem] = {}
-        rows: dict[tk.Widget, int] = {event_palette: 0, control_palette: 0, monitor_palette: 0}
+        rows: dict[tk.Widget, int] = {
+            event_palette: 0,
+            control_palette: 0,
+            monitor_palette: 0,
+        }
         for palette_parent, kind, label, color, tooltip in palette_items:
             row = rows[palette_parent]
             item = ScratchPaletteItem(
@@ -1244,13 +1632,17 @@ class PickerApp(tk.Toplevel):
         row = field_index * 2
         label_widget = ttk.Label(parent, text=label, style="Panel.TLabel")
         label_widget.grid(row=row, column=0, sticky="w", pady=(2, 3))
-        combo = ttk.Combobox(parent, textvariable=variable, values=values, state="readonly")
+        combo = ttk.Combobox(
+            parent, textvariable=variable, values=values, state="readonly"
+        )
         setattr(combo, "_field_label", label_widget)
         combo.grid(row=row + 1, column=0, sticky="ew", pady=(0, 7))
         return combo
 
     def _toggle_target_setup(self) -> None:
-        self._target_setup_visible = not bool(getattr(self, "_target_setup_visible", False))
+        self._target_setup_visible = not bool(
+            getattr(self, "_target_setup_visible", False)
+        )
         if self._target_setup_visible:
             self.target_setup_panel.grid()
         else:
@@ -1260,19 +1652,21 @@ class PickerApp(tk.Toplevel):
         parent.columnconfigure(1, weight=1)
         parent.rowconfigure(4, weight=1)
 
-        self.ftp_config_path_var = tk.StringVar(value="rig-ftp.info")
+        self.ftp_config_path_var = tk.StringVar(value="fixture-connection.info")
         self.ftp_local_root_var = tk.StringVar(value="")
         self.ftp_host_var = tk.StringVar(value="")
         self.ftp_user_var = tk.StringVar(value="")
         self.ftp_password_var = tk.StringVar(value="")
-        self.ftp_root_var = tk.StringVar(value="/win_automation_macros")
-        self.ftp_node_var = tk.StringVar(value="rig-pc-01")
+        self.ftp_root_var = tk.StringVar(value="/mobile-dram-ae")
+        self.ftp_node_var = tk.StringVar(value="TFT30-1")
 
-        settings = ttk.Labelframe(parent, text="FTP Settings", padding=(10, 8))
+        settings = ttk.Labelframe(parent, text="통신 서버 설정", padding=(10, 8))
         settings.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         settings.columnconfigure(1, weight=1)
         settings.columnconfigure(3, weight=1)
-        ttk.Label(settings, text="Config").grid(row=0, column=0, sticky="w", padx=(0, 6), pady=3)
+        ttk.Label(settings, text="설정 파일").grid(
+            row=0, column=0, sticky="w", padx=(0, 6), pady=3
+        )
         ttk.Entry(settings, textvariable=self.ftp_config_path_var).grid(
             row=0,
             column=1,
@@ -1280,53 +1674,102 @@ class PickerApp(tk.Toplevel):
             sticky="ew",
             pady=3,
         )
-        ttk.Button(settings, text="Load", command=self._ftp_load_config).grid(row=0, column=4, padx=(6, 0), pady=3)
-        ttk.Button(settings, text="Save", command=self._ftp_save_config).grid(row=0, column=5, padx=(6, 0), pady=3)
-        ttk.Label(settings, text="Host").grid(row=1, column=0, sticky="w", padx=(0, 6), pady=3)
-        ttk.Entry(settings, textvariable=self.ftp_host_var).grid(row=1, column=1, sticky="ew", pady=3)
-        ttk.Label(settings, text="User").grid(row=1, column=2, sticky="w", padx=(10, 6), pady=3)
-        ttk.Entry(settings, textvariable=self.ftp_user_var).grid(row=1, column=3, sticky="ew", pady=3)
-        ttk.Label(settings, text="Password").grid(row=2, column=0, sticky="w", padx=(0, 6), pady=3)
-        ttk.Entry(settings, textvariable=self.ftp_password_var, show="*").grid(row=2, column=1, sticky="ew", pady=3)
-        ttk.Label(settings, text="Root").grid(row=2, column=2, sticky="w", padx=(10, 6), pady=3)
-        ttk.Entry(settings, textvariable=self.ftp_root_var).grid(row=2, column=3, sticky="ew", pady=3)
-        ttk.Label(settings, text="Node").grid(row=3, column=0, sticky="w", padx=(0, 6), pady=3)
-        ttk.Entry(settings, textvariable=self.ftp_node_var).grid(row=3, column=1, sticky="ew", pady=3)
-        ttk.Label(settings, text="Local test root").grid(row=3, column=2, sticky="w", padx=(10, 6), pady=3)
-        ttk.Entry(settings, textvariable=self.ftp_local_root_var).grid(row=3, column=3, sticky="ew", pady=3)
-        ttk.Button(settings, text="Init server", command=self._ftp_init_server, style="Primary.TButton").grid(
+        ttk.Button(settings, text="불러오기", command=self._ftp_load_config).grid(
+            row=0, column=4, padx=(6, 0), pady=3
+        )
+        ttk.Button(settings, text="저장", command=self._ftp_save_config).grid(
+            row=0, column=5, padx=(6, 0), pady=3
+        )
+        ttk.Label(settings, text="서버 주소").grid(
+            row=1, column=0, sticky="w", padx=(0, 6), pady=3
+        )
+        ttk.Entry(settings, textvariable=self.ftp_host_var).grid(
+            row=1, column=1, sticky="ew", pady=3
+        )
+        ttk.Label(settings, text="아이디").grid(
+            row=1, column=2, sticky="w", padx=(10, 6), pady=3
+        )
+        ttk.Entry(settings, textvariable=self.ftp_user_var).grid(
+            row=1, column=3, sticky="ew", pady=3
+        )
+        ttk.Label(settings, text="비밀번호").grid(
+            row=2, column=0, sticky="w", padx=(0, 6), pady=3
+        )
+        ttk.Entry(settings, textvariable=self.ftp_password_var, show="*").grid(
+            row=2, column=1, sticky="ew", pady=3
+        )
+        ttk.Label(settings, text="서버 폴더").grid(
+            row=2, column=2, sticky="w", padx=(10, 6), pady=3
+        )
+        ttk.Entry(settings, textvariable=self.ftp_root_var).grid(
+            row=2, column=3, sticky="ew", pady=3
+        )
+        ttk.Label(settings, text="실장기 PC 식별값").grid(
+            row=3, column=0, sticky="w", padx=(0, 6), pady=3
+        )
+        ttk.Entry(settings, textvariable=self.ftp_node_var).grid(
+            row=3, column=1, sticky="ew", pady=3
+        )
+        ttk.Label(settings, text="이 PC 테스트 폴더").grid(
+            row=3, column=2, sticky="w", padx=(10, 6), pady=3
+        )
+        ttk.Entry(settings, textvariable=self.ftp_local_root_var).grid(
+            row=3, column=3, sticky="ew", pady=3
+        )
+        ttk.Button(
+            settings,
+            text="통신 폴더 준비",
+            command=self._ftp_init_server,
+            style="Primary.TButton",
+        ).grid(
             row=3,
             column=4,
             sticky="ew",
             padx=(6, 0),
             pady=3,
         )
-        deploy_more_button = ttk.Menubutton(settings, text="More")
+        deploy_more_button = ttk.Menubutton(settings, text="더보기")
         deploy_more_button.grid(row=3, column=5, sticky="ew", padx=(6, 0), pady=3)
         deploy_more = tk.Menu(deploy_more_button, tearoff=False)
-        deploy_more.add_command(label="Create example config", command=self._ftp_create_config)
+        deploy_more.add_command(
+            label="예제 설정 만들기", command=self._ftp_create_config
+        )
         deploy_more_button["menu"] = deploy_more
 
-        package = ttk.Labelframe(parent, text="Upload Current Blocks", padding=(10, 8))
+        package = ttk.Labelframe(
+            parent, text="현재 자동 실행 순서 등록", padding=(10, 8)
+        )
         package.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         package.columnconfigure(1, weight=1)
-        ttk.Label(package, text="Name").grid(row=0, column=0, sticky="w", padx=(0, 6), pady=3)
+        ttk.Label(package, text="파일명").grid(
+            row=0, column=0, sticky="w", padx=(0, 6), pady=3
+        )
         self.ftp_package_name_var = tk.StringVar(value="workflow.py")
-        ttk.Entry(package, textvariable=self.ftp_package_name_var).grid(row=0, column=1, sticky="ew", pady=3)
-        ttk.Label(package, text="Title").grid(row=1, column=0, sticky="w", padx=(0, 6), pady=3)
+        ttk.Entry(package, textvariable=self.ftp_package_name_var).grid(
+            row=0, column=1, sticky="ew", pady=3
+        )
+        ttk.Label(package, text="표시 이름").grid(
+            row=1, column=0, sticky="w", padx=(0, 6), pady=3
+        )
         self.ftp_package_title_var = tk.StringVar(value="")
-        ttk.Entry(package, textvariable=self.ftp_package_title_var).grid(row=1, column=1, sticky="ew", pady=3)
-        ttk.Label(package, text="Notes").grid(row=2, column=0, sticky="nw", padx=(0, 6), pady=3)
+        ttk.Entry(package, textvariable=self.ftp_package_title_var).grid(
+            row=1, column=1, sticky="ew", pady=3
+        )
+        ttk.Label(package, text="설명").grid(
+            row=2, column=0, sticky="nw", padx=(0, 6), pady=3
+        )
         self.ftp_package_notes_text = tk.Text(package, height=3, wrap="word", undo=True)
         self._style_text_widget(self.ftp_package_notes_text)
         self.ftp_package_notes_text.grid(row=2, column=1, sticky="ew", pady=3)
         ttk.Button(
             package,
-            text="Upload current macro",
+            text="현재 순서 등록",
             command=self._ftp_upload_current_workflow,
             style="Primary.TButton",
         ).grid(row=3, column=1, sticky="e", pady=(6, 0), padx=(0, 8))
-        ttk.Button(package, text="Refresh macro list", command=self._ftp_refresh_packages).grid(
+        ttk.Button(
+            package, text="등록 목록 새로고침", command=self._ftp_refresh_packages
+        ).grid(
             row=3,
             column=2,
             sticky="e",
@@ -1335,9 +1778,13 @@ class PickerApp(tk.Toplevel):
 
         self.ftp_package_list = tk.Listbox(parent, activestyle="dotbox")
         self._style_listbox(self.ftp_package_list)
-        self.ftp_package_list.grid(row=2, column=0, sticky="nsew", padx=(0, 8), pady=(0, 8))
+        self.ftp_package_list.grid(
+            row=2, column=0, sticky="nsew", padx=(0, 8), pady=(0, 8)
+        )
         self.ftp_package_list.bind("<<ListboxSelect>>", self._ftp_show_selected_package)
-        package_scroll = ttk.Scrollbar(parent, orient="vertical", command=self.ftp_package_list.yview)
+        package_scroll = ttk.Scrollbar(
+            parent, orient="vertical", command=self.ftp_package_list.yview
+        )
         package_scroll.grid(row=2, column=0, sticky="nse", pady=(0, 8))
         self.ftp_package_list.configure(yscrollcommand=package_scroll.set)
 
@@ -1345,22 +1792,30 @@ class PickerApp(tk.Toplevel):
         self._style_text_widget(self.ftp_package_detail_text)
         self.ftp_package_detail_text.grid(row=2, column=1, sticky="nsew", pady=(0, 8))
 
-        run_frame = ttk.Labelframe(parent, text="PC별 실행표", padding=(10, 8))
+        run_frame = ttk.Labelframe(parent, text="실장기별 실행표", padding=(10, 8))
         run_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         run_frame.columnconfigure(0, weight=1)
         profile_toolbar = ttk.Frame(run_frame)
         profile_toolbar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
         profile_toolbar.columnconfigure(1, weight=1)
-        ttk.Label(profile_toolbar, text="PC / Node").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        ttk.Label(profile_toolbar, text="실장기 PC").grid(
+            row=0, column=0, sticky="w", padx=(0, 6)
+        )
         self.ftp_target_var = tk.StringVar(value="all")
-        ttk.Entry(profile_toolbar, textvariable=self.ftp_target_var).grid(row=0, column=1, sticky="ew", padx=(0, 8))
-        ttk.Button(profile_toolbar, text="PC 추가", command=self._ftp_add_profile_rows).grid(row=0, column=2, padx=(0, 5))
-        ttk.Button(profile_toolbar, text="설정 PC 불러오기", command=self._ftp_import_slave_profiles).grid(
-            row=0, column=3, padx=(0, 5)
+        ttk.Entry(profile_toolbar, textvariable=self.ftp_target_var).grid(
+            row=0, column=1, sticky="ew", padx=(0, 8)
         )
-        ttk.Button(profile_toolbar, text="선택 삭제", command=self._ftp_delete_profile_rows).grid(
-            row=0, column=4, padx=(0, 5)
-        )
+        ttk.Button(
+            profile_toolbar, text="실장기 PC 추가", command=self._ftp_add_profile_rows
+        ).grid(row=0, column=2, padx=(0, 5))
+        ttk.Button(
+            profile_toolbar,
+            text="실장기 목록 불러오기",
+            command=self._ftp_import_slave_profiles,
+        ).grid(row=0, column=3, padx=(0, 5))
+        ttk.Button(
+            profile_toolbar, text="선택 삭제", command=self._ftp_delete_profile_rows
+        ).grid(row=0, column=4, padx=(0, 5))
         ttk.Button(
             profile_toolbar,
             text="실행표 전송",
@@ -1368,22 +1823,34 @@ class PickerApp(tk.Toplevel):
             style="Primary.TButton",
         ).grid(row=0, column=5)
 
-        self.ftp_profile_tree = ttk.Treeview(run_frame, show="headings", height=6, selectmode="extended")
+        self.ftp_profile_tree = ttk.Treeview(
+            run_frame, show="headings", height=6, selectmode="extended"
+        )
         self.ftp_profile_tree.grid(row=1, column=0, sticky="ew")
-        profile_scroll = ttk.Scrollbar(run_frame, orient="vertical", command=self.ftp_profile_tree.yview)
+        profile_scroll = ttk.Scrollbar(
+            run_frame, orient="vertical", command=self.ftp_profile_tree.yview
+        )
         profile_scroll.grid(row=1, column=1, sticky="ns")
-        profile_scroll_x = ttk.Scrollbar(run_frame, orient="horizontal", command=self.ftp_profile_tree.xview)
+        profile_scroll_x = ttk.Scrollbar(
+            run_frame, orient="horizontal", command=self.ftp_profile_tree.xview
+        )
         profile_scroll_x.grid(row=2, column=0, sticky="ew")
-        self.ftp_profile_tree.configure(yscrollcommand=profile_scroll.set, xscrollcommand=profile_scroll_x.set)
+        self.ftp_profile_tree.configure(
+            yscrollcommand=profile_scroll.set, xscrollcommand=profile_scroll_x.set
+        )
         self.ftp_profile_tree.bind("<Double-Button-1>", self._ftp_edit_profile_cell)
-        self.ftp_profile_tree.bind("<Button-1>", self._ftp_toggle_profile_enabled, add="+")
+        self.ftp_profile_tree.bind(
+            "<Button-1>", self._ftp_toggle_profile_enabled, add="+"
+        )
         self._refresh_ftp_profile_columns()
 
         self.ftp_log_text = tk.Text(parent, height=7, wrap="word")
         self._style_text_widget(self.ftp_log_text)
         self.ftp_log_text.grid(row=4, column=0, columnspan=2, sticky="nsew")
 
-    def _text_area(self, parent: tk.Widget, *, wrap: str, row: int, height: int | None = None) -> tk.Text:
+    def _text_area(
+        self, parent: tk.Widget, *, wrap: str, row: int, height: int | None = None
+    ) -> tk.Text:
         widget = tk.Text(parent, wrap=wrap, undo=True, height=height or 20)
         self._style_text_widget(widget)
         scroll_y = ttk.Scrollbar(parent, orient="vertical", command=widget.yview)
@@ -1395,9 +1862,15 @@ class PickerApp(tk.Toplevel):
             scroll_x.grid(row=row + 1, column=0, sticky="ew")
         return widget
 
-    def _monitor_row(self, parent: tk.Widget, row: int, label: str, value: tk.StringVar) -> None:
-        ttk.Label(parent, text=label, width=8).grid(row=row, column=0, sticky="nw", pady=(0, 3))
-        ttk.Label(parent, textvariable=value, wraplength=360, anchor="w", justify="left").grid(
+    def _monitor_row(
+        self, parent: tk.Widget, row: int, label: str, value: tk.StringVar
+    ) -> None:
+        ttk.Label(parent, text=label, width=8).grid(
+            row=row, column=0, sticky="nw", pady=(0, 3)
+        )
+        ttk.Label(
+            parent, textvariable=value, wraplength=360, anchor="w", justify="left"
+        ).grid(
             row=row,
             column=1,
             sticky="ew",
@@ -1410,7 +1883,9 @@ class PickerApp(tk.Toplevel):
     def _activate_palette_block(self, kind: str) -> None:
         self._drop_palette_block(kind, (), len(self._recipe.steps))
 
-    def _drop_palette_block(self, kind: str, parent_path: BlockPath, index: int) -> None:
+    def _drop_palette_block(
+        self, kind: str, parent_path: BlockPath, index: int
+    ) -> None:
         if parent_path:
             try:
                 parent = get_block_step(self._recipe, parent_path)
@@ -1427,7 +1902,11 @@ class PickerApp(tk.Toplevel):
                 "monitor_any",
             }
             if parent.kind == "monitor_group" and kind not in condition_palette_kinds:
-                self._show_error(WindowsAutomationError("AND/OR 묶음 안에는 조건 또는 모니터 블록만 넣을 수 있습니다."))
+                self._show_error(
+                    WindowsAutomationError(
+                        "AND/OR 묶음 안에는 조건 또는 모니터 블록만 넣을 수 있습니다."
+                    )
+                )
                 return
         capture_kinds = {
             "capture_click",
@@ -1450,7 +1929,9 @@ class PickerApp(tk.Toplevel):
         if kind == "wait":
             step = AutomationStep.wait(0.5, block_name="기다리기")
         elif kind == "key":
-            step = AutomationStep.key("{ENTER}", label="Enter 누르기", block_name="Enter 누르기")
+            step = AutomationStep.key(
+                "{ENTER}", label="Enter 누르기", block_name="Enter 누르기"
+            )
         elif kind == "repeat":
             step = AutomationStep.repeat([], repeat_count=2, block_name="2번 반복")
         elif kind in {"monitor_all", "monitor_any"}:
@@ -1458,7 +1939,9 @@ class PickerApp(tk.Toplevel):
             name = "모든 조건 만족" if operator == "all" else "하나 이상 만족"
             step = AutomationStep.monitor_group([], operator=operator, block_name=name)
         else:
-            self._show_error(WindowsAutomationError(f"지원하지 않는 팔레트 블록입니다: {kind}"))
+            self._show_error(
+                WindowsAutomationError(f"지원하지 않는 팔레트 블록입니다: {kind}")
+            )
             return
         self._insert_workspace_step(step, parent_path, index, "블록을 추가했습니다")
 
@@ -1509,8 +1992,12 @@ class PickerApp(tk.Toplevel):
             moving = get_block_step(self._recipe, source_path)
             if destination_parent:
                 parent = get_block_step(self._recipe, destination_parent)
-                if parent.kind == "monitor_group" and not self._is_condition_like_step(moving):
-                    raise WindowsAutomationError("AND/OR 묶음 안에는 조건 또는 모니터 블록만 넣을 수 있습니다.")
+                if parent.kind == "monitor_group" and not self._is_condition_like_step(
+                    moving
+                ):
+                    raise WindowsAutomationError(
+                        "AND/OR 묶음 안에는 조건 또는 모니터 블록만 넣을 수 있습니다."
+                    )
             recipe, path = move_block_step(
                 self._recipe,
                 source_path,
@@ -1520,7 +2007,9 @@ class PickerApp(tk.Toplevel):
         except BaseException as exc:
             self._show_error(exc)
             return
-        self._commit_recipe(recipe, selected_path=path, message="블록 순서를 변경했습니다")
+        self._commit_recipe(
+            recipe, selected_path=path, message="블록 순서를 변경했습니다"
+        )
 
     def _delete_block_path(self, path: BlockPath) -> None:
         try:
@@ -1531,7 +2020,11 @@ class PickerApp(tk.Toplevel):
             return
         preferred = (*path[:-1], max(0, path[-1] - 1)) if path else None
         selected = nearest_block_path(recipe, preferred)
-        self._commit_recipe(recipe, selected_path=selected, message=f"'{step.block_title()}' 블록을 삭제했습니다")
+        self._commit_recipe(
+            recipe,
+            selected_path=selected,
+            message=f"'{step.block_title()}' 블록을 삭제했습니다",
+        )
 
     def _duplicate_block_path(self, path: BlockPath) -> None:
         try:
@@ -1539,7 +2032,9 @@ class PickerApp(tk.Toplevel):
         except BaseException as exc:
             self._show_error(exc)
             return
-        self._commit_recipe(recipe, selected_path=duplicated_path, message="블록을 복제했습니다")
+        self._commit_recipe(
+            recipe, selected_path=duplicated_path, message="블록을 복제했습니다"
+        )
 
     def _duplicate_selected_block(self) -> None:
         path = self._selected_step_path()
@@ -1582,7 +2077,9 @@ class PickerApp(tk.Toplevel):
         self._recipe = recipe
         self._recording_defaults = dict(recipe.variables)
         self._selected_block_path = nearest_block_path(recipe, selected_path)
-        self._selected_block_index = self._selected_block_path[0] if self._selected_block_path else None
+        self._selected_block_index = (
+            self._selected_block_path[0] if self._selected_block_path else None
+        )
         self._refresh_recipe_views()
         self._refresh_ftp_profile_columns()
         if self._selected_block_path is not None:
@@ -1647,7 +2144,7 @@ class PickerApp(tk.Toplevel):
     def _test_selected_block(self) -> None:
         path = self._selected_step_path()
         if path is None:
-            self._show_error(WindowsAutomationError("시험할 블록을 선택하세요."))
+            self._show_error(WindowsAutomationError("테스트할 블록을 선택하세요."))
             return
         try:
             step = get_block_step(self._recipe, path)
@@ -1655,7 +2152,7 @@ class PickerApp(tk.Toplevel):
             self._show_error(exc)
             return
         self._run_action(
-            f"'{step.block_title()}' 시험 중...",
+            f"'{step.block_title()}' 테스트 중...",
             lambda: run_recipe(
                 AutomationRecipe(steps=[step], variables=dict(self._recipe.variables)),
                 row=dict(self._recipe.variables),
@@ -1670,7 +2167,9 @@ class PickerApp(tk.Toplevel):
         try:
             step = get_block_step(self._recipe, path)
             if step.selector is None:
-                raise WindowsAutomationError("선택한 블록에 대상이 연결되지 않았습니다.")
+                raise WindowsAutomationError(
+                    "선택한 블록에 대상이 연결되지 않았습니다."
+                )
         except BaseException as exc:
             self._show_error(exc)
             return
@@ -1685,13 +2184,17 @@ class PickerApp(tk.Toplevel):
                 else:
                     value = get_element_text(step.selector, timeout=1.2)
                     value_kind = "text"
-                self._queue.put(("sampled_block_value", (path, value_kind, value, revision)))
+                self._queue.put(
+                    ("sampled_block_value", (path, value_kind, value, revision))
+                )
             except BaseException as exc:
                 self._queue.put(("error", exc))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _apply_sampled_block_value(self, path: BlockPath, value_kind: str, value: str) -> None:
+    def _apply_sampled_block_value(
+        self, path: BlockPath, value_kind: str, value: str
+    ) -> None:
         try:
             step = get_block_step(self._recipe, path)
         except BaseException:
@@ -1700,9 +2203,15 @@ class PickerApp(tk.Toplevel):
         if step.kind in {"if_text", "monitor_text", "if_color", "monitor_color"}:
             updated = replace(step, condition_value=compact)
             recipe = replace_block_step(self._recipe, path, updated)
-            self._commit_recipe(recipe, selected_path=path, message=f"현재 값을 조건에 적용했습니다: {compact or '-'}")
+            self._commit_recipe(
+                recipe,
+                selected_path=path,
+                message=f"현재 값을 조건에 적용했습니다: {compact or '-'}",
+            )
             return
-        self.block_target_var.set(f"{self._block_target_label(step)} · 현재 값: {compact or '-'}")
+        self.block_target_var.set(
+            f"{self._block_target_label(step)} · 현재 값: {compact or '-'}"
+        )
         self.status.set(f"현재 값: {compact or '-'}")
 
     def _start_continuous_recording(self) -> None:
@@ -1710,10 +2219,14 @@ class PickerApp(tk.Toplevel):
             self.status.set("이미 연속 녹화 중입니다")
             return
         if self._picker is not None:
-            self._show_error(WindowsAutomationError("진행 중인 대상 캡처를 먼저 취소하세요."))
+            self._show_error(
+                WindowsAutomationError("진행 중인 대상 캡처를 먼저 취소하세요.")
+            )
             return
         if self._run_stop_event is not None:
-            self._show_error(WindowsAutomationError("매크로 실행을 중지한 뒤 녹화를 시작하세요."))
+            self._show_error(
+                WindowsAutomationError("자동 실행 순서를 중지한 뒤 녹화를 시작하세요.")
+            )
             return
         self._clear_recording_timeline(reset_message=False)
         app_bounds = self._app_screen_bounds()
@@ -1737,10 +2250,14 @@ class PickerApp(tk.Toplevel):
         self._continuous_recorder = recorder
         self._recording_started_at = time.monotonic()
         self.recording_status_var.set("녹화 중 00:00 · 동작 0개")
-        self.recording_hint_var.set("외부 프로그램을 평소처럼 조작한 뒤 이 창의 '녹화 정지'를 누르세요.")
+        self.recording_hint_var.set(
+            "외부 프로그램을 평소처럼 조작한 뒤 이 창의 '녹화 정지'를 누르세요."
+        )
         self.status.set("연속 녹화 중 · 이 앱 안의 클릭은 기록하지 않습니다")
         self._set_recording_buttons(True)
-        self._add_monitor_event("Continuous recording started. Clicks inside this app are excluded.")
+        self._add_monitor_event(
+            "연속 녹화를 시작했습니다. 이 프로그램 안의 클릭은 기록하지 않습니다."
+        )
         self.after(250, self._update_recording_clock)
 
     def _stop_continuous_recording(self) -> None:
@@ -1748,7 +2265,9 @@ class PickerApp(tk.Toplevel):
         if recorder is None:
             return
         self.stop_recording_button.configure(state="disabled")
-        self.recording_status_var.set(f"녹화 정리 중 · 동작 {len(self._recorded_actions)}개")
+        self.recording_status_var.set(
+            f"녹화 정리 중 · 동작 {len(self._recorded_actions)}개"
+        )
         recorder.stop()
 
     def _update_recording_clock(self) -> None:
@@ -1763,8 +2282,12 @@ class PickerApp(tk.Toplevel):
         self.after(250, self._update_recording_clock)
 
     def _set_recording_buttons(self, recording: bool) -> None:
-        self.record_session_button.configure(state="disabled" if recording else "normal")
-        self.stop_recording_button.configure(state="normal" if recording else "disabled")
+        self.record_session_button.configure(
+            state="disabled" if recording else "normal"
+        )
+        self.stop_recording_button.configure(
+            state="normal" if recording else "disabled"
+        )
         manual_state = "disabled" if recording else "normal"
         self.pick_button.configure(state=manual_state)
         self.record_click_button.configure(state=manual_state)
@@ -1785,7 +2308,9 @@ class PickerApp(tk.Toplevel):
         self._set_recording_buttons(False)
         if not actions:
             self.recording_status_var.set("녹화 완료 · 기록된 동작 없음")
-            self.recording_hint_var.set("외부 프로그램에서 클릭하거나 입력한 동작이 없었습니다.")
+            self.recording_hint_var.set(
+                "외부 프로그램에서 클릭하거나 입력한 동작이 없었습니다."
+            )
             self.status.set("연속 녹화를 종료했습니다")
             return
         conversion = recording_to_steps(
@@ -1823,7 +2348,7 @@ class PickerApp(tk.Toplevel):
         self.recording_status_var.set(f"녹화 완료 · 동작 {len(actions)}개")
         variable_count = len(conversion.defaults)
         self.recording_hint_var.set(
-            f"블록 변환 완료 · PC별 입력 변수 {variable_count}개 · 아래 배포 실행표에서 PC마다 값을 지정할 수 있습니다."
+            f"블록 변환 완료 · 실장기별 입력값 {variable_count}개 · 아래 실행표에서 실장기마다 값을 지정할 수 있습니다."
         )
         self._refresh_recording_tree()
         self._refresh_ftp_profile_columns()
@@ -1833,7 +2358,9 @@ class PickerApp(tk.Toplevel):
             return
         selected = set(self.recording_tree.selection())
         self.recording_tree.delete(*self.recording_tree.get_children())
-        first_timestamp = self._recorded_actions[0].timestamp if self._recorded_actions else 0.0
+        first_timestamp = (
+            self._recorded_actions[0].timestamp if self._recorded_actions else 0.0
+        )
         for index, action in enumerate(self._recorded_actions):
             variable = self._recording_action_variables.get(index, "")
             if action.kind == "type":
@@ -1842,7 +2369,11 @@ class PickerApp(tk.Toplevel):
                     mode = f"필수 변수 · {variable or '미지정'}"
             else:
                 mode = "-"
-            tags = ("secure",) if action.secure else (("input",) if action.kind == "type" else ())
+            tags = (
+                ("secure",)
+                if action.secure
+                else (("input",) if action.kind == "type" else ())
+            )
             iid = str(index)
             self.recording_tree.insert(
                 "",
@@ -1863,7 +2394,9 @@ class PickerApp(tk.Toplevel):
 
     def _clear_recording_timeline(self, *, reset_message: bool = True) -> None:
         if self._continuous_recorder is not None:
-            self._show_error(WindowsAutomationError("녹화를 정지한 뒤 목록을 비우세요."))
+            self._show_error(
+                WindowsAutomationError("녹화를 정지한 뒤 목록을 비우세요.")
+            )
             return
         self._recorded_actions = []
         self._recording_action_paths = {}
@@ -1872,14 +2405,24 @@ class PickerApp(tk.Toplevel):
         if hasattr(self, "recording_tree"):
             self.recording_tree.delete(*self.recording_tree.get_children())
         if reset_message and hasattr(self, "recording_hint_var"):
-            self.recording_hint_var.set("표시 목록만 비웠습니다. 이미 만든 블록은 그대로 유지됩니다.")
+            self.recording_hint_var.set(
+                "표시 목록만 비웠습니다. 이미 만든 블록은 그대로 유지됩니다."
+            )
 
     def _set_recorded_input_mode(self, variable_mode: bool) -> None:
-        selected = [int(iid) for iid in self.recording_tree.selection() if str(iid).isdigit()]
-        selected = [index for index in selected if 0 <= index < len(self._recorded_actions)]
-        selected = [index for index in selected if self._recorded_actions[index].kind == "type"]
+        selected = [
+            int(iid) for iid in self.recording_tree.selection() if str(iid).isdigit()
+        ]
+        selected = [
+            index for index in selected if 0 <= index < len(self._recorded_actions)
+        ]
+        selected = [
+            index for index in selected if self._recorded_actions[index].kind == "type"
+        ]
         if not selected:
-            self._show_error(WindowsAutomationError("타임라인에서 텍스트 입력 동작을 선택하세요."))
+            self._show_error(
+                WindowsAutomationError("타임라인에서 텍스트 입력 동작을 선택하세요.")
+            )
             return
         recipe = self._recipe
         used_variables = set(recipe_variables(recipe.steps))
@@ -1888,7 +2431,11 @@ class PickerApp(tk.Toplevel):
             recording_id = self._recording_action_ids.get(action_index, "")
             if recording_id:
                 path = next(
-                    (candidate for candidate, step in iter_block_paths(recipe) if step.recording_id == recording_id),
+                    (
+                        candidate
+                        for candidate, step in iter_block_paths(recipe)
+                        if step.recording_id == recording_id
+                    ),
                     self._recording_action_paths.get(action_index),
                 )
             else:
@@ -1906,15 +2453,23 @@ class PickerApp(tk.Toplevel):
             if variable_mode:
                 suggested = self._recording_action_variables.get(action_index, "")
                 if not suggested:
-                    one = recording_to_steps([action], variable_inputs=True, include_delays=False)
+                    one = recording_to_steps(
+                        [action], variable_inputs=True, include_delays=False
+                    )
                     suggested = one.action_variables.get(0, "input_value")
                 variable = self._unique_variable_name(suggested, used_variables)
                 value = f"${{{variable}}}"
-                self._recording_defaults[variable] = "" if action.secure else action.text
+                self._recording_defaults[variable] = (
+                    "" if action.secure else action.text
+                )
                 self._recording_action_variables[action_index] = variable
             else:
                 if action.secure:
-                    self._show_error(WindowsAutomationError("보안 입력은 고정값으로 저장할 수 없습니다."))
+                    self._show_error(
+                        WindowsAutomationError(
+                            "보안 입력은 고정값으로 저장할 수 없습니다."
+                        )
+                    )
                     continue
                 value = action.text
                 self._recording_action_variables.pop(action_index, None)
@@ -1923,9 +2478,13 @@ class PickerApp(tk.Toplevel):
             self._recording_action_paths[action_index] = path
             changed += 1
         if changed:
-            mode = "PC별 변수" if variable_mode else "고정값"
+            mode = "실장기별 입력값" if variable_mode else "고정값"
             recipe = replace(recipe, variables=dict(self._recording_defaults))
-            self._commit_recipe(recipe, selected_path=self._recording_action_paths.get(selected[-1]), message=f"입력값을 {mode}로 변경했습니다")
+            self._commit_recipe(
+                recipe,
+                selected_path=self._recording_action_paths.get(selected[-1]),
+                message=f"입력값을 {mode}로 변경했습니다",
+            )
             self._refresh_recording_tree()
             self._refresh_ftp_profile_columns()
 
@@ -1952,15 +2511,15 @@ class PickerApp(tk.Toplevel):
             return
         self._set_pick_buttons("disabled")
         label = self._mode_label(mode)
-        self.status.set(f"{label}: waiting for target click...")
-        self.monitor_state.set("Armed")
+        self.status.set(f"{label}: 외부 프로그램에서 대상을 클릭하세요")
+        self.monitor_state.set("대상 선택 중")
         self.monitor_mode.set(label)
         if mode == "type_step":
             self._add_monitor_event(
-                "Armed type step. Click the target input field; text is inserted later when the workflow runs."
+                "입력 칸을 클릭하세요. 텍스트는 자동 실행 순서를 실행할 때 입력됩니다."
             )
         else:
-            self._add_monitor_event(f"Armed {label}. Next click outside this app will be captured.")
+            self._add_monitor_event(f"{label}: 이 창 밖에서 다음 클릭을 기록합니다.")
 
     def _cancel_pick(self) -> None:
         if self._picker:
@@ -1969,9 +2528,9 @@ class PickerApp(tk.Toplevel):
         self._pending_block_drop = None
         self._pending_retarget_path = None
         self._set_pick_buttons("normal")
-        self.status.set("Capture cancelled")
-        self.monitor_state.set("Idle")
-        self._add_monitor_event("Capture cancelled.")
+        self.status.set("대상 선택을 취소했습니다")
+        self.monitor_state.set("대기")
+        self._add_monitor_event("대상 선택을 취소했습니다.")
 
     def _drain_queue(self) -> None:
         while True:
@@ -2009,10 +2568,15 @@ class PickerApp(tk.Toplevel):
                 checked_at, revision = payload
                 if int(revision) == self._recipe_revision:
                     checked_at = float(checked_at)
-                    self.monitor_updated_var.set(f"최근 확인 {time.strftime('%H:%M:%S', time.localtime(checked_at))}")
+                    self.monitor_updated_var.set(
+                        f"최근 확인 {time.strftime('%H:%M:%S', time.localtime(checked_at))}"
+                    )
                     self._refresh_monitor_profile_view()
             elif kind == "monitor_once_finished":
-                if self._live_monitor_stop_event is not None and not self._live_monitor_stop_event.is_set():
+                if (
+                    self._live_monitor_stop_event is not None
+                    and not self._live_monitor_stop_event.is_set()
+                ):
                     self.monitor_live_state_var.set("자동 확인 중")
                 else:
                     self.monitor_live_state_var.set("대기")
@@ -2022,13 +2586,15 @@ class PickerApp(tk.Toplevel):
             elif kind == "sampled_block_value":
                 path, value_kind, value, revision = payload
                 if int(revision) == self._recipe_revision:
-                    self._apply_sampled_block_value(tuple(path), str(value_kind), str(value))
+                    self._apply_sampled_block_value(
+                        tuple(path), str(value_kind), str(value)
+                    )
             elif kind == "recorded_action":
                 self._append_recorded_action(payload)
             elif kind == "recording_stopped":
                 self._finish_continuous_recording(list(payload))
             elif kind == "recording_error":
-                self._add_monitor_event(f"Recording warning: {payload}")
+                self._add_monitor_event(f"녹화 확인 필요: {payload}")
                 self.log.set(str(payload))
             elif kind == "run_finished":
                 self._set_running(False)
@@ -2037,21 +2603,26 @@ class PickerApp(tk.Toplevel):
     def _apply_picked(self, mode: str, picked: PickedElement) -> None:
         original_selector = self._selector_with_window_marker(picked.selector)
         selector = original_selector
-        if mode == "click_step" or (mode == "retarget" and self._retarget_action_kind() == "click"):
+        if mode == "click_step" or (
+            mode == "retarget" and self._retarget_action_kind() == "click"
+        ):
             selector = selector_for_action(selector, "click")
-        elif mode == "type_step" or (mode == "retarget" and self._retarget_action_kind() == "type"):
+        elif mode == "type_step" or (
+            mode == "retarget" and self._retarget_action_kind() == "type"
+        ):
             selector = selector_for_action(selector, "type")
         self._set_current_selector(selector, selector.xpath_like())
         leaf = selector.leaf()
         label = self._mode_label(mode)
-        self.monitor_state.set("Idle")
+        self.monitor_state.set("대기")
         self.monitor_mode.set(label)
         self.monitor_window.set(self._segment_summary(selector.root))
         self.monitor_target.set(self._segment_summary(leaf))
         metadata = self._metadata_from_fields(selector)
         self._last_auto_element_id = metadata["element_id"]
         self.element_name_var.set(metadata["element_id"])
-        self.element_role_var.set(metadata["element_role"])
+        role = metadata["element_role"]
+        self.element_role_var.set(ELEMENT_ROLE_LABELS.get(role, role))
         if selector.picked_point:
             x, y = selector.picked_point
             self.monitor_point.set(f"{x}, {y}")
@@ -2062,7 +2633,9 @@ class PickerApp(tk.Toplevel):
             path = self._pending_retarget_path
             self._pending_retarget_path = None
             if path is None:
-                self._show_error(WindowsAutomationError("대상을 바꿀 블록을 찾을 수 없습니다."))
+                self._show_error(
+                    WindowsAutomationError("대상을 바꿀 블록을 찾을 수 없습니다.")
+                )
                 return
             try:
                 step = get_block_step(self._recipe, path)
@@ -2071,7 +2644,9 @@ class PickerApp(tk.Toplevel):
             except BaseException as exc:
                 self._show_error(exc)
                 return
-            self._commit_recipe(recipe, selected_path=path, message="블록 대상을 다시 연결했습니다")
+            self._commit_recipe(
+                recipe, selected_path=path, message="블록 대상을 다시 연결했습니다"
+            )
         elif mode == "click_step":
             step = AutomationStep.click(
                 selector,
@@ -2080,9 +2655,11 @@ class PickerApp(tk.Toplevel):
                 **metadata,
             )
             parent_path, index = self._pending_drop_destination("capture_click")
-            path = self._insert_workspace_step(step, parent_path, index, "클릭 블록을 기록했습니다")
+            path = self._insert_workspace_step(
+                step, parent_path, index, "클릭 블록을 기록했습니다"
+            )
             self._add_monitor_event(
-                f"Recorded click step: {metadata['element_id']} ({metadata['element_role']})"
+                f"클릭 블록 기록: {metadata['element_id']} ({metadata['element_role']})"
             )
         elif mode == "type_step":
             text_template = self.input_text.get() or "${col1}"
@@ -2096,10 +2673,13 @@ class PickerApp(tk.Toplevel):
                 **metadata,
             )
             parent_path, index = self._pending_drop_destination("capture_type")
-            path = self._insert_workspace_step(step, parent_path, index, "텍스트 입력 블록을 기록했습니다")
+            path = self._insert_workspace_step(
+                step, parent_path, index, "텍스트 입력 블록을 기록했습니다"
+            )
             self._add_monitor_event(
-                f"Recorded type step: {metadata['element_id']} ({metadata['element_role']}) "
-                f"text={text_template!r} method={self._input_method()} clear={bool(self.clear_var.get())}"
+                f"텍스트 입력 블록 기록: {metadata['element_id']} "
+                f"({metadata['element_role']}) · 값={text_template!r} · "
+                f"입력 방식={self._input_method()} · 기존값 지우기={bool(self.clear_var.get())}"
             )
         elif mode.startswith("palette_"):
             kind = mode.removeprefix("palette_")
@@ -2108,10 +2688,12 @@ class PickerApp(tk.Toplevel):
             if step is None:
                 self._pending_block_drop = None
                 return
-            path = self._insert_workspace_step(step, parent_path, index, "조건 블록을 만들었습니다")
+            path = self._insert_workspace_step(
+                step, parent_path, index, "조건 블록을 만들었습니다"
+            )
         else:
             self.status.set("대상을 선택했습니다")
-            self._add_monitor_event(f"Picked selector: {self._segment_summary(leaf)}")
+            self._add_monitor_event(f"대상 선택: {self._segment_summary(leaf)}")
 
         self._pending_block_drop = None
 
@@ -2142,11 +2724,13 @@ class PickerApp(tk.Toplevel):
         metadata: dict[str, str],
     ) -> AutomationStep | None:
         if kind == "if_exists":
-            return AutomationStep.if_exists(
-                selector,
-                [],
-                block_name="만약 대상이 있으면",
-                **metadata,
+            return self._with_default_monitor_profile(
+                AutomationStep.if_exists(
+                    selector,
+                    [],
+                    block_name="만약 대상이 있으면",
+                    **metadata,
+                )
             )
 
         if kind in {"if_text", "monitor_text"}:
@@ -2157,21 +2741,25 @@ class PickerApp(tk.Toplevel):
                 pass
             expected = sample or "PASS"
             if kind == "if_text":
-                return AutomationStep.if_text(
+                return self._with_default_monitor_profile(
+                    AutomationStep.if_text(
+                        selector,
+                        expected,
+                        [],
+                        operator="contains",
+                        block_name=f"텍스트가 {expected}이면",
+                        **metadata,
+                    )
+                )
+            return self._with_default_monitor_profile(
+                AutomationStep.monitor_text(
                     selector,
                     expected,
-                    [],
                     operator="contains",
-                    block_name=f"텍스트가 {expected}이면",
+                    block_name=f"텍스트 상태: {expected}",
+                    monitor_state="PASS",
                     **metadata,
                 )
-            return AutomationStep.monitor_text(
-                selector,
-                expected,
-                operator="contains",
-                block_name=f"텍스트 상태: {expected}",
-                monitor_state="PASS",
-                **metadata,
             )
 
         if kind in {"if_color", "monitor_color"}:
@@ -2181,25 +2769,47 @@ class PickerApp(tk.Toplevel):
             except BaseException:
                 pass
             if kind == "if_color":
-                return AutomationStep.if_color(
+                return self._with_default_monitor_profile(
+                    AutomationStep.if_color(
+                        selector,
+                        sampled,
+                        [],
+                        tolerance=24,
+                        block_name=f"색상이 {sampled}이면",
+                        **metadata,
+                    )
+                )
+            return self._with_default_monitor_profile(
+                AutomationStep.monitor_color(
                     selector,
                     sampled,
-                    [],
                     tolerance=24,
-                    block_name=f"색상이 {sampled}이면",
+                    block_name=f"색상 상태: {sampled}",
+                    monitor_state="PASS",
                     **metadata,
                 )
-            return AutomationStep.monitor_color(
-                selector,
-                sampled,
-                tolerance=24,
-                block_name=f"색상 상태: {sampled}",
-                monitor_state="PASS",
-                **metadata,
             )
 
-        self._show_error(WindowsAutomationError(f"지원하지 않는 조건 블록입니다: {kind}"))
+        self._show_error(
+            WindowsAutomationError(f"지원하지 않는 조건 블록입니다: {kind}")
+        )
         return None
+
+    def _with_default_monitor_profile(
+        self,
+        step: AutomationStep,
+    ) -> AutomationStep:
+        labels = self._parse_monitor_channel_labels()
+        tab = (
+            self.monitor_default_tab_var.get().strip()
+            if hasattr(self, "monitor_default_tab_var")
+            else ""
+        )
+        return replace(
+            step,
+            monitor_tab=step.monitor_tab or tab,
+            monitor_channel=step.monitor_channel or (labels[0] if labels else ""),
+        )
 
     def _retarget_action_kind(self) -> str:
         path = self._pending_retarget_path
@@ -2218,7 +2828,13 @@ class PickerApp(tk.Toplevel):
         mode: str,
         summary: dict[str, Any],
     ) -> dict[str, Any]:
-        action = "click" if mode == "click_step" else "type" if mode == "type_step" else "inspect"
+        action = (
+            "click"
+            if mode == "click_step"
+            else "type"
+            if mode == "type_step"
+            else "inspect"
+        )
         leaf = selector.leaf()
         original_leaf = original_selector.leaf()
         issues: list[str] = []
@@ -2238,7 +2854,9 @@ class PickerApp(tk.Toplevel):
                     "잘못 잡힌 대상이거나 오래된 UIA 좌표일 수 있습니다."
                 )
         else:
-            warnings.append("UIA가 사용할 수 있는 component 영역을 제공하지 않았습니다.")
+            warnings.append(
+                "UIA가 사용할 수 있는 component 영역을 제공하지 않았습니다."
+            )
 
         if original_selector.xpath_like() != selector.xpath_like():
             passed.append(
@@ -2249,14 +2867,18 @@ class PickerApp(tk.Toplevel):
         control_key = self._control_type_key(leaf.control_type)
         if action == "click":
             if control_key in CLICK_CONTROL_TYPES:
-                passed.append(f"클릭에 적합한 component 유형입니다: {leaf.control_type or '-'}")
+                passed.append(
+                    f"클릭에 적합한 component 유형입니다: {leaf.control_type or '-'}"
+                )
             else:
                 warnings.append(
                     f"대상이 일반적인 클릭 component가 아닙니다: {leaf.control_type or 'unknown'}"
                 )
         elif action == "type":
             if control_key in TYPE_CONTROL_TYPES:
-                passed.append(f"입력에 적합한 component 유형입니다: {leaf.control_type or '-'}")
+                passed.append(
+                    f"입력에 적합한 component 유형입니다: {leaf.control_type or '-'}"
+                )
             else:
                 issues.append(
                     f"대상이 일반적인 입력 component가 아닙니다: {leaf.control_type or 'unknown'}"
@@ -2269,15 +2891,23 @@ class PickerApp(tk.Toplevel):
         else:
             issues.append("대상에 안정적인 AutomationId, Name, ClassName이 없습니다.")
 
-        if selector.root.name or selector.root.automation_id or selector.root.class_name:
+        if (
+            selector.root.name
+            or selector.root.automation_id
+            or selector.root.class_name
+        ):
             passed.append("상위 창에 식별 metadata가 있습니다.")
         else:
             warnings.append("상위 창 식별 metadata가 약합니다.")
 
         if selector.window_marker and not selector.window_marker.is_empty():
-            passed.append(f"창 구분 조건이 있습니다: {selector.window_marker.summary()}")
+            passed.append(
+                f"창 구분 조건이 있습니다: {selector.window_marker.summary()}"
+            )
         else:
-            warnings.append("창 구분 조건이 없습니다. 동일 창을 여러 개 띄우면 추가하십시오.")
+            warnings.append(
+                "창 구분 조건이 없습니다. 동일 창을 여러 개 띄우면 추가하십시오."
+            )
 
         picked_control = str(summary.get("control_type") or "")
         if picked_control and picked_control != original_leaf.control_type:
@@ -2307,7 +2937,9 @@ class PickerApp(tk.Toplevel):
             f"대상: {self._segment_summary(leaf)}",
             f"상위 창: {self._segment_summary(selector.root)}",
             f"클릭 좌표: {point if point else '-'}",
-            f"Rect: {rect.left},{rect.top},{rect.right},{rect.bottom}" if rect_has_area else "Rect: -",
+            f"Rect: {rect.left},{rect.top},{rect.right},{rect.bottom}"
+            if rect_has_area
+            else "Rect: -",
             "",
             "통과:",
             *passed_lines,
@@ -2318,7 +2950,9 @@ class PickerApp(tk.Toplevel):
             "재검토:",
             *issue_lines,
         ]
-        compact_detail = " | ".join([*issues[:1], *warnings[:2], *passed[:1]]) or "상세 내용 없음"
+        compact_detail = (
+            " | ".join([*issues[:1], *warnings[:2], *passed[:1]]) or "상세 내용 없음"
+        )
         return {
             "level": level,
             "status": status,
@@ -2336,14 +2970,20 @@ class PickerApp(tk.Toplevel):
         level = str(audit.get("level") or "warn")
         if hasattr(self, "capture_quality_var"):
             self.capture_quality_var.set(str(audit.get("status") or "확인 필요"))
-            self.capture_message_var.set(str(audit.get("message") or "캡처 대상을 확인하십시오."))
+            self.capture_message_var.set(
+                str(audit.get("message") or "캡처 대상을 확인하십시오.")
+            )
             self.capture_detail_var.set(str(audit.get("detail") or "-"))
             self.capture_badge.configure(background=colors.get(level, "#64748b"))
         if hasattr(self, "capture_check_text"):
             self._replace_text(self.capture_check_text, str(audit.get("text") or ""))
-        self._add_monitor_event(f"캡처 진단: {audit.get('status')} - {audit.get('message')}")
+        self._add_monitor_event(
+            f"캡처 진단: {audit.get('status')} - {audit.get('message')}"
+        )
 
-    def _set_current_selector(self, selector: UISelector, xpath: str | None = None) -> None:
+    def _set_current_selector(
+        self, selector: UISelector, xpath: str | None = None
+    ) -> None:
         self._current_selector = selector
         self._replace_text(self.selector_text, selector.to_json())
         self._replace_text(self.path_text, xpath or selector.xpath_like())
@@ -2351,19 +2991,19 @@ class PickerApp(tk.Toplevel):
         if hasattr(self, "window_marker_var"):
             marker = selector.window_marker
             if marker and marker.name_regex:
-                self.window_marker_mode_var.set("regex")
+                self.window_marker_mode_var.set(WINDOW_MARKER_LABELS["regex"])
                 self.window_marker_var.set(marker.name_regex)
             elif marker and marker.name_equals:
-                self.window_marker_mode_var.set("equals")
+                self.window_marker_mode_var.set(WINDOW_MARKER_LABELS["equals"])
                 self.window_marker_var.set(marker.name_equals)
             else:
-                self.window_marker_mode_var.set("contains")
+                self.window_marker_mode_var.set(WINDOW_MARKER_LABELS["contains"])
                 self.window_marker_var.set(marker.name_contains if marker else "")
 
     def _selector_from_editor(self) -> UISelector:
         text = self.selector_text.get("1.0", "end").strip()
         if not text:
-            raise WindowsAutomationError("No selector is loaded.")
+            raise WindowsAutomationError("선택한 대상이 없습니다.")
         selector = UISelector.from_json(text)
         self._current_selector = selector
         return selector
@@ -2372,7 +3012,12 @@ class PickerApp(tk.Toplevel):
         text = self.window_marker_var.get().strip()
         if not text:
             return None
-        mode = self.window_marker_mode_var.get().strip().casefold() if hasattr(self, "window_marker_mode_var") else "contains"
+        selected_mode = (
+            self.window_marker_mode_var.get().strip()
+            if hasattr(self, "window_marker_mode_var")
+            else ""
+        )
+        mode = WINDOW_MARKER_OPTIONS.get(selected_mode, selected_mode.casefold())
         if mode == "equals":
             return WindowMarker(name_equals=text)
         if mode == "regex":
@@ -2397,14 +3042,18 @@ class PickerApp(tk.Toplevel):
             selector = self._selector_from_editor()
             updated = self._selector_with_window_marker(selector, clear_when_empty=True)
             if updated is None:
-                raise WindowsAutomationError("No selector is loaded.")
+                raise WindowsAutomationError("선택한 대상이 없습니다.")
         except BaseException as exc:
             self._show_error(exc)
             return
 
         self._set_current_selector(updated)
         marker = updated.window_marker
-        message = f"Applied window marker: {marker.summary()}" if marker else "Cleared window marker"
+        message = (
+            f"창 구분 조건 적용: {marker.summary()}"
+            if marker
+            else "창 구분 조건을 지웠습니다"
+        )
         self.status.set(message)
         self._add_monitor_event(message)
 
@@ -2413,37 +3062,39 @@ class PickerApp(tk.Toplevel):
             selector = self._selector_from_editor()
             updated = self._selector_with_window_marker(selector)
             if updated is None:
-                raise WindowsAutomationError("No selector is loaded.")
+                raise WindowsAutomationError("선택한 대상이 없습니다.")
             selector = updated
             self._set_current_selector(selector)
         except BaseException as exc:
             self._show_error(exc)
             return
 
-        self.status.set("Debugging window candidates...")
-        self._add_monitor_event("Debugging window candidates.")
+        self.status.set("찾을 수 있는 프로그램 창을 비교하고 있습니다...")
+        self._add_monitor_event("프로그램 창 비교를 시작했습니다.")
 
         def worker() -> None:
             try:
                 rows = debug_root_candidates(selector)
                 self._queue.put(("debug", self._format_window_debug(selector, rows)))
-                self._queue.put(("status", "Window debug ready"))
+                self._queue.put(("status", "프로그램 창 비교가 끝났습니다"))
             except BaseException as exc:
                 self._queue.put(("error", exc))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _format_window_debug(self, selector: UISelector, rows: list[dict[str, Any]]) -> str:
+    def _format_window_debug(
+        self, selector: UISelector, rows: list[dict[str, Any]]
+    ) -> str:
         marker = selector.window_marker
         lines = [
-            f"Root selector: {selector.root.xpath_node()}",
-            f"Window identity: {marker.summary() if marker else '-'}",
+            f"기준 프로그램 창: {selector.root.xpath_node()}",
+            f"창 구분 조건: {marker.summary() if marker else '-'}",
             "",
             "SEL ROOT MARK HINT SCOPE   DEPTH IDX HANDLE PID NAME | CLASS | MARKER TARGET",
             "--- ---- ---- ---- ------- ----- --- ------ --- -------------------------------",
         ]
         if not rows:
-            lines.append("No window candidates returned.")
+            lines.append("조건에 맞는 프로그램 창을 찾지 못했습니다.")
             return "\n".join(lines)
 
         for row in rows:
@@ -2476,12 +3127,12 @@ class PickerApp(tk.Toplevel):
                 "click",
             )
             if selector is None:
-                raise WindowsAutomationError("No selector is loaded.")
+                raise WindowsAutomationError("선택한 대상이 없습니다.")
             self._set_current_selector(selector)
         except BaseException as exc:
             self._show_error(exc)
             return
-        self._run_action("Clicking...", lambda: click(selector))
+        self._run_action("클릭을 확인하고 있습니다...", lambda: click(selector))
 
     def _type_current(self) -> None:
         try:
@@ -2490,7 +3141,7 @@ class PickerApp(tk.Toplevel):
                 "type",
             )
             if selector is None:
-                raise WindowsAutomationError("No selector is loaded.")
+                raise WindowsAutomationError("선택한 대상이 없습니다.")
             self._set_current_selector(selector)
         except BaseException as exc:
             self._show_error(exc)
@@ -2498,10 +3149,18 @@ class PickerApp(tk.Toplevel):
         text = self.input_text.get()
         clear = bool(self.clear_var.get())
         method = self._input_method()
-        self._run_action("Typing...", lambda: type_text(selector, text, clear=clear, method=method))
+        self._run_action(
+            "텍스트 입력을 확인하고 있습니다...",
+            lambda: type_text(selector, text, clear=clear, method=method),
+        )
 
     def _add_wait_step(self) -> None:
-        seconds = simpledialog.askfloat("Add wait", "Seconds", minvalue=0.0, initialvalue=0.5)
+        seconds = simpledialog.askfloat(
+            "기다리기 블록",
+            "기다릴 시간(초)",
+            minvalue=0.0,
+            initialvalue=0.5,
+        )
         if seconds is None:
             return
         block_name = self._slugify(f"wait_{seconds:g}s")
@@ -2513,28 +3172,34 @@ class PickerApp(tk.Toplevel):
         )
 
     def _add_enter_step(self) -> None:
-        self._add_key_step("{ENTER}", label="Press Enter")
+        self._add_key_step("{ENTER}", label="Enter 누르기")
 
     def _add_key_step_from_dialog(self) -> None:
         keys = simpledialog.askstring(
-            "Add key",
-            "pywinauto key sequence, e.g. {ENTER}, {TAB}, ^s",
+            "키 누르기 블록",
+            "누를 키를 입력하세요. 예: {ENTER}, {TAB}, ^s",
             initialvalue="{ENTER}",
         )
         if not keys:
             return
-        self._add_key_step(keys, label=f"Press {keys}")
+        self._add_key_step(keys, label=f"{keys} 누르기")
 
     def _add_key_step(self, keys: str, *, label: str) -> None:
-        metadata = self._metadata_from_fields(None, fallback_role="hotkey", fallback_id=self._slugify(label))
+        metadata = self._metadata_from_fields(
+            None, fallback_role="hotkey", fallback_id=self._slugify(label)
+        )
         step = AutomationStep.key(
             keys,
-            label=label if not metadata["element_id"] else f"{label} ({metadata['element_id']})",
+            label=label
+            if not metadata["element_id"]
+            else f"{label} ({metadata['element_id']})",
             block_name=metadata["element_id"],
             **metadata,
         )
-        self._insert_workspace_step(step, (), len(self._recipe.steps), f"키 블록을 추가했습니다: {keys}")
-        self._add_monitor_event(f"Added key step: {keys}")
+        self._insert_workspace_step(
+            step, (), len(self._recipe.steps), f"키 블록을 추가했습니다: {keys}"
+        )
+        self._add_monitor_event(f"키 누르기 블록 추가: {keys}")
 
     def _apply_workflow_json(self) -> None:
         try:
@@ -2542,7 +3207,9 @@ class PickerApp(tk.Toplevel):
         except BaseException as exc:
             self._show_error(exc)
             return
-        self._commit_recipe(recipe, selected_path=None, message="JSON 워크플로를 적용했습니다")
+        self._commit_recipe(
+            recipe, selected_path=None, message="JSON 자동 실행 순서를 적용했습니다"
+        )
 
     def _recipe_from_editor(self) -> AutomationRecipe:
         text = self.workflow_text.get("1.0", "end").strip()
@@ -2572,12 +3239,16 @@ class PickerApp(tk.Toplevel):
             self._selected_block_path = None
             self._clear_block_inspector()
         else:
-            self._selected_block_path = nearest_block_path(self._recipe, self._selected_block_path)
+            self._selected_block_path = nearest_block_path(
+                self._recipe, self._selected_block_path
+            )
             if self._selected_block_path is not None:
                 self._selected_block_index = self._selected_block_path[0]
                 self.steps_list.selection_set(self._selected_block_index)
         if hasattr(self, "monitor_steps"):
-            self.monitor_steps.set(str(sum(1 for _path, _step in iter_block_paths(self._recipe))))
+            self.monitor_steps.set(
+                str(sum(1 for _path, _step in iter_block_paths(self._recipe)))
+            )
         if hasattr(self, "elements_list"):
             self._refresh_elements_view()
         if hasattr(self, "monitor_profile_tree"):
@@ -2588,7 +3259,9 @@ class PickerApp(tk.Toplevel):
     def _refresh_block_canvas(self) -> None:
         if not hasattr(self, "block_workspace"):
             return
-        self._selected_block_path = nearest_block_path(self._recipe, self._selected_block_path)
+        self._selected_block_path = nearest_block_path(
+            self._recipe, self._selected_block_path
+        )
         self.block_workspace.render(self._recipe, self._selected_block_path)
         if hasattr(self, "workspace_summary_var"):
             total = sum(1 for _path, _step in iter_block_paths(self._recipe))
@@ -2607,11 +3280,23 @@ class PickerApp(tk.Toplevel):
         if step.block_color and step.block_color != "auto":
             return named.get(step.block_color, step.block_color)
 
-        mode = self.block_color_mode_var.get() if hasattr(self, "block_color_mode_var") else "event"
+        selected_mode = (
+            self.block_color_mode_var.get()
+            if hasattr(self, "block_color_mode_var")
+            else ""
+        )
+        mode = BLOCK_COLOR_MODE_OPTIONS.get(selected_mode, selected_mode)
         if mode == "window":
             window_key = self._window_key_for_step(step)
             if window_key:
-                palette = ["#2563eb", "#0f766e", "#9333ea", "#be123c", "#b45309", "#047857"]
+                palette = [
+                    "#2563eb",
+                    "#0f766e",
+                    "#9333ea",
+                    "#be123c",
+                    "#b45309",
+                    "#047857",
+                ]
                 return palette[sum(ord(ch) for ch in window_key) % len(palette)]
 
         return {
@@ -2648,28 +3333,37 @@ class PickerApp(tk.Toplevel):
         if step.kind == "click":
             return self._target_summary_for_step(step)
         if step.kind == "type":
-            return f"type | {step.input_method} | {step.text}"
+            method = INPUT_METHOD_LABELS.get(step.input_method, step.input_method)
+            return f"텍스트 입력 · {method} · {step.text}"
         if step.kind == "key":
-            return f"key | {step.keys}"
+            return f"키 누르기 · {step.keys}"
         if step.kind == "wait":
-            return f"wait | {step.seconds:g}s"
+            return f"{step.seconds:g}초 기다리기"
         if step.kind == "if_exists":
             target = self._target_summary_for_step(step)
-            return f"if exists | {target}"
+            return f"대상이 있으면 · {target}"
         if step.kind == "if_text":
-            return f"text {step.condition_operator or 'contains'} | {step.condition_value}"
+            operator = CONDITION_OPERATOR_LABELS.get(
+                step.condition_operator or "contains",
+                step.condition_operator or "contains",
+            )
+            return f"텍스트 {operator} · {step.condition_value}"
         if step.kind == "if_color":
-            return f"color near | {step.condition_value} tol {step.color_tolerance:g}"
+            return f"색상 {step.condition_value} · 오차 {step.color_tolerance:g}"
         if step.kind == "monitor_text":
-            return f"monitor text | {step.condition_operator or 'contains'} {step.condition_value}"
+            operator = CONDITION_OPERATOR_LABELS.get(
+                step.condition_operator or "contains",
+                step.condition_operator or "contains",
+            )
+            return f"텍스트 상태 · {operator} · {step.condition_value}"
         if step.kind == "monitor_color":
-            return f"monitor color | {step.condition_value} tol {step.color_tolerance:g}"
+            return f"색상 상태 · {step.condition_value} · 오차 {step.color_tolerance:g}"
         if step.kind == "monitor_group":
             operator = "OR" if step.condition_operator == "any" else "AND"
             meta = self._monitor_meta_summary(step)
             suffix = f" | {meta}" if meta else ""
-            return f"monitor group {operator} | {len(step.children)} condition(s){suffix}"
-        return step.kind
+            return f"{operator} 조건 묶음 · 조건 {len(step.children)}개{suffix}"
+        return self._block_kind_label(step.kind)
 
     def _target_summary_for_step(self, step: AutomationStep) -> str:
         if step.selector:
@@ -2678,7 +3372,11 @@ class PickerApp(tk.Toplevel):
         return step.keys or step.kind
 
     def _monitor_meta_summary(self, step: AutomationStep) -> str:
-        pieces = [value for value in (step.monitor_tab, step.monitor_channel, step.monitor_state) if value]
+        pieces = [
+            value
+            for value in (step.monitor_tab, step.monitor_channel, step.monitor_state)
+            if value
+        ]
         return " / ".join(pieces)
 
     def _refresh_monitor_profile_view(self) -> None:
@@ -2714,7 +3412,9 @@ class PickerApp(tk.Toplevel):
                 ),
                 tags=(tag,),
             )
-        if self._selected_block_path and self._is_condition_path(self._selected_block_path):
+        if self._selected_block_path and self._is_condition_path(
+            self._selected_block_path
+        ):
             iid = self._monitor_tree_id(self._selected_block_path)
             if self.monitor_profile_tree.exists(iid):
                 self.monitor_profile_tree.selection_set(iid)
@@ -2732,14 +3432,19 @@ class PickerApp(tk.Toplevel):
                     {
                         "tab": step.monitor_tab or "Default",
                         "channel": step.monitor_channel or "-",
-                        "state": step.monitor_state or ("PASS" if step.kind.startswith("monitor") else "-"),
+                        "state": step.monitor_state
+                        or ("PASS" if step.kind.startswith("monitor") else "-"),
                         "logic": self._monitor_logic_label(step),
                         "block": name,
                         "path": path,
                     }
                 )
             for child_index, child in enumerate(step.children):
-                visit(child, (*path, child_index), step.block_title() if step.kind == "monitor_group" else prefix)
+                visit(
+                    child,
+                    (*path, child_index),
+                    step.block_title() if step.kind == "monitor_group" else prefix,
+                )
 
         for index, step in enumerate(self._recipe.steps):
             visit(step, (index,))
@@ -2752,7 +3457,11 @@ class PickerApp(tk.Toplevel):
         if not item_id.startswith("monitor_"):
             return None
         try:
-            return tuple(int(part) for part in item_id.removeprefix("monitor_").split("_") if part)
+            return tuple(
+                int(part)
+                for part in item_id.removeprefix("monitor_").split("_")
+                if part
+            )
         except ValueError:
             return None
 
@@ -2782,27 +3491,43 @@ class PickerApp(tk.Toplevel):
         path = self._selected_step_path()
         if path is not None and self._is_condition_path(path):
             return [path]
-        return [(index,) for index in self._selected_step_indices() if self._is_condition_path((index,))]
+        return [
+            (index,)
+            for index in self._selected_step_indices()
+            if self._is_condition_path((index,))
+        ]
 
     def _group_selected_monitor_rows(self, operator: str) -> None:
         paths = self._selected_monitor_paths()
         if len(paths) < 2:
-            self._show_error(WindowsAutomationError("같은 위치의 모니터 규칙을 두 개 이상 선택하세요."))
+            self._show_error(
+                WindowsAutomationError(
+                    "같은 위치의 모니터 규칙을 두 개 이상 선택하세요."
+                )
+            )
             return
         parent = paths[0][:-1]
         if any(path[:-1] != parent for path in paths):
-            self._show_error(WindowsAutomationError("같은 컨테이너 안에 있는 규칙끼리 묶을 수 있습니다."))
+            self._show_error(
+                WindowsAutomationError(
+                    "같은 컨테이너 안에 있는 규칙끼리 묶을 수 있습니다."
+                )
+            )
             return
         try:
             steps = [get_block_step(self._recipe, path) for path in paths]
             if any(not self._is_condition_like_step(step) for step in steps):
-                raise WindowsAutomationError("조건 또는 모니터 블록만 묶을 수 있습니다.")
+                raise WindowsAutomationError(
+                    "조건 또는 모니터 블록만 묶을 수 있습니다."
+                )
             first = steps[0]
             normalized = "any" if operator == "any" else "all"
             group = AutomationStep.monitor_group(
                 steps,
                 operator=normalized,
-                block_name="하나 이상 만족" if normalized == "any" else "모든 조건 만족",
+                block_name="하나 이상 만족"
+                if normalized == "any"
+                else "모든 조건 만족",
                 monitor_tab=first.monitor_tab,
                 monitor_channel=first.monitor_channel,
                 monitor_state=first.monitor_state,
@@ -2816,7 +3541,11 @@ class PickerApp(tk.Toplevel):
             self._show_error(exc)
             return
         label = "OR" if operator == "any" else "AND"
-        self._commit_recipe(recipe, selected_path=group_path, message=f"선택 규칙을 {label} 블록으로 묶었습니다")
+        self._commit_recipe(
+            recipe,
+            selected_path=group_path,
+            message=f"선택 규칙을 {label} 블록으로 묶었습니다",
+        )
 
     def _monitor_rule_paths(self, recipe: AutomationRecipe) -> list[BlockPath]:
         paths: list[BlockPath] = []
@@ -2852,13 +3581,18 @@ class PickerApp(tk.Toplevel):
         ).start()
 
     def _start_live_monitor(self) -> None:
-        if self._live_monitor_stop_event is not None and not self._live_monitor_stop_event.is_set():
+        if (
+            self._live_monitor_stop_event is not None
+            and not self._live_monitor_stop_event.is_set()
+        ):
             self.status.set("자동 모니터링이 이미 실행 중입니다")
             return
         try:
             interval = max(1.0, float(self.monitor_interval_var.get() or "5"))
         except ValueError:
-            self._show_error(WindowsAutomationError("모니터링 주기는 숫자로 입력하세요."))
+            self._show_error(
+                WindowsAutomationError("모니터링 주기는 숫자로 입력하세요.")
+            )
             return
         paths = self._monitor_rule_paths(self._recipe)
         if not paths:
@@ -2874,7 +3608,9 @@ class PickerApp(tk.Toplevel):
                 recipe = self._recipe
                 revision = self._recipe_revision
                 current_paths = self._monitor_rule_paths(recipe)
-                self._monitor_worker(recipe, current_paths, stop_event, revision, notify_finished=False)
+                self._monitor_worker(
+                    recipe, current_paths, stop_event, revision, notify_finished=False
+                )
                 if stop_event.wait(interval):
                     break
             self._queue.put(("monitor_live_finished", None))
@@ -2920,13 +3656,19 @@ class PickerApp(tk.Toplevel):
         if notify_finished:
             self._queue.put(("monitor_once_finished", None))
 
-    def _set_monitor_result(self, path: BlockPath, result: ConditionResult, checked_at: float) -> None:
+    def _set_monitor_result(
+        self, path: BlockPath, result: ConditionResult, checked_at: float
+    ) -> None:
         if not self._is_condition_path(path):
             return
         previous = self._monitor_latest.get(path)
         self._monitor_latest[path] = (result, checked_at)
         self._store_monitor_child_results(path, result, checked_at)
-        changed = previous is None or previous[0].ok != result.ok or previous[0].actual != result.actual
+        changed = (
+            previous is None
+            or previous[0].ok != result.ok
+            or previous[0].actual != result.actual
+        )
         if changed:
             state = "통과" if result.ok else "실패"
             self._add_monitor_event(f"{state}: {result.label} | 실제값={result.actual}")
@@ -2959,39 +3701,71 @@ class PickerApp(tk.Toplevel):
     def _load_monitor_view_layout_fields(self) -> None:
         if not hasattr(self, "monitor_view_name_var"):
             return
-        view = self._recipe.monitor_view if isinstance(self._recipe.monitor_view, dict) else {}
+        view = (
+            self._recipe.monitor_view
+            if isinstance(self._recipe.monitor_view, dict)
+            else {}
+        )
         if not view:
             return
-        self.monitor_view_name_var.set(str(view.get("name", self.monitor_view_name_var.get()) or ""))
-        self.monitor_view_rows_var.set(self._monitor_axis_label(str(view.get("rows", "channel") or "channel")))
-        self.monitor_view_columns_var.set(self._monitor_axis_label(str(view.get("columns", "state") or "state")))
-        self.monitor_view_tabs_var.set(", ".join(str(item) for item in view.get("tab_order", []) if str(item).strip()))
+        self.monitor_view_name_var.set(
+            str(view.get("name", self.monitor_view_name_var.get()) or "")
+        )
+        self.monitor_view_rows_var.set(
+            self._monitor_axis_label(str(view.get("rows", "channel") or "channel"))
+        )
+        self.monitor_view_columns_var.set(
+            self._monitor_axis_label(str(view.get("columns", "state") or "state"))
+        )
+        self.monitor_view_tabs_var.set(
+            ", ".join(
+                str(item) for item in view.get("tab_order", []) if str(item).strip()
+            )
+        )
         self.monitor_view_states_var.set(
-            ", ".join(str(item) for item in view.get("state_order", []) if str(item).strip())
+            ", ".join(
+                str(item) for item in view.get("state_order", []) if str(item).strip()
+            )
         )
         if view.get("channel_order"):
             self.monitor_channel_labels_var.set(
-                ", ".join(str(item) for item in view.get("channel_order", []) if str(item).strip())
+                ", ".join(
+                    str(item)
+                    for item in view.get("channel_order", [])
+                    if str(item).strip()
+                )
             )
 
     def _monitor_view_layout_from_fields(self) -> dict[str, Any]:
         rows = self._monitor_axis_key(
-            self.monitor_view_rows_var.get().strip() if hasattr(self, "monitor_view_rows_var") else "channel"
+            self.monitor_view_rows_var.get().strip()
+            if hasattr(self, "monitor_view_rows_var")
+            else "channel"
         )
         columns = self._monitor_axis_key(
-            self.monitor_view_columns_var.get().strip() if hasattr(self, "monitor_view_columns_var") else "state"
+            self.monitor_view_columns_var.get().strip()
+            if hasattr(self, "monitor_view_columns_var")
+            else "state"
         )
         if rows == columns:
             columns = "state" if rows != "state" else "channel"
             self.monitor_view_columns_var.set(self._monitor_axis_label(columns))
         return {
-            "name": self.monitor_view_name_var.get().strip() if hasattr(self, "monitor_view_name_var") else "",
+            "name": self.monitor_view_name_var.get().strip()
+            if hasattr(self, "monitor_view_name_var")
+            else "",
             "rows": rows or "channel",
             "columns": columns or "state",
-            "tab_order": self._parse_order_list(self.monitor_view_tabs_var.get() if hasattr(self, "monitor_view_tabs_var") else ""),
+            "tab_order": self._parse_order_list(
+                self.monitor_view_tabs_var.get()
+                if hasattr(self, "monitor_view_tabs_var")
+                else ""
+            ),
             "channel_order": self._parse_monitor_channel_labels(),
             "state_order": self._parse_order_list(
-                self.monitor_view_states_var.get() if hasattr(self, "monitor_view_states_var") else ""
+                self.monitor_view_states_var.get()
+                if hasattr(self, "monitor_view_states_var")
+                else ""
             ),
         }
 
@@ -3006,9 +3780,15 @@ class PickerApp(tk.Toplevel):
 
     def _auto_monitor_view_layout(self) -> None:
         entries = self._monitor_profile_entries()
-        tabs = self._unique_values(entry["tab"] for entry in entries if entry["tab"] != "Default")
-        channels = self._unique_values(entry["channel"] for entry in entries if entry["channel"] != "-")
-        states = self._unique_values(entry["state"] for entry in entries if entry["state"] != "-")
+        tabs = self._unique_values(
+            entry["tab"] for entry in entries if entry["tab"] != "Default"
+        )
+        channels = self._unique_values(
+            entry["channel"] for entry in entries if entry["channel"] != "-"
+        )
+        states = self._unique_values(
+            entry["state"] for entry in entries if entry["state"] != "-"
+        )
         if tabs:
             self.monitor_view_tabs_var.set(", ".join(tabs))
         if channels:
@@ -3020,7 +3800,9 @@ class PickerApp(tk.Toplevel):
         elif states:
             self.monitor_view_rows_var.set(self._monitor_axis_label("state"))
         row_axis = self._monitor_axis_key(self.monitor_view_rows_var.get())
-        self.monitor_view_columns_var.set(self._monitor_axis_label("state" if row_axis != "state" else "channel"))
+        self.monitor_view_columns_var.set(
+            self._monitor_axis_label("state" if row_axis != "state" else "channel")
+        )
         self._apply_monitor_view_layout()
 
     def _monitor_axis_key(self, value: str) -> str:
@@ -3034,7 +3816,7 @@ class PickerApp(tk.Toplevel):
 
     def _monitor_axis_label(self, value: str) -> str:
         return {
-            "channel": "장비 / CH",
+            "channel": "실장기",
             "state": "상태",
             "tab": "보드",
             "block": "블록",
@@ -3058,7 +3840,9 @@ class PickerApp(tk.Toplevel):
         self.monitor_dashboard_tree = None
 
         discovered_tabs = self._unique_values(entry["tab"] for entry in entries)
-        ordered_tabs = [str(value) for value in view.get("tab_order", []) if str(value).strip()]
+        ordered_tabs = [
+            str(value) for value in view.get("tab_order", []) if str(value).strip()
+        ]
         tab_names = [value for value in ordered_tabs if value in discovered_tabs]
         tab_names.extend(value for value in discovered_tabs if value not in tab_names)
         if not tab_names:
@@ -3102,14 +3886,22 @@ class PickerApp(tk.Toplevel):
         if not column_values:
             column_values = ["-"]
 
-        columns = ["row", *[self._tree_column_id(value, index) for index, value in enumerate(column_values)]]
+        columns = [
+            "row",
+            *[
+                self._tree_column_id(value, index)
+                for index, value in enumerate(column_values)
+            ],
+        ]
         tree.configure(columns=columns)
         tree.delete(*tree.get_children())
         tree.heading("row", text=self._monitor_axis_label(row_axis))
         tree.column("row", width=120, anchor="w")
         for column_id, label in zip(columns[1:], column_values):
             tree.heading(column_id, text=label)
-            tree.column(column_id, width=max(110, min(240, len(label) * 12 + 40)), anchor="w")
+            tree.column(
+                column_id, width=max(110, min(240, len(label) * 12 + 40)), anchor="w"
+            )
 
         for row_value in row_values:
             row_cells = [row_value]
@@ -3125,7 +3917,13 @@ class PickerApp(tk.Toplevel):
                 row_cells.append(self._dashboard_cell_text(matched))
             latest = [self._monitor_latest.get(entry["path"]) for entry in row_entries]
             checked = [item[0] for item in latest if item is not None]
-            tag = "fail" if any(not result.ok for result in checked) else "ok" if checked else "pending"
+            tag = (
+                "fail"
+                if any(not result.ok for result in checked)
+                else "ok"
+                if checked
+                else "pending"
+            )
             tree.insert("", "end", values=row_cells, tags=(tag,))
 
     def _dashboard_cell_text(self, entries: list[dict[str, Any]]) -> str:
@@ -3145,11 +3943,25 @@ class PickerApp(tk.Toplevel):
             labels.append(f"+{len(entries) - 3} more")
         return " | ".join(labels)
 
-    def _axis_values(self, entries: list[dict[str, str]], axis: str, view: dict[str, Any]) -> list[str]:
-        order_key = {"tab": "tab_order", "channel": "channel_order", "state": "state_order"}.get(axis, "")
-        ordered = [str(item) for item in view.get(order_key, []) if str(item).strip()] if order_key else []
-        values = self._unique_values(self._entry_axis_value(entry, axis) for entry in entries)
-        return [value for value in ordered if value in values] + [value for value in values if value not in ordered]
+    def _axis_values(
+        self, entries: list[dict[str, str]], axis: str, view: dict[str, Any]
+    ) -> list[str]:
+        order_key = {
+            "tab": "tab_order",
+            "channel": "channel_order",
+            "state": "state_order",
+        }.get(axis, "")
+        ordered = (
+            [str(item) for item in view.get(order_key, []) if str(item).strip()]
+            if order_key
+            else []
+        )
+        values = self._unique_values(
+            self._entry_axis_value(entry, axis) for entry in entries
+        )
+        return [value for value in ordered if value in values] + [
+            value for value in values if value not in ordered
+        ]
 
     def _entry_axis_value(self, entry: dict[str, str], axis: str) -> str:
         if axis == "tab":
@@ -3161,7 +3973,9 @@ class PickerApp(tk.Toplevel):
         return entry["channel"]
 
     def _parse_order_list(self, raw: str) -> list[str]:
-        return [part.strip() for part in re.split(r"[,;\n]+", raw or "") if part.strip()]
+        return [
+            part.strip() for part in re.split(r"[,;\n]+", raw or "") if part.strip()
+        ]
 
     def _unique_values(self, values: Iterable[str]) -> list[str]:
         seen: set[str] = set()
@@ -3184,14 +3998,20 @@ class PickerApp(tk.Toplevel):
 
     def _monitor_logic_label(self, step: AutomationStep) -> str:
         if step.kind == "monitor_group":
-            return "OR group" if step.condition_operator == "any" else "AND group"
+            return (
+                "OR 조건 묶음" if step.condition_operator == "any" else "AND 조건 묶음"
+            )
         if step.kind in {"if_text", "monitor_text"}:
-            return f"text {step.condition_operator or 'contains'}"
+            operator = CONDITION_OPERATOR_LABELS.get(
+                step.condition_operator or "contains",
+                step.condition_operator or "contains",
+            )
+            return f"텍스트 {operator}"
         if step.kind in {"if_color", "monitor_color"}:
-            return f"color near tol {step.color_tolerance:g}"
+            return f"색상 오차 {step.color_tolerance:g}"
         if step.kind == "if_exists":
-            return "exists"
-        return step.kind
+            return "대상 존재"
+        return self._block_kind_label(step.kind)
 
     def _ellipsize(self, value: str, max_chars: int) -> str:
         text = " ".join(str(value).split())
@@ -3208,18 +4028,22 @@ class PickerApp(tk.Toplevel):
             first_row_headers=bool(self.first_row_headers_var.get()),
         )
         if not dataset.rows:
-            self._show_error(WindowsAutomationError("No data rows are available."))
+            self._show_error(WindowsAutomationError("실행할 데이터 행이 없습니다."))
             return
-        self._run_recipe_for_rows(rows=dataset.rows, label=f"{len(dataset.rows)} row(s)")
+        self._run_recipe_for_rows(
+            rows=dataset.rows, label=f"{len(dataset.rows)} row(s)"
+        )
 
-    def _run_recipe_for_rows(self, *, rows: list[dict[str, str] | None], label: str) -> None:
+    def _run_recipe_for_rows(
+        self, *, rows: list[dict[str, str] | None], label: str
+    ) -> None:
         try:
             recipe = self._recipe_from_editor()
         except BaseException as exc:
             self._show_error(exc)
             return
         if not recipe.steps:
-            self._show_error(WindowsAutomationError("Workflow has no steps."))
+            self._show_error(WindowsAutomationError("실행할 블록이 없습니다."))
             return
         issues = validate_recipe(recipe)
         if issues:
@@ -3227,7 +4051,11 @@ class PickerApp(tk.Toplevel):
             details = "\n".join(f"- {issue.message}" for issue in issues[:6])
             if len(issues) > 6:
                 details += f"\n- 그 외 {len(issues) - 6}개"
-            self._show_error(WindowsAutomationError("실행 전에 블록 설정을 확인하세요.\n\n" + details))
+            self._show_error(
+                WindowsAutomationError(
+                    "실행 전에 블록 설정을 확인하세요.\n\n" + details
+                )
+            )
             return
 
         try:
@@ -3236,35 +4064,41 @@ class PickerApp(tk.Toplevel):
             self._show_error(exc)
             return
 
-        self._commit_recipe(recipe, selected_path=self._selected_block_path, record_history=recipe != self._recipe)
+        self._commit_recipe(
+            recipe,
+            selected_path=self._selected_block_path,
+            record_history=recipe != self._recipe,
+        )
         stop_event = threading.Event()
         self._run_stop_event = stop_event
         self._set_running(True)
-        self.status.set(f"Running {label}...")
-        self.monitor_state.set("Running")
-        self.monitor_mode.set(f"Run {label}")
-        self._add_monitor_event(f"Started run: {label}, {len(recipe.steps)} step(s).")
+        self.status.set(f"실행 중: {label}")
+        self.monitor_state.set("실행 중")
+        self.monitor_mode.set(f"실행: {label}")
+        self._add_monitor_event(f"실행 시작: {label}, 블록 {len(recipe.steps)}개")
 
         def worker() -> None:
             try:
                 total = len(rows)
                 for row_index, row in enumerate(rows, start=1):
                     if stop_event.is_set():
-                        raise WindowsAutomationError("Run stopped.")
+                        raise WindowsAutomationError("사용자가 실행을 중지했습니다.")
                     if total > 1:
-                        self._queue.put(("status", f"Running row {row_index}/{total}"))
+                        self._queue.put(
+                            ("status", f"데이터 행 실행 중 {row_index}/{total}")
+                        )
 
                     def on_step(step_index: int, step: AutomationStep) -> None:
                         self._queue.put(
                             (
                                 "log",
-                                f"Row {row_index}/{total} step {step_index}: {step.display_label()}",
+                                f"행 {row_index}/{total} · 블록 {step_index}: {step.display_label()}",
                             )
                         )
                         self._queue.put(
                             (
                                 "monitor",
-                                f"Run row {row_index}/{total} step {step_index}: {step.display_label()}",
+                                f"실행 {row_index}/{total} · 블록 {step_index}: {step.display_label()}",
                             )
                         )
 
@@ -3273,20 +4107,26 @@ class PickerApp(tk.Toplevel):
                         self._queue.put(
                             (
                                 "monitor",
-                                f"Monitor {state}: {result.label} | actual={result.actual!r} expected={result.expected!r}",
+                                f"상태 판정 {state}: {result.label} | 읽은 값={result.actual!r} 기대값={result.expected!r}",
                             )
                         )
 
                     values = {**recipe.variables, **(row or {})}
-                    run_recipe(recipe, row=values, stop_event=stop_event, on_step=on_step, on_monitor=on_monitor)
+                    run_recipe(
+                        recipe,
+                        row=values,
+                        stop_event=stop_event,
+                        on_step=on_step,
+                        on_monitor=on_monitor,
+                    )
                     if row_delay and row_index < total:
                         time.sleep(row_delay)
-                self._queue.put(("status", "Done"))
-                self._queue.put(("monitor", "Run finished."))
+                self._queue.put(("status", "실행 완료"))
+                self._queue.put(("monitor", "자동 실행 순서를 완료했습니다."))
             except BaseException as exc:
                 if stop_event.is_set():
-                    self._queue.put(("status", "Stopped"))
-                    self._queue.put(("monitor", "Run stopped by user request."))
+                    self._queue.put(("status", "실행 중지"))
+                    self._queue.put(("monitor", "사용자 요청으로 실행을 중지했습니다."))
                 else:
                     self._queue.put(("error", exc))
             finally:
@@ -3297,8 +4137,8 @@ class PickerApp(tk.Toplevel):
     def _stop_run(self) -> None:
         if self._run_stop_event:
             self._run_stop_event.set()
-            self.status.set("Stopping...")
-            self._add_monitor_event("Stop requested.")
+            self.status.set("중지 중...")
+            self._add_monitor_event("중지를 요청했습니다.")
 
     def _set_running(self, running: bool) -> None:
         self.run_once_button.configure(state="disabled" if running else "normal")
@@ -3307,7 +4147,7 @@ class PickerApp(tk.Toplevel):
         if not running:
             self._run_stop_event = None
             if not self._picker:
-                self.monitor_state.set("Idle")
+                self.monitor_state.set("대기")
 
     def _run_action(self, status: str, action: Any) -> None:
         self.status.set(status)
@@ -3315,7 +4155,7 @@ class PickerApp(tk.Toplevel):
         def worker() -> None:
             try:
                 action()
-                self._queue.put(("status", "Done"))
+                self._queue.put(("status", "완료"))
             except BaseException as exc:
                 self._queue.put(("error", exc))
 
@@ -3327,33 +4167,33 @@ class PickerApp(tk.Toplevel):
             return
         self.clipboard_clear()
         self.clipboard_append(selector_text)
-        self.status.set("Copied")
+        self.status.set("복사했습니다")
 
     def _save_selector(self) -> None:
         text = self.selector_text.get("1.0", "end").strip()
         if not text:
             return
         path = filedialog.asksaveasfilename(
-            title="Save selector",
+            title="대상 정보 저장",
             defaultextension=".json",
-            filetypes=[("JSON", "*.json"), ("All files", "*.*")],
+            filetypes=[("JSON", "*.json"), ("모든 파일", "*.*")],
         )
         if not path:
             return
         Path(path).write_text(text + "\n", encoding="utf-8")
-        self.status.set("Saved")
+        self.status.set("저장했습니다")
 
     def _load_selector(self) -> None:
         path = filedialog.askopenfilename(
-            title="Load selector",
-            filetypes=[("JSON", "*.json"), ("All files", "*.*")],
+            title="대상 정보 불러오기",
+            filetypes=[("JSON", "*.json"), ("모든 파일", "*.*")],
         )
         if not path:
             return
         text = Path(path).read_text(encoding="utf-8")
         selector = UISelector.from_json(text)
         self._set_current_selector(selector)
-        self.status.set("Loaded")
+        self.status.set("불러왔습니다")
 
     def _save_workflow(self, *, save_as: bool = False) -> bool:
         try:
@@ -3364,9 +4204,9 @@ class PickerApp(tk.Toplevel):
         path = None if save_as else self._project_path
         if path is None:
             selected = filedialog.asksaveasfilename(
-                title="Save workflow",
+                title="자동 실행 순서 저장",
                 defaultextension=".json",
-                filetypes=[("JSON", "*.json"), ("All files", "*.*")],
+                filetypes=[("자동 실행 순서", "*.json"), ("모든 파일", "*.*")],
             )
             if not selected:
                 return False
@@ -3374,7 +4214,7 @@ class PickerApp(tk.Toplevel):
         path.write_text(project.to_json() + "\n", encoding="utf-8")
         self._project_path = path
         self._saved_project_token = self._project_state_token()
-        self.title(f"Win Automation Picker | {path.stem}")
+        self.title(f"자동 실행 순서 만들기 | {path.stem}")
         self.status.set(f"저장됨: {path.name}")
         if self._on_project_saved is not None:
             try:
@@ -3396,7 +4236,7 @@ class PickerApp(tk.Toplevel):
         try:
             recipe = self._recipe_from_editor()
             if not recipe.steps:
-                raise WindowsAutomationError("Workflow has no steps.")
+                raise WindowsAutomationError("내보낼 블록이 없습니다.")
             script = generate_python_script(
                 recipe,
                 data_text=self.data_text.get("1.0", "end"),
@@ -3408,31 +4248,37 @@ class PickerApp(tk.Toplevel):
             return
 
         path = filedialog.asksaveasfilename(
-            title="Export Python script",
+            title="실행 가능한 Python 파일 내보내기",
             defaultextension=".py",
-            filetypes=[("Python", "*.py"), ("All files", "*.*")],
+            filetypes=[("Python", "*.py"), ("모든 파일", "*.*")],
         )
         if not path:
             return
         Path(path).write_text(script, encoding="utf-8")
-        self.status.set("Python script exported")
-        self._add_monitor_event(f"Exported Python script: {path}")
+        self.status.set("Python 파일을 내보냈습니다")
+        self._add_monitor_event(f"Python 파일 내보내기 완료: {path}")
 
     def _ftp_profile_variable_names(self) -> list[str]:
         names = recipe_variables(self._recipe.steps)
         for name in self._recording_defaults:
             if name not in names:
                 names.append(name)
-        package = self._selected_ftp_package() if hasattr(self, "ftp_package_list") else None
-        for name in (package.variables if package else {}):
+        package = (
+            self._selected_ftp_package() if hasattr(self, "ftp_package_list") else None
+        )
+        for name in package.variables if package else {}:
             if name not in names:
                 names.append(name)
         for row in self._ftp_profile_rows:
             row_package = next(
-                (item for item in self._ftp_packages if item.name == str(row.get("package", ""))),
+                (
+                    item
+                    for item in self._ftp_packages
+                    if item.name == str(row.get("package", ""))
+                ),
                 None,
             )
-            for name in (row_package.variables if row_package else {}):
+            for name in row_package.variables if row_package else {}:
                 if name not in names:
                     names.append(name)
             for name in row.get("variables", {}):
@@ -3444,11 +4290,17 @@ class PickerApp(tk.Toplevel):
         if not hasattr(self, "ftp_profile_tree"):
             return
         variable_names = self._ftp_profile_variable_names()
-        package = self._selected_ftp_package() if hasattr(self, "ftp_package_list") else None
+        package = (
+            self._selected_ftp_package() if hasattr(self, "ftp_package_list") else None
+        )
         for row in self._ftp_profile_rows:
             values = row.setdefault("variables", {})
             row_package = next(
-                (item for item in self._ftp_packages if item.name == str(row.get("package", ""))),
+                (
+                    item
+                    for item in self._ftp_packages
+                    if item.name == str(row.get("package", ""))
+                ),
                 package,
             )
             for name in variable_names:
@@ -3456,13 +4308,19 @@ class PickerApp(tk.Toplevel):
                 if row_package is not None:
                     default = row_package.variables.get(name, default)
                 values.setdefault(name, default)
-        columns = ("enabled", "alias", "target", "package", *[f"var::{name}" for name in variable_names])
+        columns = (
+            "enabled",
+            "alias",
+            "target",
+            "package",
+            *[f"var::{name}" for name in variable_names],
+        )
         self.ftp_profile_tree.configure(columns=columns)
         headings = {
             "enabled": "실행",
             "alias": "별명",
-            "target": "PC / Node",
-            "package": "매크로",
+            "target": "실장기 PC",
+            "package": "자동 실행 순서",
         }
         for column in columns:
             if column.startswith("var::"):
@@ -3470,9 +4328,17 @@ class PickerApp(tk.Toplevel):
                 width = 150
             else:
                 heading = headings[column]
-                width = {"enabled": 54, "alias": 90, "target": 130, "package": 150}[column]
+                width = {"enabled": 54, "alias": 90, "target": 130, "package": 150}[
+                    column
+                ]
             self.ftp_profile_tree.heading(column, text=heading)
-            self.ftp_profile_tree.column(column, width=width, minwidth=50, anchor="w", stretch=column != "enabled")
+            self.ftp_profile_tree.column(
+                column,
+                width=width,
+                minwidth=50,
+                anchor="w",
+                stretch=column != "enabled",
+            )
         self._refresh_ftp_profile_rows()
 
     def _refresh_ftp_profile_rows(self) -> None:
@@ -3502,11 +4368,19 @@ class PickerApp(tk.Toplevel):
             self._ftp_import_slave_profiles()
             return
         package = self._selected_ftp_package()
-        package_name = package.name if package is not None else self.ftp_package_name_var.get().strip()
+        package_name = (
+            package.name
+            if package is not None
+            else self.ftp_package_name_var.get().strip()
+        )
         aliases = {slave.node_id: slave.label() for slave in self._ftp_slaves}
-        slave_variables = {slave.node_id: dict(slave.variables) for slave in self._ftp_slaves}
+        slave_variables = {
+            slave.node_id: dict(slave.variables) for slave in self._ftp_slaves
+        }
         for target in targets:
-            values = dict(package.variables if package is not None else self._recording_defaults)
+            values = dict(
+                package.variables if package is not None else self._recording_defaults
+            )
             values.update(slave_variables.get(target, {}))
             self._ftp_profile_rows.append(
                 {
@@ -3521,15 +4395,23 @@ class PickerApp(tk.Toplevel):
 
     def _ftp_import_slave_profiles(self) -> None:
         if not self._ftp_slaves:
-            self._show_error(WindowsAutomationError("설정 파일에 slaves 목록이 없습니다."))
+            self._show_error(
+                WindowsAutomationError("설정 파일에 실장기 PC 목록이 없습니다.")
+            )
             return
         package = self._selected_ftp_package()
-        package_name = package.name if package is not None else self.ftp_package_name_var.get().strip()
+        package_name = (
+            package.name
+            if package is not None
+            else self.ftp_package_name_var.get().strip()
+        )
         existing = {str(row.get("target", "")) for row in self._ftp_profile_rows}
         for slave in self._ftp_slaves:
             if slave.node_id in existing:
                 continue
-            values = dict(package.variables if package is not None else self._recording_defaults)
+            values = dict(
+                package.variables if package is not None else self._recording_defaults
+            )
             values.update(slave.variables)
             self._ftp_profile_rows.append(
                 {
@@ -3543,7 +4425,9 @@ class PickerApp(tk.Toplevel):
         self._refresh_ftp_profile_columns()
 
     def _ftp_delete_profile_rows(self) -> None:
-        selected = sorted((int(iid) for iid in self.ftp_profile_tree.selection()), reverse=True)
+        selected = sorted(
+            (int(iid) for iid in self.ftp_profile_tree.selection()), reverse=True
+        )
         for index in selected:
             if 0 <= index < len(self._ftp_profile_rows):
                 self._ftp_profile_rows.pop(index)
@@ -3569,7 +4453,10 @@ class PickerApp(tk.Toplevel):
         index = int(row_id)
         column_index = int(column_id[1:]) - 1
         columns = tuple(self.ftp_profile_tree["columns"])
-        if not (0 <= index < len(self._ftp_profile_rows) and 0 <= column_index < len(columns)):
+        if not (
+            0 <= index < len(self._ftp_profile_rows)
+            and 0 <= column_index < len(columns)
+        ):
             return "break"
         column = columns[column_index]
         if column == "enabled":
@@ -3585,8 +4472,14 @@ class PickerApp(tk.Toplevel):
         else:
             key = column
             current = str(row.get(key, ""))
-            label = {"alias": "별명", "target": "PC / Node", "package": "매크로 파일"}.get(key, key)
-        value = simpledialog.askstring("실행표 값 변경", label, initialvalue=current, parent=self)
+            label = {
+                "alias": "표시 이름",
+                "target": "실장기 PC",
+                "package": "자동 실행 순서 파일",
+            }.get(key, key)
+        value = simpledialog.askstring(
+            "실행표 값 변경", label, initialvalue=current, parent=self
+        )
         if value is None:
             return "break"
         if column.startswith("var::"):
@@ -3601,17 +4494,25 @@ class PickerApp(tk.Toplevel):
             config, backend = self._ftp_snapshot_backend()
             rows = [row for row in self._ftp_profile_rows if row.get("enabled", True)]
             if not rows:
-                raise FtpSpoolError("실행할 PC 행을 추가하고 '실행'을 체크하세요.")
+                raise FtpSpoolError("실행할 실장기를 추가하고 '실행'을 체크하세요.")
             prepared_rows: list[tuple[dict[str, Any], str]] = []
             for row in rows:
-                if not str(row.get("target", "")).strip() or not str(row.get("package", "")).strip():
-                    raise FtpSpoolError("모든 실행 행에 PC / Node와 매크로를 입력하세요.")
+                if (
+                    not str(row.get("target", "")).strip()
+                    or not str(row.get("package", "")).strip()
+                ):
+                    raise FtpSpoolError(
+                        "모든 실행 행에 실장기 PC와 자동 실행 순서를 입력하세요."
+                    )
                 targets = self._ftp_targets(str(row["target"]))
                 if len(targets) != 1:
-                    raise FtpSpoolError("PC별 실행표의 각 행에는 대상 PC 하나만 입력하세요.")
+                    raise FtpSpoolError(
+                        "실장기별 실행표의 각 행에는 실장기 PC 하나만 입력하세요."
+                    )
                 if targets[0] == "all":
                     raise FtpSpoolError(
-                        "PC별 실행표에는 all을 사용할 수 없습니다. 각 행에 PC / Node를 지정하세요."
+                        "실장기별 실행표에는 all을 사용할 수 없습니다. "
+                        "각 행에 실장기 PC를 지정하세요."
                     )
                 prepared_rows.append((row, targets[0]))
         except BaseException as exc:
@@ -3623,7 +4524,11 @@ class PickerApp(tk.Toplevel):
                 submitted: list[str] = []
                 for row, target in prepared_rows:
                     package = next(
-                        (item for item in self._ftp_packages if item.name == str(row["package"])),
+                        (
+                            item
+                            for item in self._ftp_packages
+                            if item.name == str(row["package"])
+                        ),
                         None,
                     )
                     job = SpoolJob.create(
@@ -3631,21 +4536,34 @@ class PickerApp(tk.Toplevel):
                         payload={
                             "package": str(row["package"]),
                             "args": [],
-                            "pass_variables": bool(package and package.runner == "python" and package.variables),
+                            "pass_variables": bool(
+                                package
+                                and package.runner == "python"
+                                and package.variables
+                            ),
                         },
-                        variables={str(key): str(value) for key, value in row.get("variables", {}).items()},
+                        variables={
+                            str(key): str(value)
+                            for key, value in row.get("variables", {}).items()
+                        },
                         origin=self._ftp_job_origin(config),
                     )
                     submitted.extend(submit_job(backend, job, [target]))
-                self._queue.put(("monitor", f"PC별 매크로 {len(rows)}건을 전송했습니다: {', '.join(submitted)}"))
+                self._queue.put(
+                    (
+                        "monitor",
+                        f"실장기 PC별 자동 실행 순서 {len(rows)}건을 전송했습니다: "
+                        f"{', '.join(submitted)}",
+                    )
+                )
             except BaseException as exc:
                 self._queue.put(("error", exc))
 
-        self._ftp_log(f"PC별 실행표 {len(rows)}건을 전송 중입니다...")
+        self._ftp_log(f"실장기별 실행표 {len(rows)}건을 전송 중입니다...")
         threading.Thread(target=worker, daemon=True).start()
 
     def _ftp_create_config(self) -> None:
-        path = Path(self.ftp_config_path_var.get().strip() or "rig-ftp.info")
+        path = Path(self.ftp_config_path_var.get().strip() or "fixture-connection.info")
         force = False
         if path.exists():
             force = messagebox.askyesno("Overwrite config", f"Overwrite {path}?")
@@ -3654,18 +4572,20 @@ class PickerApp(tk.Toplevel):
         try:
             write_example_spool_config(path, force=force)
             self._ftp_load_config()
-            self._ftp_log(f"Wrote example config: {path}")
+            self._ftp_log(f"예제 통신 설정을 만들었습니다: {path}")
         except BaseException as exc:
             self._show_error(exc)
 
     def _ftp_load_config(self) -> None:
-        path = Path(self.ftp_config_path_var.get().strip() or "rig-ftp.info")
+        path = Path(self.ftp_config_path_var.get().strip() or "fixture-connection.info")
         try:
             if path.exists():
                 config = FtpSpoolConfig.load(path)
             else:
                 config = FtpSpoolConfig.from_mapping(example_spool_config())
-                self._ftp_log(f"Config not found. Loaded defaults until save: {path}")
+                self._ftp_log(
+                    f"설정 파일이 없어 기본값을 열었습니다. 저장 위치: {path}"
+                )
             self.ftp_host_var.set(config.host)
             self.ftp_user_var.set(config.username)
             self.ftp_password_var.set(config.password)
@@ -3673,20 +4593,27 @@ class PickerApp(tk.Toplevel):
             self.ftp_node_var.set(config.node_id)
             self._ftp_variables = dict(config.variables)
             self._ftp_slaves = tuple(config.slaves)
-            self._ftp_profile_rows = [profile.to_mapping() for profile in config.run_profiles]
+            self._ftp_profile_rows = [
+                profile.to_mapping() for profile in config.run_profiles
+            ]
             self._ftp_base_config = config
             self._refresh_ftp_profile_columns()
-            self._ftp_log(f"Loaded FTP settings: {path}")
+            self._ftp_log(f"통신 설정을 불러왔습니다: {path}")
         except BaseException as exc:
             self._show_error(exc)
 
     def _ftp_save_config(self) -> None:
         try:
             config = self._ftp_config_from_fields()
-            path = Path(self.ftp_config_path_var.get().strip() or "rig-ftp.info")
-            path.write_text(json.dumps(config.to_mapping(), indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+            path = Path(
+                self.ftp_config_path_var.get().strip() or "fixture-connection.info"
+            )
+            path.write_text(
+                json.dumps(config.to_mapping(), indent=2, ensure_ascii=True) + "\n",
+                encoding="utf-8",
+            )
             self._ftp_base_config = config
-            self._ftp_log(f"Saved FTP settings: {path}")
+            self._ftp_log(f"통신 설정을 저장했습니다: {path}")
         except BaseException as exc:
             self._show_error(exc)
 
@@ -3696,17 +4623,21 @@ class PickerApp(tk.Toplevel):
             host=self.ftp_host_var.get().strip(),
             username=self.ftp_user_var.get().strip(),
             password=self.ftp_password_var.get(),
-            root_dir=self.ftp_root_var.get().strip() or "/win_automation_macros",
+            root_dir=self.ftp_root_var.get().strip() or "/mobile-dram-ae",
             node_id=self.ftp_node_var.get().strip(),
             variables=dict(self._ftp_variables),
             slaves=tuple(self._ftp_slaves),
-            run_profiles=tuple(RunProfile.from_mapping(row) for row in self._ftp_profile_rows),
+            run_profiles=tuple(
+                RunProfile.from_mapping(row) for row in self._ftp_profile_rows
+            ),
         )
 
     def _ftp_snapshot_backend(self) -> tuple[FtpSpoolConfig, Any]:
         config = self._ftp_config_from_fields()
         local_root = self.ftp_local_root_var.get().strip()
-        backend = backend_from_config(config, local_root=Path(local_root) if local_root else None)
+        backend = backend_from_config(
+            config, local_root=Path(local_root) if local_root else None
+        )
         return config, backend
 
     def _ftp_init_server(self) -> None:
@@ -3720,11 +4651,16 @@ class PickerApp(tk.Toplevel):
         def worker() -> None:
             try:
                 initialize_spool(backend, nodes=nodes)
-                self._queue.put(("monitor", f"FTP server initialized. Nodes: {', '.join(nodes) or 'none'}"))
+                self._queue.put(
+                    (
+                        "monitor",
+                        f"통신 폴더 준비 완료: {', '.join(nodes) or '대상 없음'}",
+                    )
+                )
             except BaseException as exc:
                 self._queue.put(("error", exc))
 
-        self._ftp_log("Initializing FTP server folders...")
+        self._ftp_log("통신 서버 폴더를 준비하고 있습니다...")
         threading.Thread(target=worker, daemon=True).start()
 
     def _ftp_upload_current_workflow(self) -> None:
@@ -3732,7 +4668,7 @@ class PickerApp(tk.Toplevel):
             _config, backend = self._ftp_snapshot_backend()
             recipe = self._recipe_from_editor()
             if not recipe.steps:
-                raise WindowsAutomationError("Workflow has no steps.")
+                raise WindowsAutomationError("등록할 블록이 없습니다.")
             package_name = self.ftp_package_name_var.get().strip() or "workflow.py"
             if "." not in Path(package_name).name:
                 package_name = f"{package_name}.py"
@@ -3764,11 +4700,11 @@ class PickerApp(tk.Toplevel):
                     )
                 packages = list_packages(backend)
                 self._queue.put(("ftp_packages", packages))
-                self._queue.put(("monitor", f"Uploaded macro package: {remote_path}"))
+                self._queue.put(("monitor", f"자동 실행 순서 등록 완료: {remote_path}"))
             except BaseException as exc:
                 self._queue.put(("error", exc))
 
-        self._ftp_log("Uploading current workflow to FTP packages...")
+        self._ftp_log("현재 자동 실행 순서를 통신 서버에 등록하고 있습니다...")
         threading.Thread(target=worker, daemon=True).start()
 
     def _ftp_refresh_packages(self) -> None:
@@ -3782,11 +4718,16 @@ class PickerApp(tk.Toplevel):
             try:
                 packages = list_packages(backend)
                 self._queue.put(("ftp_packages", packages))
-                self._queue.put(("monitor", f"Loaded {len(packages)} FTP macro package(s)."))
+                self._queue.put(
+                    (
+                        "monitor",
+                        f"등록된 자동 실행 순서 {len(packages)}개를 불러왔습니다.",
+                    )
+                )
             except BaseException as exc:
                 self._queue.put(("error", exc))
 
-        self._ftp_log("Refreshing FTP macro list...")
+        self._ftp_log("통신 서버의 자동 실행 순서 목록을 새로고침하고 있습니다...")
         threading.Thread(target=worker, daemon=True).start()
 
     def _ftp_submit_selected_package(self) -> None:
@@ -3794,7 +4735,9 @@ class PickerApp(tk.Toplevel):
             config, backend = self._ftp_snapshot_backend()
             package = self._selected_ftp_package()
             if package is None:
-                raise FtpSpoolError("Select an FTP macro package first.")
+                raise FtpSpoolError(
+                    "통신 서버 목록에서 자동 실행 순서를 먼저 선택하세요."
+                )
             targets = self._ftp_targets(self.ftp_target_var.get()) or ["all"]
             if package.runner == "dram_margin" and "all" in targets:
                 raise FtpSpoolError(
@@ -3805,7 +4748,9 @@ class PickerApp(tk.Toplevel):
                 payload={
                     "package": package.name,
                     "args": [],
-                    "pass_variables": bool(package.runner == "python" and package.variables),
+                    "pass_variables": bool(
+                        package.runner == "python" and package.variables
+                    ),
                 },
                 variables=dict(self._recording_defaults),
                 origin=self._ftp_job_origin(config),
@@ -3817,11 +4762,18 @@ class PickerApp(tk.Toplevel):
         def worker() -> None:
             try:
                 paths = submit_job(backend, job, targets)
-                self._queue.put(("monitor", f"Submitted FTP macro {package.name}: {', '.join(paths)}"))
+                self._queue.put(
+                    (
+                        "monitor",
+                        f"자동 실행 순서 전송 완료 {package.name}: {', '.join(paths)}",
+                    )
+                )
             except BaseException as exc:
                 self._queue.put(("error", exc))
 
-        self._ftp_log(f"Submitting {package.name} to {', '.join(targets)}...")
+        self._ftp_log(
+            f"{package.name}을(를) {', '.join(targets)}에 전송하고 있습니다..."
+        )
         threading.Thread(target=worker, daemon=True).start()
 
     def _set_ftp_packages(self, packages: list[PackageInfo]) -> None:
@@ -3835,8 +4787,10 @@ class PickerApp(tk.Toplevel):
             self.ftp_package_list.activate(0)
             self._ftp_show_selected_package()
         else:
-            self._replace_text(self.ftp_package_detail_text, "No uploaded macros.")
-        self._ftp_log(f"Macro list loaded: {len(packages)} item(s).")
+            self._replace_text(
+                self.ftp_package_detail_text, "등록된 자동 실행 순서가 없습니다."
+            )
+        self._ftp_log(f"자동 실행 순서 목록을 불러왔습니다: {len(packages)}개")
 
     def _selected_ftp_package(self) -> PackageInfo | None:
         selection = self.ftp_package_list.curselection()
@@ -3852,33 +4806,44 @@ class PickerApp(tk.Toplevel):
         if package is None:
             return
         lines = [
-            f"Name: {package.name}",
-            f"Title: {package.title or '-'}",
-            "Runner: "
+            f"파일명: {package.name}",
+            f"표시 이름: {package.title or '-'}",
+            "실행 방식: "
             + {
-                "workflow": "내장 워크플로 엔진",
-                "sequence": "검증된 Rig SEQ",
-                "dram_margin": "DRAM CA/DQ 마진 캠페인",
+                "workflow": "내장 자동 실행 엔진",
+                "sequence": "검사 완료 SEQ",
+                "dram_margin": "DRAM CA/DQ 마진 테스트",
                 "python": "외부 Python",
             }.get(package.runner, package.runner),
-            f"Uploaded: {package.uploaded_at or '-'}",
-            f"Path: {package.path}",
+            f"등록 시각: {package.uploaded_at or '-'}",
+            f"서버 경로: {package.path}",
             "",
-            package.notes or "No notes.",
+            package.notes or "설명 없음",
         ]
         if package.variables:
-            lines.extend(["", "PC별 입력값", *[f"- {key}: {value}" for key, value in package.variables.items()]])
+            lines.extend(
+                [
+                    "",
+                    "실장기별 입력값",
+                    *[f"- {key}: {value}" for key, value in package.variables.items()],
+                ]
+            )
         self._replace_text(self.ftp_package_detail_text, "\n".join(lines))
         self._refresh_ftp_profile_columns()
 
     def _ftp_targets(self, raw: str) -> list[str]:
-        tokens = [part for part in raw.replace(",", " ").replace(";", " ").split() if part]
+        tokens = [
+            part for part in raw.replace(",", " ").replace(";", " ").split() if part
+        ]
         lookup: dict[str, str] = {}
         for slave in self._ftp_slaves:
             for key in (slave.node_id, slave.alias, slave.host):
                 if key:
                     lookup[key.casefold()] = slave.node_id
-        return ["all" if token.casefold() == "all" else lookup.get(token.casefold(), token) for token in tokens]
+        return [
+            "all" if token.casefold() == "all" else lookup.get(token.casefold(), token)
+            for token in tokens
+        ]
 
     @staticmethod
     def _ftp_job_origin(config: FtpSpoolConfig) -> dict[str, str]:
@@ -3900,12 +4865,12 @@ class PickerApp(tk.Toplevel):
 
     def _load_workflow(self) -> None:
         path = filedialog.askopenfilename(
-            title="Load workflow",
+            title="자동 실행 순서 불러오기",
             filetypes=[
-                ("Macro project or export", "*.json *.py"),
-                ("Macro project", "*.json"),
-                ("Exported Python", "*.py"),
-                ("All files", "*.*"),
+                ("자동 실행 순서 또는 Python", "*.json *.py"),
+                ("자동 실행 순서", "*.json"),
+                ("실행 가능한 Python", "*.py"),
+                ("모든 파일", "*.*"),
             ],
         )
         if not path:
@@ -3927,22 +4892,27 @@ class PickerApp(tk.Toplevel):
         self._replace_text(self.data_text, project.data_text)
         self.first_row_headers_var.set(project.first_row_headers)
         self.row_delay_var.set(str(project.row_delay_seconds))
-        self._commit_recipe(project.recipe, selected_path=None, message="워크플로 프로젝트를 불러왔습니다")
+        self._commit_recipe(
+            project.recipe, selected_path=None, message="자동 실행 순서를 불러왔습니다"
+        )
         self._saved_project_token = self._project_state_token()
-        self.title(f"Win Automation Picker | {source.stem}")
+        self.title(f"자동 실행 순서 만들기 | {source.stem}")
         self.status.set(status)
 
     def _request_workbench_shortcut(self) -> None:
         if self._on_create_shortcut is None:
             return
-        if self._project_path is None or self._project_state_token() != self._saved_project_token:
+        if (
+            self._project_path is None
+            or self._project_state_token() != self._saved_project_token
+        ):
             if not self._save_workflow():
                 return
         if self._project_path is None:
             return
         name = simpledialog.askstring(
-            "Rig 버튼 만들기",
-            "Rig 작업대에 표시할 버튼 이름",
+            "실행 버튼 만들기",
+            "테스트 준비 화면에 표시할 버튼 이름",
             initialvalue=self._project_path.stem,
             parent=self,
         )
@@ -3954,16 +4924,22 @@ class PickerApp(tk.Toplevel):
         except BaseException as exc:
             self._show_error(exc)
             return
-        self.status.set(f"Rig 버튼 등록됨: {name.strip()}")
+        self.status.set(f"실행 버튼 등록됨: {name.strip()}")
 
     def _clear_workflow(self) -> None:
-        self._commit_recipe(AutomationRecipe(), selected_path=None, message="워크플로를 비웠습니다")
+        self._commit_recipe(
+            AutomationRecipe(),
+            selected_path=None,
+            message="자동 실행 순서를 비웠습니다",
+        )
 
     def _confirm_clear_workflow(self) -> None:
         if not self._recipe.steps:
             self._clear_workflow()
             return
-        if not messagebox.askyesno("Clear workflow", "Remove all blocks from the current workflow?"):
+        if not messagebox.askyesno(
+            "모든 블록 지우기", "현재 자동 실행 순서의 모든 블록을 지울까요?"
+        ):
             return
         self._clear_workflow()
 
@@ -3971,7 +4947,9 @@ class PickerApp(tk.Toplevel):
         try:
             return max(0.0, float(self.row_delay_var.get() or "0"))
         except ValueError as exc:
-            raise WindowsAutomationError("Row delay must be a number.") from exc
+            raise WindowsAutomationError(
+                "행 사이 대기 시간은 숫자로 입력하세요."
+            ) from exc
 
     def _project_state_token(self) -> str:
         return json.dumps(
@@ -3996,7 +4974,9 @@ class PickerApp(tk.Toplevel):
 
     def _selected_step_indices(self) -> list[int]:
         indices = [int(index) for index in self.steps_list.curselection()]
-        return sorted(index for index in indices if 0 <= index < len(self._recipe.steps))
+        return sorted(
+            index for index in indices if 0 <= index < len(self._recipe.steps)
+        )
 
     def _move_selected_step_up_event(self, _event: Any | None = None) -> str:
         self._move_selected_step(-1)
@@ -4017,7 +4997,7 @@ class PickerApp(tk.Toplevel):
             return
         try:
             step = get_block_step(self._recipe, path)
-            color = self.block_color_var.get().strip()
+            color = self._block_color_value()
             updates: dict[str, Any] = {
                 "block_name": self.block_name_var.get().strip(),
                 "block_color": "" if color == "auto" else color,
@@ -4025,12 +5005,19 @@ class PickerApp(tk.Toplevel):
                 "monitor_channel": self.block_monitor_channel_var.get().strip(),
                 "monitor_state": self.block_monitor_state_var.get().strip(),
             }
+            if self._is_condition_like_step(step):
+                updates["element_role"] = MONITOR_FIELD_ROLES.get(
+                    self.block_monitor_field_var.get(),
+                    step.element_role or "monitor",
+                )
             if step.kind == "type":
                 input_value = self.block_text_var.get()
                 if self.block_input_mode_var.get() == "variable":
                     variable = self.block_variable_var.get().strip()
                     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", variable):
-                        raise WindowsAutomationError("변수 이름은 영문 또는 _로 시작하고 영문, 숫자, _만 사용할 수 있습니다.")
+                        raise WindowsAutomationError(
+                            "변수 이름은 영문 또는 _로 시작하고 영문, 숫자, _만 사용할 수 있습니다."
+                        )
                     self._recording_defaults[variable] = input_value
                     input_value = f"${{{variable}}}"
                 updates.update(
@@ -4039,21 +5026,29 @@ class PickerApp(tk.Toplevel):
                     input_method=self._input_method(),
                 )
             elif step.kind == "wait":
-                updates["seconds"] = max(0.0, float(self.block_seconds_var.get() or "0"))
+                updates["seconds"] = max(
+                    0.0, float(self.block_seconds_var.get() or "0")
+                )
             elif step.kind == "key":
                 keys = self.block_keys_var.get().strip()
                 if not keys:
                     raise WindowsAutomationError("키 조합을 입력하세요.")
                 updates["keys"] = keys
             elif step.kind == "repeat":
-                updates["repeat_count"] = max(1, int(self.block_repeat_var.get() or "1"))
+                updates["repeat_count"] = max(
+                    1, int(self.block_repeat_var.get() or "1")
+                )
 
             if step.kind in {"if_text", "monitor_text"}:
-                updates["condition_operator"] = self.block_condition_operator_var.get().strip() or "contains"
+                updates["condition_operator"] = self._condition_operator_value()
                 updates["condition_value"] = self.block_condition_value_var.get()
             elif step.kind in {"if_color", "monitor_color"}:
-                updates["condition_value"] = self.block_condition_value_var.get().strip()
-                updates["color_tolerance"] = max(0.0, float(self.block_tolerance_var.get() or "0"))
+                updates["condition_value"] = (
+                    self.block_condition_value_var.get().strip()
+                )
+                updates["color_tolerance"] = max(
+                    0.0, float(self.block_tolerance_var.get() or "0")
+                )
             if self._is_condition_like_step(step):
                 updates["condition_invert"] = bool(self.block_invert_var.get())
 
@@ -4062,24 +5057,37 @@ class PickerApp(tk.Toplevel):
             if step.kind == "type":
                 recipe = replace(recipe, variables=dict(self._recording_defaults))
         except ValueError:
-            self._show_error(WindowsAutomationError("반복 횟수, 대기 시간, 색상 오차는 숫자로 입력하세요."))
+            self._show_error(
+                WindowsAutomationError(
+                    "반복 횟수, 대기 시간, 색상 오차는 숫자로 입력하세요."
+                )
+            )
             return
         except BaseException as exc:
             self._show_error(exc)
             return
-        self._commit_recipe(recipe, selected_path=path, message="블록 설정을 적용했습니다")
+        self._commit_recipe(
+            recipe, selected_path=path, message="블록 설정을 적용했습니다"
+        )
 
     def _group_selected_conditions(self, operator: str) -> None:
         indices = self._selected_step_indices()
         if len(indices) < 2:
-            self._show_error(WindowsAutomationError("Select two or more condition or monitor blocks in Sequence."))
+            self._show_error(
+                WindowsAutomationError("조건 또는 모니터 블록을 두 개 이상 선택하세요.")
+            )
             return
         selected_steps = [self._recipe.steps[index] for index in indices]
-        invalid = [step.display_label() for step in selected_steps if not self._is_condition_like_step(step)]
+        invalid = [
+            step.display_label()
+            for step in selected_steps
+            if not self._is_condition_like_step(step)
+        ]
         if invalid:
             self._show_error(
                 WindowsAutomationError(
-                    "Only condition or monitor blocks can be grouped: " + ", ".join(invalid[:3])
+                    "조건 또는 상태 확인 블록만 묶을 수 있습니다: "
+                    + ", ".join(invalid[:3])
                 )
             )
             return
@@ -4089,15 +5097,21 @@ class PickerApp(tk.Toplevel):
         group = AutomationStep.monitor_group(
             selected_steps,
             operator=normalized,
-            block_name=self.block_name_var.get().strip() or f"{label} monitor group",
+            block_name=self.block_name_var.get().strip() or f"{label} 조건 묶음",
             block_color="",
             monitor_tab=self.block_monitor_tab_var.get().strip() or first.monitor_tab,
-            monitor_channel=self.block_monitor_channel_var.get().strip() or first.monitor_channel,
-            monitor_state=self.block_monitor_state_var.get().strip() or first.monitor_state,
+            monitor_channel=self.block_monitor_channel_var.get().strip()
+            or first.monitor_channel,
+            monitor_state=self.block_monitor_state_var.get().strip()
+            or first.monitor_state,
         )
         insert_at = indices[0]
         selected = set(indices)
-        steps = [step for index, step in enumerate(self._recipe.steps) if index not in selected]
+        steps = [
+            step
+            for index, step in enumerate(self._recipe.steps)
+            if index not in selected
+        ]
         steps.insert(insert_at, group)
         self._commit_recipe(
             self._recipe_with_steps(steps),
@@ -4106,10 +5120,21 @@ class PickerApp(tk.Toplevel):
         )
 
     def _is_condition_like_step(self, step: AutomationStep) -> bool:
-        return step.kind in {"if_exists", "if_text", "if_color", "monitor_text", "monitor_color", "monitor_group"}
+        return step.kind in {
+            "if_exists",
+            "if_text",
+            "if_color",
+            "monitor_text",
+            "monitor_color",
+            "monitor_group",
+        }
 
     def _parse_monitor_channel_labels(self) -> list[str]:
-        raw = self.monitor_channel_labels_var.get().strip() if hasattr(self, "monitor_channel_labels_var") else ""
+        raw = (
+            self.monitor_channel_labels_var.get().strip()
+            if hasattr(self, "monitor_channel_labels_var")
+            else ""
+        )
         if not raw:
             return []
         if any(separator in raw for separator in ",;\n"):
@@ -4125,7 +5150,11 @@ class PickerApp(tk.Toplevel):
             self._show_error(WindowsAutomationError("적용할 모니터 규칙을 선택하세요."))
             return
         labels = self._parse_monitor_channel_labels()
-        tab = self.monitor_default_tab_var.get().strip() if hasattr(self, "monitor_default_tab_var") else ""
+        tab = (
+            self.monitor_default_tab_var.get().strip()
+            if hasattr(self, "monitor_default_tab_var")
+            else ""
+        )
         recipe = self._recipe
         applied = 0
         for offset, path in enumerate(paths):
@@ -4144,14 +5173,24 @@ class PickerApp(tk.Toplevel):
             )
             applied += 1
         if not applied:
-            self._show_error(WindowsAutomationError("Selected steps do not contain monitor or condition blocks."))
+            self._show_error(
+                WindowsAutomationError(
+                    "선택한 블록에 조건 또는 모니터 규칙이 없습니다."
+                )
+            )
             return
-        self._commit_recipe(recipe, selected_path=paths[0], message=f"{applied}개 규칙에 보드/CH를 적용했습니다")
+        self._commit_recipe(
+            recipe,
+            selected_path=paths[0],
+            message=f"{applied}개 규칙에 보드/CH를 적용했습니다",
+        )
 
     def _clear_selected_monitor_channels(self) -> None:
         paths = self._selected_monitor_paths()
         if not paths:
-            self._show_error(WindowsAutomationError("CH를 비울 모니터 규칙을 선택하세요."))
+            self._show_error(
+                WindowsAutomationError("CH를 비울 모니터 규칙을 선택하세요.")
+            )
             return
         recipe = self._recipe
         cleared = 0
@@ -4162,26 +5201,34 @@ class PickerApp(tk.Toplevel):
             recipe = replace_block_step(recipe, path, replace(step, monitor_channel=""))
             cleared += 1
         if not cleared:
-            self._show_error(WindowsAutomationError("Selected steps do not contain monitor or condition blocks."))
+            self._show_error(
+                WindowsAutomationError(
+                    "선택한 블록에 조건 또는 모니터 규칙이 없습니다."
+                )
+            )
             return
-        self._commit_recipe(recipe, selected_path=paths[0], message=f"{cleared}개 규칙의 CH를 비웠습니다")
+        self._commit_recipe(
+            recipe,
+            selected_path=paths[0],
+            message=f"{cleared}개 규칙의 CH를 비웠습니다",
+        )
 
     def _wrap_selected_step_repeat(self) -> None:
         path = self._selected_step_path()
         if path is None:
-            self._show_error(WindowsAutomationError("Select a block first."))
+            self._show_error(WindowsAutomationError("블록을 먼저 선택하세요."))
             return
         try:
             repeat_count = max(1, int(self.block_repeat_var.get() or "1"))
         except ValueError:
-            self._show_error(WindowsAutomationError("Repeat count must be a number."))
+            self._show_error(WindowsAutomationError("반복 횟수는 숫자로 입력하세요."))
             return
         step = get_block_step(self._recipe, path)
         if step.kind == "repeat":
             updated = replace(step, repeat_count=repeat_count)
         else:
-            name = self.block_name_var.get().strip() or f"Repeat {step.block_title()}"
-            color = self.block_color_var.get().strip()
+            name = self.block_name_var.get().strip() or f"{step.block_title()} 반복"
+            color = self._block_color_value()
             updated = AutomationStep.repeat(
                 [step],
                 repeat_count=repeat_count,
@@ -4189,23 +5236,31 @@ class PickerApp(tk.Toplevel):
                 block_color="" if color == "auto" else color,
             )
         recipe = replace_block_step(self._recipe, path, updated)
-        self._commit_recipe(recipe, selected_path=path, message=f"반복 블록을 {repeat_count}회로 설정했습니다")
+        self._commit_recipe(
+            recipe,
+            selected_path=path,
+            message=f"반복 블록을 {repeat_count}회로 설정했습니다",
+        )
 
     def _wrap_selected_step_if_exists(self) -> None:
         path = self._selected_step_path()
         if path is None:
-            self._show_error(WindowsAutomationError("Select a block first."))
+            self._show_error(WindowsAutomationError("블록을 먼저 선택하세요."))
             return
         step = get_block_step(self._recipe, path)
         condition_selector = self._first_selector_for_step(step)
         if condition_selector is None:
-            self._show_error(WindowsAutomationError("Selected block has no target selector for an if block."))
+            self._show_error(
+                WindowsAutomationError("선택한 블록에 조건으로 확인할 대상이 없습니다.")
+            )
             return
         if step.kind == "if_exists":
             updated = step
         else:
-            name = self.block_name_var.get().strip() or f"If {step.block_title()} exists"
-            color = self.block_color_var.get().strip()
+            name = (
+                self.block_name_var.get().strip() or f"{step.block_title()} 대상 확인"
+            )
+            color = self._block_color_value()
             updated = AutomationStep.if_exists(
                 condition_selector,
                 [step],
@@ -4213,17 +5268,21 @@ class PickerApp(tk.Toplevel):
                 block_color="" if color == "auto" else color,
             )
         recipe = replace_block_step(self._recipe, path, updated)
-        self._commit_recipe(recipe, selected_path=path, message="대상 존재 조건으로 감쌌습니다")
+        self._commit_recipe(
+            recipe, selected_path=path, message="대상 존재 조건으로 감쌌습니다"
+        )
 
     def _wrap_selected_step_if_text(self) -> None:
         path = self._selected_step_path()
         if path is None:
-            self._show_error(WindowsAutomationError("Select a block first."))
+            self._show_error(WindowsAutomationError("블록을 먼저 선택하세요."))
             return
         step = get_block_step(self._recipe, path)
         condition_selector = self._condition_selector_for_step(step)
         if condition_selector is None:
-            self._show_error(WindowsAutomationError("Selected block has no target selector for a text condition."))
+            self._show_error(
+                WindowsAutomationError("선택한 블록에 텍스트를 읽을 대상이 없습니다.")
+            )
             return
         condition = self._ask_text_condition(condition_selector)
         if condition is None:
@@ -4234,21 +5293,25 @@ class PickerApp(tk.Toplevel):
             expected,
             [step],
             operator=operator,
-            block_name=f"If text {operator} {expected}",
+            block_name=f"텍스트 조건: {expected}",
             block_color="",
         )
         recipe = replace_block_step(self._recipe, path, updated)
-        self._commit_recipe(recipe, selected_path=path, message="텍스트 조건으로 감쌌습니다")
+        self._commit_recipe(
+            recipe, selected_path=path, message="텍스트 조건으로 감쌌습니다"
+        )
 
     def _wrap_selected_step_if_color(self) -> None:
         path = self._selected_step_path()
         if path is None:
-            self._show_error(WindowsAutomationError("Select a block first."))
+            self._show_error(WindowsAutomationError("블록을 먼저 선택하세요."))
             return
         step = get_block_step(self._recipe, path)
         condition_selector = self._condition_selector_for_step(step)
         if condition_selector is None:
-            self._show_error(WindowsAutomationError("Selected block has no target selector for a color condition."))
+            self._show_error(
+                WindowsAutomationError("선택한 블록에 색상을 읽을 대상이 없습니다.")
+            )
             return
         condition = self._ask_color_condition(condition_selector)
         if condition is None:
@@ -4259,53 +5322,69 @@ class PickerApp(tk.Toplevel):
             expected,
             [step],
             tolerance=tolerance,
-            block_name=f"If color near {expected}",
+            block_name=f"색상이 {expected}에 가까우면",
             block_color="",
         )
         recipe = replace_block_step(self._recipe, path, updated)
-        self._commit_recipe(recipe, selected_path=path, message="색상 조건으로 감쌌습니다")
+        self._commit_recipe(
+            recipe, selected_path=path, message="색상 조건으로 감쌌습니다"
+        )
 
     def _add_monitor_text_step(self) -> None:
         selector = self._selected_or_current_selector()
         if selector is None:
-            self._show_error(WindowsAutomationError("Select or inspect a target first."))
+            self._show_error(
+                WindowsAutomationError("대상을 먼저 확인하거나 선택하세요.")
+            )
             return
         condition = self._ask_text_condition(selector)
         if condition is None:
             return
         operator, expected = condition
         metadata = self._metadata_from_fields(selector, fallback_role="monitor")
-        step = AutomationStep.monitor_text(
-            selector,
-            expected,
-            operator=operator,
-            label=f"Monitor text {operator} {expected}",
-            block_name=f"Monitor text {operator} {expected}",
-            **metadata,
+        step = self._with_default_monitor_profile(
+            AutomationStep.monitor_text(
+                selector,
+                expected,
+                operator=operator,
+                label=f"텍스트 상태 {operator} {expected}",
+                block_name=f"텍스트 상태 {operator} {expected}",
+                **metadata,
+            )
         )
-        self._insert_workspace_step(step, (), len(self._recipe.steps), "텍스트 모니터 규칙을 추가했습니다")
-        self._add_monitor_event(f"Added monitor text: {operator} {expected}")
+        self._insert_workspace_step(
+            step, (), len(self._recipe.steps), "텍스트 모니터 규칙을 추가했습니다"
+        )
+        self._add_monitor_event(f"텍스트 상태 규칙 추가: {operator} {expected}")
 
     def _add_monitor_color_step(self) -> None:
         selector = self._selected_or_current_selector()
         if selector is None:
-            self._show_error(WindowsAutomationError("Select or inspect a target first."))
+            self._show_error(
+                WindowsAutomationError("대상을 먼저 확인하거나 선택하세요.")
+            )
             return
         condition = self._ask_color_condition(selector)
         if condition is None:
             return
         expected, tolerance = condition
         metadata = self._metadata_from_fields(selector, fallback_role="monitor")
-        step = AutomationStep.monitor_color(
-            selector,
-            expected,
-            tolerance=tolerance,
-            label=f"Monitor color near {expected}",
-            block_name=f"Monitor color near {expected}",
-            **metadata,
+        step = self._with_default_monitor_profile(
+            AutomationStep.monitor_color(
+                selector,
+                expected,
+                tolerance=tolerance,
+                label=f"색상 상태 {expected}",
+                block_name=f"색상 상태 {expected}",
+                **metadata,
+            )
         )
-        self._insert_workspace_step(step, (), len(self._recipe.steps), "색상 모니터 규칙을 추가했습니다")
-        self._add_monitor_event(f"Added monitor color: {expected} tolerance={tolerance:g}")
+        self._insert_workspace_step(
+            step, (), len(self._recipe.steps), "색상 모니터 규칙을 추가했습니다"
+        )
+        self._add_monitor_event(
+            f"색상 상태 규칙 추가: {expected} · 허용 오차 {tolerance:g}"
+        )
 
     def _first_selector_for_step(self, step: AutomationStep) -> UISelector | None:
         if step.selector:
@@ -4317,7 +5396,9 @@ class PickerApp(tk.Toplevel):
         return None
 
     def _condition_selector_for_step(self, step: AutomationStep) -> UISelector | None:
-        return self._first_selector_for_step(step) or self._selected_or_current_selector()
+        return (
+            self._first_selector_for_step(step) or self._selected_or_current_selector()
+        )
 
     def _selected_or_current_selector(self) -> UISelector | None:
         path = self._selected_step_path()
@@ -4336,21 +5417,63 @@ class PickerApp(tk.Toplevel):
             sample = get_element_text(selector, timeout=0.8)
         except BaseException:
             pass
-        operator = simpledialog.askstring(
-            "Text condition",
-            "Operator: contains, equals, starts_with, ends_with, regex, not_empty",
-            initialvalue="contains",
+        operators = {
+            "포함": "contains",
+            "같음": "equals",
+            "앞부분이 같음": "starts_with",
+            "뒷부분이 같음": "ends_with",
+            "정규식": "regex",
+            "비어 있지 않음": "not_empty",
+        }
+        result: tuple[str, str] | None = None
+        dialog = tk.Toplevel(self)
+        dialog.title("텍스트 조건")
+        dialog.transient(self)
+        dialog.resizable(False, False)
+        body = ttk.Frame(dialog, padding=14)
+        body.grid(row=0, column=0, sticky="nsew")
+        body.columnconfigure(1, weight=1)
+        operator_var = tk.StringVar(value="포함")
+        expected_var = tk.StringVar(value=sample.splitlines()[0] if sample else "")
+        ttk.Label(body, text="비교 방식").grid(
+            row=0, column=0, sticky="w", padx=(0, 10), pady=5
         )
-        if operator is None:
-            return None
-        expected = simpledialog.askstring(
-            "Text condition",
-            "Expected text",
-            initialvalue=sample.splitlines()[0] if sample else "",
+        ttk.Combobox(
+            body,
+            textvariable=operator_var,
+            values=tuple(operators),
+            state="readonly",
+            width=22,
+        ).grid(row=0, column=1, sticky="ew", pady=5)
+        ttk.Label(body, text="비교할 텍스트").grid(
+            row=1, column=0, sticky="w", padx=(0, 10), pady=5
         )
-        if expected is None:
-            return None
-        return operator.strip() or "contains", expected
+        expected_entry = ttk.Entry(body, textvariable=expected_var, width=38)
+        expected_entry.grid(row=1, column=1, sticky="ew", pady=5)
+        ttk.Label(
+            body,
+            text=f"현재 읽은 값: {sample.splitlines()[0] if sample else '-'}",
+            style="Muted.TLabel",
+            wraplength=360,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(5, 10))
+
+        def save() -> None:
+            nonlocal result
+            result = (operators[operator_var.get()], expected_var.get())
+            dialog.destroy()
+
+        actions = ttk.Frame(body)
+        actions.grid(row=3, column=0, columnspan=2, sticky="e")
+        ttk.Button(actions, text="취소", command=dialog.destroy).pack(side="right")
+        ttk.Button(actions, text="적용", command=save, style="Primary.TButton").pack(
+            side="right", padx=(0, 6)
+        )
+        dialog.bind("<Return>", lambda _event: save())
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
+        dialog.grab_set()
+        expected_entry.focus_set()
+        self.wait_window(dialog)
+        return result
 
     def _ask_color_condition(self, selector: UISelector) -> tuple[str, float] | None:
         sampled = ""
@@ -4358,46 +5481,123 @@ class PickerApp(tk.Toplevel):
             sampled = sample_element_color(selector, timeout=0.8).hex
         except BaseException:
             pass
-        expected = simpledialog.askstring(
-            "Color condition",
-            "Expected color name or #RRGGBB",
-            initialvalue=sampled or "#0000FF",
+        result: tuple[str, float] | None = None
+        dialog = tk.Toplevel(self)
+        dialog.title("색상 조건")
+        dialog.transient(self)
+        dialog.resizable(False, False)
+        body = ttk.Frame(dialog, padding=14)
+        body.grid(row=0, column=0, sticky="nsew")
+        body.columnconfigure(1, weight=1)
+        expected_var = tk.StringVar(value=sampled or "#0000FF")
+        tolerance_var = tk.StringVar(value="24")
+        ttk.Label(body, text="기준 색상").grid(
+            row=0, column=0, sticky="w", padx=(0, 10), pady=5
         )
-        if expected is None:
-            return None
-        tolerance = simpledialog.askfloat(
-            "Color tolerance",
-            "RGB distance tolerance",
-            minvalue=0.0,
-            initialvalue=24.0,
+        expected_entry = ttk.Entry(body, textvariable=expected_var, width=28)
+        expected_entry.grid(row=0, column=1, sticky="ew", pady=5)
+        ttk.Label(body, text="허용 오차").grid(
+            row=1, column=0, sticky="w", padx=(0, 10), pady=5
         )
-        if tolerance is None:
-            return None
-        return expected.strip(), float(tolerance)
+        ttk.Spinbox(
+            body,
+            textvariable=tolerance_var,
+            from_=0,
+            to=441,
+            increment=1,
+            width=10,
+        ).grid(row=1, column=1, sticky="w", pady=5)
+        ttk.Label(
+            body,
+            text=(
+                f"현재 읽은 색상: {sampled or '-'} · 처음에는 허용 오차 24를 사용한 뒤 "
+                "실제 화면에서 조정하세요."
+            ),
+            style="Muted.TLabel",
+            wraplength=360,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(5, 10))
+
+        def save() -> None:
+            nonlocal result
+            expected = expected_var.get().strip()
+            try:
+                tolerance = float(tolerance_var.get())
+            except ValueError:
+                messagebox.showerror(
+                    "색상 조건", "허용 오차는 숫자로 입력하세요.", parent=dialog
+                )
+                return
+            if not expected:
+                messagebox.showerror(
+                    "색상 조건", "기준 색상을 입력하세요.", parent=dialog
+                )
+                return
+            if tolerance < 0:
+                messagebox.showerror(
+                    "색상 조건", "허용 오차는 0 이상이어야 합니다.", parent=dialog
+                )
+                return
+            result = (expected, tolerance)
+            dialog.destroy()
+
+        actions = ttk.Frame(body)
+        actions.grid(row=3, column=0, columnspan=2, sticky="e")
+        ttk.Button(actions, text="취소", command=dialog.destroy).pack(side="right")
+        ttk.Button(actions, text="적용", command=save, style="Primary.TButton").pack(
+            side="right", padx=(0, 6)
+        )
+        dialog.bind("<Return>", lambda _event: save())
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
+        dialog.grab_set()
+        expected_entry.focus_set()
+        self.wait_window(dialog)
+        return result
 
     def _unwrap_selected_repeat(self) -> None:
         path = self._selected_step_path()
         if path is None:
-            self._show_error(WindowsAutomationError("Select a container block first."))
+            self._show_error(
+                WindowsAutomationError("반복 또는 조건 블록을 먼저 선택하세요.")
+            )
             return
         step = get_block_step(self._recipe, path)
-        if step.kind not in {"repeat", "if_exists", "if_text", "if_color", "monitor_group"}:
-            self._show_error(WindowsAutomationError("Selected block is not a repeat or if block."))
+        if step.kind not in {
+            "repeat",
+            "if_exists",
+            "if_text",
+            "if_color",
+            "monitor_group",
+        }:
+            self._show_error(
+                WindowsAutomationError("선택한 블록은 반복 또는 조건 블록이 아닙니다.")
+            )
             return
         recipe, _removed = remove_block_step(self._recipe, path)
         selected: BlockPath | None = None
         for offset, child in enumerate(step.children):
-            recipe, child_path = insert_block_step(recipe, path[:-1], path[-1] + offset, child)
+            recipe, child_path = insert_block_step(
+                recipe, path[:-1], path[-1] + offset, child
+            )
             selected = selected or child_path
-        selected = selected or nearest_block_path(recipe, path[:-1] + (max(0, path[-1] - 1),))
-        self._commit_recipe(recipe, selected_path=selected, message="컨테이너를 풀고 내부 블록을 유지했습니다")
+        selected = selected or nearest_block_path(
+            recipe, path[:-1] + (max(0, path[-1] - 1),)
+        )
+        self._commit_recipe(
+            recipe,
+            selected_path=selected,
+            message="컨테이너를 풀고 내부 블록을 유지했습니다",
+        )
 
     def _move_selected_step(self, delta: int) -> None:
         path = self._selected_step_path()
         if path is None:
             self._show_error(WindowsAutomationError("이동할 블록을 선택하세요."))
             return
-        siblings = self._recipe.steps if len(path) == 1 else get_block_step(self._recipe, path[:-1]).children
+        siblings = (
+            self._recipe.steps
+            if len(path) == 1
+            else get_block_step(self._recipe, path[:-1]).children
+        )
         current_index = path[-1]
         target_index = max(0, min(len(siblings) - 1, current_index + delta))
         if target_index == current_index:
@@ -4405,12 +5605,18 @@ class PickerApp(tk.Toplevel):
             return
         destination_index = target_index if delta < 0 else target_index + 1
         try:
-            recipe, new_path = move_block_step(self._recipe, path, path[:-1], destination_index)
+            recipe, new_path = move_block_step(
+                self._recipe, path, path[:-1], destination_index
+            )
         except BaseException as exc:
             self._show_error(exc)
             return
         direction = "위" if delta < 0 else "아래"
-        self._commit_recipe(recipe, selected_path=new_path, message=f"블록을 {direction} 방향으로 이동했습니다")
+        self._commit_recipe(
+            recipe,
+            selected_path=new_path,
+            message=f"블록을 {direction} 방향으로 이동했습니다",
+        )
 
     def _nest_selected_block_in_previous(self) -> None:
         path = self._selected_step_path()
@@ -4418,17 +5624,37 @@ class PickerApp(tk.Toplevel):
             self._show_error(WindowsAutomationError("이동할 블록을 선택하세요."))
             return
         if path[-1] == 0:
-            self._show_error(WindowsAutomationError("앞에 있는 반복 또는 조건 블록을 먼저 배치하세요."))
+            self._show_error(
+                WindowsAutomationError(
+                    "앞에 있는 반복 또는 조건 블록을 먼저 배치하세요."
+                )
+            )
             return
         parent_path = path[:-1]
         container_path = (*parent_path, path[-1] - 1)
         container = get_block_step(self._recipe, container_path)
-        if container.kind not in {"repeat", "if_exists", "if_text", "if_color", "monitor_group"}:
-            self._show_error(WindowsAutomationError("앞 블록은 반복, 조건 또는 AND/OR 묶음이어야 합니다."))
+        if container.kind not in {
+            "repeat",
+            "if_exists",
+            "if_text",
+            "if_color",
+            "monitor_group",
+        }:
+            self._show_error(
+                WindowsAutomationError(
+                    "앞 블록은 반복, 조건 또는 AND/OR 묶음이어야 합니다."
+                )
+            )
             return
         moving = get_block_step(self._recipe, path)
-        if container.kind == "monitor_group" and not self._is_condition_like_step(moving):
-            self._show_error(WindowsAutomationError("AND/OR 묶음 안에는 조건 또는 모니터 블록만 넣을 수 있습니다."))
+        if container.kind == "monitor_group" and not self._is_condition_like_step(
+            moving
+        ):
+            self._show_error(
+                WindowsAutomationError(
+                    "AND/OR 묶음 안에는 조건 또는 모니터 블록만 넣을 수 있습니다."
+                )
+            )
             return
         try:
             recipe, new_path = move_block_step(
@@ -4440,7 +5666,11 @@ class PickerApp(tk.Toplevel):
         except BaseException as exc:
             self._show_error(exc)
             return
-        self._commit_recipe(recipe, selected_path=new_path, message="블록을 앞 컨테이너 안으로 이동했습니다")
+        self._commit_recipe(
+            recipe,
+            selected_path=new_path,
+            message="블록을 앞 컨테이너 안으로 이동했습니다",
+        )
 
     def _move_selected_block_out(self) -> None:
         path = self._selected_step_path()
@@ -4448,7 +5678,9 @@ class PickerApp(tk.Toplevel):
             self._show_error(WindowsAutomationError("이동할 블록을 선택하세요."))
             return
         if len(path) == 1:
-            self._show_error(WindowsAutomationError("이 블록은 이미 최상위에 있습니다."))
+            self._show_error(
+                WindowsAutomationError("이 블록은 이미 최상위에 있습니다.")
+            )
             return
         container_path = path[:-1]
         destination_parent = container_path[:-1]
@@ -4463,7 +5695,11 @@ class PickerApp(tk.Toplevel):
         except BaseException as exc:
             self._show_error(exc)
             return
-        self._commit_recipe(recipe, selected_path=new_path, message="블록을 컨테이너 밖으로 이동했습니다")
+        self._commit_recipe(
+            recipe,
+            selected_path=new_path,
+            message="블록을 컨테이너 밖으로 이동했습니다",
+        )
 
     def _delete_selected_step(self) -> None:
         path = self._selected_step_path()
@@ -4489,12 +5725,15 @@ class PickerApp(tk.Toplevel):
         self.element_name_var.set(step.element_id)
         loaded_role = step.element_role or "auto"
         self._last_loaded_element_role = loaded_role
-        self.element_role_var.set(loaded_role)
+        self.element_role_var.set(ELEMENT_ROLE_LABELS.get(loaded_role, loaded_role))
         self.element_notes_var.set(step.description)
         if hasattr(self, "block_name_var"):
             self.block_name_var.set(step.block_name)
-            self.block_color_var.set(step.block_color or "auto")
-            self.block_repeat_var.set(str(step.repeat_count if step.kind == "repeat" else 2))
+            color = step.block_color or "auto"
+            self.block_color_var.set(BLOCK_COLOR_LABELS.get(color, color))
+            self.block_repeat_var.set(
+                str(step.repeat_count if step.kind == "repeat" else 2)
+            )
             self.block_seconds_var.set(f"{step.seconds:g}")
             self.block_keys_var.set(step.keys or "{ENTER}")
             variable = exact_variable(step.text) if step.kind == "type" else ""
@@ -4506,13 +5745,19 @@ class PickerApp(tk.Toplevel):
                 self.block_input_mode_var.set("fixed")
                 self.block_variable_var.set("")
                 self.block_text_var.set(step.text)
-            self.block_condition_operator_var.set(step.condition_operator or "contains")
+            operator = step.condition_operator or "contains"
+            self.block_condition_operator_var.set(
+                CONDITION_OPERATOR_LABELS.get(operator, operator)
+            )
             self.block_condition_value_var.set(step.condition_value)
             self.block_tolerance_var.set(f"{step.color_tolerance:g}")
             self.block_invert_var.set(bool(step.condition_invert))
             self.block_monitor_tab_var.set(step.monitor_tab)
             self.block_monitor_channel_var.set(step.monitor_channel)
             self.block_monitor_state_var.set(step.monitor_state)
+            self.block_monitor_field_var.set(
+                MONITOR_ROLE_FIELDS.get(step.element_role, "일반 상태 판정")
+            )
             self.block_kind_var.set(self._block_kind_label(step.kind))
             self.block_target_var.set(self._block_target_label(step))
             self._configure_block_inspector(step)
@@ -4520,12 +5765,13 @@ class PickerApp(tk.Toplevel):
             self.input_text.delete(0, "end")
             self.input_text.insert(0, step.text)
             self.clear_var.set(bool(step.clear))
-            self.input_method_var.set(step.input_method or "paste")
+            method = step.input_method or "paste"
+            self.input_method_var.set(INPUT_METHOD_LABELS.get(method, method))
         if step.selector:
             self._set_current_selector(step.selector)
         else:
             if hasattr(self, "window_marker_mode_var"):
-                self.window_marker_mode_var.set("contains")
+                self.window_marker_mode_var.set(WINDOW_MARKER_LABELS["contains"])
             self.window_marker_var.set("")
 
     def _block_kind_label(self, kind: str) -> str:
@@ -4549,7 +5795,9 @@ class PickerApp(tk.Toplevel):
         leaf = step.selector.leaf()
         target = leaf.name or leaf.automation_id or leaf.control_type or "Control"
         window = step.selector.root.name or step.selector.root.class_name or "Window"
-        marker = step.selector.window_marker.summary() if step.selector.window_marker else ""
+        marker = (
+            step.selector.window_marker.summary() if step.selector.window_marker else ""
+        )
         suffix = f" · {marker}" if marker else ""
         return f"{window} → {target}{suffix}"
 
@@ -4557,7 +5805,9 @@ class PickerApp(tk.Toplevel):
         if not hasattr(self, "block_text_entry"):
             return
 
-        def field_visible(widget: tk.Widget, visible: bool, *, state: str = "normal") -> None:
+        def field_visible(
+            widget: tk.Widget, visible: bool, *, state: str = "normal"
+        ) -> None:
             label = getattr(widget, "_field_label", None)
             if visible:
                 if label is not None:
@@ -4607,13 +5857,14 @@ class PickerApp(tk.Toplevel):
             self.block_monitor_tab_entry,
             self.block_monitor_channel_entry,
             self.block_monitor_state_entry,
+            self.block_monitor_field_combo,
         ):
             field_visible(widget, condition)
 
     def _apply_metadata_to_selected_step(self) -> None:
         path = self._selected_step_path()
         if path is None:
-            self._show_error(WindowsAutomationError("Select a step first."))
+            self._show_error(WindowsAutomationError("블록을 먼저 선택하세요."))
             return
         step = get_block_step(self._recipe, path)
         selector = self._selector_with_window_marker(step.selector)
@@ -4625,12 +5876,17 @@ class PickerApp(tk.Toplevel):
         label = self._label_for_step(step, metadata["element_id"])
         updates: dict[str, Any] = {"selector": selector, "label": label, **metadata}
         if hasattr(self, "block_name_var"):
-            block_color = self.block_color_var.get().strip()
+            block_color = self._block_color_value()
             updates["block_name"] = self.block_name_var.get().strip()
             updates["block_color"] = "" if block_color == "auto" else block_color
             updates["monitor_tab"] = self.block_monitor_tab_var.get().strip()
             updates["monitor_channel"] = self.block_monitor_channel_var.get().strip()
             updates["monitor_state"] = self.block_monitor_state_var.get().strip()
+            if self._is_condition_like_step(step):
+                updates["element_role"] = MONITOR_FIELD_ROLES.get(
+                    self.block_monitor_field_var.get(),
+                    updates.get("element_role") or "monitor",
+                )
         if step.kind == "type":
             updates.update(
                 {
@@ -4654,14 +5910,29 @@ class PickerApp(tk.Toplevel):
             if not step.selector and step.kind != "key":
                 next_index = index
             else:
-                element_id = step.element_id or self._auto_element_id(step.selector, step.kind)
+                element_id = step.element_id or self._auto_element_id(
+                    step.selector, step.kind
+                )
                 if element_id and element_id not in seen:
                     seen.add(element_id)
-                    role = step.element_role or self._infer_role(step.selector, step.kind)
-                    target = self._segment_summary(step.selector.leaf()) if step.selector else step.keys or step.kind
-                    marker = step.selector.window_marker.summary() if step.selector and step.selector.window_marker else ""
+                    role = step.element_role or self._infer_role(
+                        step.selector, step.kind
+                    )
+                    target = (
+                        self._segment_summary(step.selector.leaf())
+                        if step.selector
+                        else step.keys or step.kind
+                    )
+                    marker = (
+                        step.selector.window_marker.summary()
+                        if step.selector and step.selector.window_marker
+                        else ""
+                    )
                     suffix = f" | marker {marker}" if marker else ""
-                    self.elements_list.insert("end", f"{element_id} | {role} | step {index} | {target}{suffix}")
+                    self.elements_list.insert(
+                        "end",
+                        f"{element_id} | {role} | step {index} | {target}{suffix}",
+                    )
                 next_index = index + 1
             for child in step.children:
                 next_index = visit(child, next_index)
@@ -4684,10 +5955,15 @@ class PickerApp(tk.Toplevel):
             raw_id = ""
         raw_id = raw_id or fallback_id or self._auto_element_id(selector, fallback_role)
         element_id = self._slugify(raw_id) or "element"
-        selected_role = self.element_role_var.get().strip()
+        selected_label = self.element_role_var.get().strip()
+        selected_role = ELEMENT_ROLE_OPTIONS.get(selected_label, selected_label)
         if selected_role == self._last_loaded_element_role and not reuse_existing_auto:
             selected_role = "auto"
-        element_role = selected_role if selected_role and selected_role != "auto" else self._infer_role(selector, fallback_role)
+        element_role = (
+            selected_role
+            if selected_role and selected_role != "auto"
+            else self._infer_role(selector, fallback_role)
+        )
         description = self.element_notes_var.get().strip()
         return {
             "element_id": element_id,
@@ -4708,7 +5984,11 @@ class PickerApp(tk.Toplevel):
 
     def _infer_role(self, selector: UISelector | None, fallback: str = "other") -> str:
         if selector is None:
-            return fallback if fallback in {"hotkey", "button", "input", "menu", "other"} else "other"
+            return (
+                fallback
+                if fallback in {"hotkey", "button", "input", "menu", "other"}
+                else "other"
+            )
         control_type = selector.leaf().control_type.lower()
         if "button" in control_type:
             return "button"
@@ -4738,8 +6018,17 @@ class PickerApp(tk.Toplevel):
         return slug
 
     def _input_method(self) -> str:
-        method = self.input_method_var.get().strip().casefold()
+        selected = self.input_method_var.get().strip()
+        method = INPUT_METHOD_OPTIONS.get(selected, selected.casefold())
         return method if method in {"paste", "keys"} else "paste"
+
+    def _block_color_value(self) -> str:
+        selected = self.block_color_var.get().strip()
+        return BLOCK_COLOR_OPTIONS.get(selected, selected or "auto")
+
+    def _condition_operator_value(self) -> str:
+        selected = self.block_condition_operator_var.get().strip()
+        return CONDITION_OPERATOR_OPTIONS.get(selected, selected or "contains")
 
     def _control_type_key(self, value: str) -> str:
         return "".join(ch for ch in value.casefold() if ch.isalnum())
@@ -4752,20 +6041,34 @@ class PickerApp(tk.Toplevel):
         self.pick_button.configure(state=state)
         self.record_click_button.configure(state=state)
         self.record_type_button.configure(state=state)
-        self.cancel_pick_button.configure(state="normal" if state == "disabled" else "disabled")
+        self.cancel_pick_button.configure(
+            state="normal" if state == "disabled" else "disabled"
+        )
 
-    def _step_label(self, prefix: str, selector: UISelector, element_id: str = "") -> str:
+    def _step_label(
+        self, prefix: str, selector: UISelector, element_id: str = ""
+    ) -> str:
         leaf = selector.leaf()
-        target = element_id or leaf.name or leaf.automation_id or leaf.control_type or "Control"
+        target = (
+            element_id
+            or leaf.name
+            or leaf.automation_id
+            or leaf.control_type
+            or "Control"
+        )
         return f"{prefix} {target}"
 
     def _label_for_step(self, step: AutomationStep, element_id: str) -> str:
         if step.kind == "click":
-            return f"Click {element_id}"
+            return f"{element_id} 클릭"
         if step.kind == "type":
-            return f"Type {element_id}"
+            return f"{element_id} 텍스트 입력"
         if step.kind == "key":
-            return f"Press {step.keys} ({element_id})" if element_id else f"Press {step.keys}"
+            return (
+                f"{step.keys} 누르기 ({element_id})"
+                if element_id
+                else f"{step.keys} 누르기"
+            )
         return step.label
 
     def _snippet_for(self, selector: UISelector) -> str:
@@ -4774,22 +6077,25 @@ class PickerApp(tk.Toplevel):
             "from win_automation_picker.selector import UISelector\n\n"
             f"selector = UISelector.from_json(r'''{selector.to_json()}''')\n\n"
             "click(selector)\n"
-            "type_text(selector, \"hello\", clear=False)\n"
+            'type_text(selector, "hello", clear=False)\n'
         )
 
     def _show_error(self, exc: BaseException) -> None:
-        self.status.set("Error")
+        self.status.set("오류")
         self.log.set(str(exc))
         if hasattr(self, "monitor_state"):
-            self.monitor_state.set("Error")
-            self._add_monitor_event(f"Error: {exc}")
-        messagebox.showerror("Win Automation Picker", str(exc))
+            self.monitor_state.set("오류")
+            self._add_monitor_event(f"오류: {exc}")
+        messagebox.showerror("자동 실행 순서 만들기", str(exc))
 
     def _close_app(self) -> None:
-        if self._saved_project_token and self._project_state_token() != self._saved_project_token:
+        if (
+            self._saved_project_token
+            and self._project_state_token() != self._saved_project_token
+        ):
             choice = messagebox.askyesnocancel(
                 "저장하지 않은 변경",
-                "매크로 프로젝트 변경 내용을 저장하고 종료할까요?",
+                "자동 실행 순서 변경 내용을 저장하고 종료할까요?",
                 parent=self,
             )
             if choice is None:
@@ -4817,7 +6123,9 @@ class PickerApp(tk.Toplevel):
         top = self.winfo_rooty()
         return (left, top, left + self.winfo_width(), top + self.winfo_height())
 
-    def _point_in_bounds(self, x: int, y: int, bounds: tuple[int, int, int, int]) -> bool:
+    def _point_in_bounds(
+        self, x: int, y: int, bounds: tuple[int, int, int, int]
+    ) -> bool:
         left, top, right, bottom = bounds
         return left <= x <= right and top <= y <= bottom
 
@@ -4855,7 +6163,7 @@ class PickerApp(tk.Toplevel):
 
     def _clear_monitor(self) -> None:
         self.monitor_list.delete(0, "end")
-        self._add_monitor_event("Monitor cleared.")
+        self._add_monitor_event("모니터 기록을 지웠습니다.")
 
 
 def run_app() -> None:

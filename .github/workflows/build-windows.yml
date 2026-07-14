@@ -116,7 +116,7 @@ jobs:
 
   build-windows:
     name: Build Windows executable
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     needs: test
 
@@ -147,6 +147,20 @@ jobs:
       - name: Build, smoke test, and package Windows executables
         shell: pwsh
         run: ./scripts/build_windows_release.ps1
+
+      - name: Upload Windows build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AEWorkbench-Windows-x64
+          path: |
+            dist/AEWorkbench.exe
+            dist/AutomationBuilder.exe
+            dist/FixtureControlCli.exe
+            dist/FixtureCommunication.exe
+            dist/FixtureCommunicationCli.exe
+            dist/AEWorkbench-Windows-x64.zip
+            dist/windows-release-manifest.json
+          if-no-files-found: error
 
   publish-latest-release:
     name: Publish latest release asset
@@ -196,13 +210,13 @@ jobs:
         run: |
           gh release view latest --repo "$env:GITHUB_REPOSITORY" 1>$null 2>$null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload latest dist/AEWorkbench.exe dist/WinAutomationPicker.exe dist/RigCommander.exe dist/RigFtpCommander.exe dist/RigFtpCli.exe dist/AEWorkbench-Windows-x64.zip dist/windows-release-manifest.json --clobber --repo "$env:GITHUB_REPOSITORY"
+            gh release upload latest dist/AEWorkbench.exe dist/AutomationBuilder.exe dist/FixtureControlCli.exe dist/FixtureCommunication.exe dist/FixtureCommunicationCli.exe dist/AEWorkbench-Windows-x64.zip dist/windows-release-manifest.json --clobber --repo "$env:GITHUB_REPOSITORY"
             if ($LASTEXITCODE -ne 0) { throw "Failed to upload latest release assets" }
             gh release edit latest --latest --title "Latest Windows build" --repo "$env:GITHUB_REPOSITORY"
             if ($LASTEXITCODE -ne 0) { throw "Failed to update latest release metadata" }
           }
           else {
-            gh release create latest dist/AEWorkbench.exe dist/WinAutomationPicker.exe dist/RigCommander.exe dist/RigFtpCommander.exe dist/RigFtpCli.exe dist/AEWorkbench-Windows-x64.zip dist/windows-release-manifest.json `
+            gh release create latest dist/AEWorkbench.exe dist/AutomationBuilder.exe dist/FixtureControlCli.exe dist/FixtureCommunication.exe dist/FixtureCommunicationCli.exe dist/AEWorkbench-Windows-x64.zip dist/windows-release-manifest.json `
               --latest `
               --title "Latest Windows build" `
               --notes "Automatically built Windows executables. External QDL and Genio downloader binaries are not bundled; their pinned CLI contracts are recorded in the manifest." `

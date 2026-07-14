@@ -32,7 +32,14 @@ from .margin_bundle import (
     prune_staged_margin_bundles,
     stage_margin_remote_bundle,
 )
-from .recipe import AutomationRecipe, AutomationStep, ConditionResult, DataSet, monitor_only_recipe, run_recipe
+from .recipe import (
+    AutomationRecipe,
+    AutomationStep,
+    ConditionResult,
+    DataSet,
+    monitor_only_recipe,
+    run_recipe,
+)
 from .rig import RigConfigError, RigExecutionError, SerialPortConfig, powershell_argv
 from .run_artifacts import (
     RUN_SCHEMA,
@@ -42,7 +49,11 @@ from .run_artifacts import (
     write_grid_logs,
     write_json_atomic,
 )
-from .sequence_bundle import RigSequenceBundle, RigSequenceBundleError, parse_rig_sequence_bundle
+from .sequence_bundle import (
+    RigSequenceBundle,
+    RigSequenceBundleError,
+    parse_rig_sequence_bundle,
+)
 from .serial_console import SerialConsoleSession, parse_serial_sequence
 
 
@@ -57,16 +68,56 @@ SPOOL_DIRS = (
     "artifacts",
     "archive",
     "screenshots",
+    "fixture-metadata",
 )
 MAX_STAGED_SEQUENCE_BUNDLES = 50
 MAX_CHANNELS_PER_SLAVE = 64
+MAX_FIXTURES_PER_PC = 4
 MAX_CAMPAIGN_RUNS_PER_SLAVE = 256
+FIXTURE_METADATA_SCHEMA = "fixture-operation-metadata/v1"
+SHARED_CHANNEL_METADATA_FIELDS = (
+    "fixture_id",
+    "fixture_model",
+    "fixture_serial",
+    "physical_location",
+    "soc_vendor",
+    "soc_model",
+    "binary_name",
+    "binary_version",
+    "binary_source_path",
+    "binary_updated_at",
+    "binary_updated_by",
+    "binary_update_source",
+    "dram_part",
+    "lot_id",
+    "material_id",
+    "sample_id",
+    "boot_stage",
+    "fault_status",
+    "notes",
+    "metadata_updated_at",
+    "metadata_updated_by",
+    "metadata_update_source",
+)
+BINARY_METADATA_FIELDS = (
+    "binary_name",
+    "binary_version",
+    "binary_source_path",
+    "binary_updated_at",
+    "binary_updated_by",
+    "binary_update_source",
+)
+GENERAL_METADATA_FIELDS = tuple(
+    field
+    for field in SHARED_CHANNEL_METADATA_FIELDS
+    if field not in BINARY_METADATA_FIELDS
+)
 _LOCAL_STATUS_LOCK = threading.Lock()
 _WORKFLOW_EXECUTION_LOCK = threading.RLock()
 
 
 class FtpSpoolError(RuntimeError):
-    """Raised when FTP spool orchestration cannot continue."""
+    """Raised when communication-server orchestration cannot continue."""
 
 
 @dataclass(frozen=True)
@@ -121,8 +172,11 @@ class ChannelInfo:
     binary_version: str = ""
     binary_source_path: str = ""
     binary_updated_at: str = ""
+    binary_updated_by: str = ""
+    binary_update_source: str = ""
     dram_part: str = ""
     lot_id: str = ""
+    material_id: str = ""
     sample_id: str = ""
     current_test: str = ""
     sequence_name: str = ""
@@ -131,21 +185,28 @@ class ChannelInfo:
     campaign_attempt: int = 0
     failure_class: str = ""
     acceptance_result: str = ""
+    boot_stage: str = ""
+    fault_status: str = ""
     state: str = "idle"
     current_grid: str = ""
     completed_grids: int = 0
     total_grids: int = 0
     notes: str = ""
+    metadata_updated_at: str = ""
+    metadata_updated_by: str = ""
+    metadata_update_source: str = ""
     updated_at: str = ""
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> "ChannelInfo":
         firmware_partitions = data.get("firmware_partitions") or []
         if not isinstance(firmware_partitions, list):
-            raise FtpSpoolError("Channel firmware_partitions must be a list.")
+            raise FtpSpoolError("실장기 Binary 파티션은 목록 형식이어야 합니다.")
         storage_type = str(data.get("storage_type") or "ufs").strip().casefold()
         if storage_type not in {"emmc", "nand", "nvme", "spinor", "ufs"}:
-            raise FtpSpoolError(f"Unsupported channel storage_type: {storage_type!r}.")
+            raise FtpSpoolError(
+                f"지원하지 않는 실장기 저장장치 종류입니다: {storage_type!r}"
+            )
         preloader_exit_count = int(data.get("preloader_exit_count", 2))
         preloader_exit_interval_ms = int(data.get("preloader_exit_interval_ms", 150))
         preloader_ready_timeout_ms = int(data.get("preloader_ready_timeout_ms", 3000))
@@ -154,45 +215,70 @@ class ChannelInfo:
             data.get("download_poll_interval_seconds", 2.0)
         )
         if not 1 <= preloader_exit_count <= 8:
-            raise FtpSpoolError("Channel preloader_exit_count must be between 1 and 8.")
+            raise FtpSpoolError("Preloader 종료 명령 반복 횟수는 1~8이어야 합니다.")
         if not 0 <= preloader_exit_interval_ms <= 10_000:
-            raise FtpSpoolError(
-                "Channel preloader_exit_interval_ms must be between 0 and 10000."
-            )
+            raise FtpSpoolError("Preloader 종료 명령 간격은 0~10000ms여야 합니다.")
         if not 100 <= preloader_ready_timeout_ms <= 120_000:
-            raise FtpSpoolError(
-                "Channel preloader_ready_timeout_ms must be between 100 and 120000."
-            )
+            raise FtpSpoolError("Preloader 준비 대기 시간은 100~120000ms여야 합니다.")
         if not 1.0 <= download_wait_seconds <= 900.0:
-            raise FtpSpoolError("Channel download_wait_seconds must be between 1 and 900.")
+            raise FtpSpoolError("Binary 다운로드 대기 시간은 1~900초여야 합니다.")
         if not 0.25 <= download_poll_interval_seconds <= 30.0:
             raise FtpSpoolError(
-                "Channel download_poll_interval_seconds must be between 0.25 and 30."
+                "Binary 다운로드 상태 확인 간격은 0.25~30초여야 합니다."
             )
+        boot_stage = (
+            str(data.get("boot_stage") or data.get("boot_level") or "").strip().upper()
+        )
+        if boot_stage in {"NONE", "IDLE", "UNKNOWN", "-"}:
+            boot_stage = ""
+        if boot_stage and boot_stage not in {"BL1", "BL2", "LK", "OS"}:
+            raise FtpSpoolError("부팅 단계는 BL1, BL2, LK, OS 중 하나여야 합니다.")
         channel = cls(
             channel_id=str(data.get("channel_id") or data.get("channel") or "").strip(),
             name=str(data.get("name") or data.get("alias") or "").strip(),
             slot_id=str(data.get("slot_id") or data.get("slot") or "").strip(),
-            fixture_id=str(data.get("fixture_id") or data.get("asset_id") or "").strip(),
-            fixture_model=str(data.get("fixture_model") or data.get("rig_model") or "").strip(),
-            fixture_serial=str(data.get("fixture_serial") or data.get("serial_number") or "").strip(),
-            physical_location=str(data.get("physical_location") or data.get("location") or "").strip(),
+            fixture_id=str(
+                data.get("fixture_id") or data.get("asset_id") or ""
+            ).strip(),
+            fixture_model=str(
+                data.get("fixture_model") or data.get("rig_model") or ""
+            ).strip(),
+            fixture_serial=str(
+                data.get("fixture_serial") or data.get("serial_number") or ""
+            ).strip(),
+            physical_location=str(
+                data.get("physical_location") or data.get("location") or ""
+            ).strip(),
             com_port=str(data.get("com_port") or data.get("com") or "").strip(),
             baud_rate=max(1, int(data.get("baud_rate") or data.get("baud") or 115200)),
-            console_identity=str(data.get("console_identity") or data.get("console_hwid") or "").strip(),
-            usb_location=str(data.get("usb_location") or data.get("hub_port") or "").strip(),
+            console_identity=str(
+                data.get("console_identity") or data.get("console_hwid") or ""
+            ).strip(),
+            usb_location=str(
+                data.get("usb_location") or data.get("hub_port") or ""
+            ).strip(),
             firmware_port=str(data.get("firmware_port") or "").strip(),
             soc_vendor=str(data.get("soc_vendor") or data.get("vendor") or "").strip(),
             soc_model=str(data.get("soc_model") or data.get("soc") or "").strip(),
-            firmware_tool_id=str(data.get("firmware_tool_id") or data.get("tool_id") or "").strip(),
-            download_identity=str(data.get("download_identity") or "").strip(),
-            download_serial=str(data.get("download_serial") or data.get("edl_serial") or "").strip(),
-            storage_type=storage_type,
-            storage_slot=str(data.get("storage_slot") or data.get("lun_slot") or "").strip(),
-            package_selector=str(
-                data.get("package_selector") or data.get("firmware_package_selector") or ""
+            firmware_tool_id=str(
+                data.get("firmware_tool_id") or data.get("tool_id") or ""
             ).strip(),
-            bootstrap_path=str(data.get("bootstrap_path") or data.get("download_agent") or "").strip(),
+            download_identity=str(data.get("download_identity") or "").strip(),
+            download_serial=str(
+                data.get("download_serial") or data.get("edl_serial") or ""
+            ).strip(),
+            storage_type=storage_type,
+            storage_slot=str(
+                data.get("storage_slot") or data.get("lun_slot") or ""
+            ).strip(),
+            package_selector=str(
+                data.get("package_selector")
+                or data.get("firmware_package_selector")
+                or ""
+            ).strip(),
+            bootstrap_path=str(
+                data.get("bootstrap_path") or data.get("download_agent") or ""
+            ).strip(),
             bootstrap_address=str(
                 data.get("bootstrap_address") or data.get("bootstrap_addr") or ""
             ).strip(),
@@ -212,14 +298,20 @@ class ChannelInfo:
             adb_executable=str(data.get("adb_executable") or "adb.exe").strip(),
             adb_serial=str(data.get("adb_serial") or "").strip(),
             adb_enabled=bool(data.get("adb_enabled", bool(data.get("adb_serial")))),
-            adb_required_after_update=bool(data.get("adb_required_after_update", False)),
+            adb_required_after_update=bool(
+                data.get("adb_required_after_update", False)
+            ),
             power_on_command=str(data.get("power_on_command") or "").strip(),
             power_off_command=str(data.get("power_off_command") or "").strip(),
             status_command=str(data.get("status_command") or "").strip(),
-            preloader_exit_command=str(data.get("preloader_exit_command") or "").strip(),
+            preloader_exit_command=str(
+                data.get("preloader_exit_command") or ""
+            ).strip(),
             preloader_exit_count=preloader_exit_count,
             preloader_exit_interval_ms=preloader_exit_interval_ms,
-            preloader_ready_marker=str(data.get("preloader_ready_marker") or "").strip(),
+            preloader_ready_marker=str(
+                data.get("preloader_ready_marker") or ""
+            ).strip(),
             preloader_ready_timeout_ms=preloader_ready_timeout_ms,
             download_wait_seconds=download_wait_seconds,
             download_poll_interval_seconds=download_poll_interval_seconds,
@@ -230,25 +322,50 @@ class ChannelInfo:
             binary_version=str(data.get("binary_version") or "").strip(),
             binary_source_path=str(data.get("binary_source_path") or "").strip(),
             binary_updated_at=str(data.get("binary_updated_at") or "").strip(),
-            dram_part=str(data.get("dram_part") or data.get("material") or "").strip(),
+            binary_updated_by=str(data.get("binary_updated_by") or "").strip(),
+            binary_update_source=str(data.get("binary_update_source") or "").strip(),
+            dram_part=str(data.get("dram_part") or "").strip(),
             lot_id=str(data.get("lot_id") or "").strip(),
-            sample_id=str(data.get("sample_id") or "").strip(),
-            current_test=str(data.get("current_test") or data.get("test") or "").strip(),
-            sequence_name=str(data.get("sequence_name") or data.get("seq") or "").strip(),
+            material_id=str(
+                data.get("material_id")
+                or data.get("sample_id")
+                or data.get("material")
+                or ""
+            ).strip(),
+            sample_id=str(
+                data.get("sample_id") or data.get("material_id") or ""
+            ).strip(),
+            current_test=str(
+                data.get("current_test") or data.get("test") or ""
+            ).strip(),
+            sequence_name=str(
+                data.get("sequence_name") or data.get("seq") or ""
+            ).strip(),
             campaign_id=str(data.get("campaign_id") or "").strip(),
             campaign_title=str(data.get("campaign_title") or "").strip(),
             campaign_attempt=max(0, int(data.get("campaign_attempt") or 0)),
             failure_class=str(data.get("failure_class") or "").strip(),
             acceptance_result=str(data.get("acceptance_result") or "").strip(),
+            boot_stage=boot_stage,
+            fault_status=str(
+                data.get("fault_status") or data.get("repair_status") or ""
+            ).strip(),
             state=str(data.get("state") or "idle").strip(),
-            current_grid=str(data.get("current_grid") or data.get("grid") or "").strip(),
+            current_grid=str(
+                data.get("current_grid") or data.get("grid") or ""
+            ).strip(),
             completed_grids=max(0, int(data.get("completed_grids") or 0)),
             total_grids=max(0, int(data.get("total_grids") or 0)),
             notes=str(data.get("notes") or "").strip(),
+            metadata_updated_at=str(data.get("metadata_updated_at") or "").strip(),
+            metadata_updated_by=str(data.get("metadata_updated_by") or "").strip(),
+            metadata_update_source=str(
+                data.get("metadata_update_source") or ""
+            ).strip(),
             updated_at=str(data.get("updated_at") or "").strip(),
         )
         if not channel.key():
-            raise FtpSpoolError("Channel entry requires channel_id, slot_id, or name.")
+            raise FtpSpoolError("실장기 번호, 연결 위치 또는 표시 이름이 필요합니다.")
         return channel
 
     def key(self) -> str:
@@ -309,8 +426,11 @@ class ChannelInfo:
             "binary_version": self.binary_version,
             "binary_source_path": self.binary_source_path,
             "binary_updated_at": self.binary_updated_at,
+            "binary_updated_by": self.binary_updated_by,
+            "binary_update_source": self.binary_update_source,
             "dram_part": self.dram_part,
             "lot_id": self.lot_id,
+            "material_id": self.material_id,
             "sample_id": self.sample_id,
             "current_test": self.current_test,
             "sequence_name": self.sequence_name,
@@ -319,11 +439,16 @@ class ChannelInfo:
             "campaign_attempt": self.campaign_attempt,
             "failure_class": self.failure_class,
             "acceptance_result": self.acceptance_result,
+            "boot_stage": self.boot_stage,
+            "fault_status": self.fault_status,
             "state": self.state,
             "current_grid": self.current_grid,
             "completed_grids": self.completed_grids,
             "total_grids": self.total_grids,
             "notes": self.notes,
+            "metadata_updated_at": self.metadata_updated_at,
+            "metadata_updated_by": self.metadata_updated_by,
+            "metadata_update_source": self.metadata_update_source,
             "updated_at": self.updated_at,
         }
 
@@ -334,7 +459,14 @@ class DeviceToolInfo:
     vendor: str
     executable: str
     adapter_kind: str = "generic"
-    arguments: tuple[str, ...] = ("--xml", "{xml}", "--port", "{port}", "--mode", "{mode}")
+    arguments: tuple[str, ...] = (
+        "--xml",
+        "{xml}",
+        "--port",
+        "{port}",
+        "--mode",
+        "{mode}",
+    )
     working_dir: str = ""
     execution_enabled: bool = False
     cli_evidence_ref: str = ""
@@ -354,13 +486,28 @@ class DeviceToolInfo:
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> "DeviceToolInfo":
         tool_id = str(data.get("id") or "").strip()
-        vendor = str(data.get("vendor") or data.get("soc_vendor") or "").strip().casefold()
-        vendor = {"qc": "qualcomm", "qcom": "qualcomm", "mtk": "mediatek"}.get(vendor, vendor)
+        vendor = (
+            str(data.get("vendor") or data.get("soc_vendor") or "").strip().casefold()
+        )
+        vendor = {"qc": "qualcomm", "qcom": "qualcomm", "mtk": "mediatek"}.get(
+            vendor, vendor
+        )
         executable = str(data.get("executable") or "").strip()
-        arguments = data.get("arguments") or ["--xml", "{xml}", "--port", "{port}", "--mode", "{mode}"]
+        arguments = data.get("arguments") or [
+            "--xml",
+            "{xml}",
+            "--port",
+            "{port}",
+            "--mode",
+            "{mode}",
+        ]
         allowed_modes = data.get("allowed_modes") or ["download-only"]
         mode_values = data.get("mode_values") or {}
-        adapter_kind = str(data.get("adapter_kind") or data.get("adapter") or "generic").strip().casefold()
+        adapter_kind = (
+            str(data.get("adapter_kind") or data.get("adapter") or "generic")
+            .strip()
+            .casefold()
+        )
         adapter_kind = {
             "qdl": "qualcomm-qdl",
             "qualcomm": "qualcomm-qdl",
@@ -375,7 +522,9 @@ class DeviceToolInfo:
         download_arguments = data.get("download_arguments", [])
         provision_arguments = data.get("provision_arguments", [])
         if not tool_id or vendor not in {"qualcomm", "mediatek"} or not executable:
-            raise FtpSpoolError("Device tool requires id, Qualcomm/MediaTek vendor, and executable path.")
+            raise FtpSpoolError(
+                "장치 도구에는 식별값, Qualcomm/MediaTek 제조사와 실행 파일 경로가 필요합니다."
+            )
         if adapter_kind not in {"generic", "qualcomm-qdl", "mediatek-genio"}:
             raise FtpSpoolError(f"Unsupported device tool adapter: {adapter_kind!r}.")
         if adapter_kind == "qualcomm-qdl" and vendor != "qualcomm":
@@ -391,14 +540,20 @@ class DeviceToolInfo:
             download_arguments,
             provision_arguments,
         )
-        if not all(isinstance(value, list) for value in list_values) or not isinstance(mode_values, dict):
-            raise FtpSpoolError("Device tool arguments/allowed_modes/mode_values have invalid types.")
-        normalized_storage_types = tuple(str(item).strip().casefold() for item in storage_types)
+        if not all(isinstance(value, list) for value in list_values) or not isinstance(
+            mode_values, dict
+        ):
+            raise FtpSpoolError(
+                "장치 도구의 인자 또는 허용 방식 형식이 올바르지 않습니다."
+            )
+        normalized_storage_types = tuple(
+            str(item).strip().casefold() for item in storage_types
+        )
         if not normalized_storage_types or any(
             item not in {"emmc", "nand", "nvme", "spinor", "ufs"}
             for item in normalized_storage_types
         ):
-            raise FtpSpoolError("Device tool storage_types contains an unsupported value.")
+            raise FtpSpoolError("장치 도구에 지원하지 않는 저장장치 종류가 있습니다.")
         return cls(
             id=tool_id,
             vendor=vendor,
@@ -415,9 +570,15 @@ class DeviceToolInfo:
                 if str(value).strip()
             },
             timeout_seconds=max(1.0, float(data.get("timeout_seconds") or 1800.0)),
-            success_exit_codes=tuple(int(item) for item in data.get("success_exit_codes", [0])),
-            success_markers=tuple(str(item) for item in data.get("success_markers", [])),
-            failure_markers=tuple(str(item) for item in data.get("failure_markers", [])),
+            success_exit_codes=tuple(
+                int(item) for item in data.get("success_exit_codes", [0])
+            ),
+            success_markers=tuple(
+                str(item) for item in data.get("success_markers", [])
+            ),
+            failure_markers=tuple(
+                str(item) for item in data.get("failure_markers", [])
+            ),
             version_arguments=tuple(str(item) for item in version_arguments),
             programmer_path=str(data.get("programmer_path") or "").strip(),
             storage_types=normalized_storage_types,
@@ -462,10 +623,16 @@ class MasterInfo:
     def from_mapping(cls, data: dict[str, Any] | None) -> "MasterInfo":
         source = data or {}
         return cls(
-            controller_id=str(source.get("controller_id") or source.get("id") or "").strip(),
+            controller_id=str(
+                source.get("controller_id") or source.get("id") or ""
+            ).strip(),
             alias=str(source.get("alias") or source.get("name") or "").strip(),
-            windows_name=str(source.get("windows_name") or source.get("hostname") or "").strip(),
-            physical_location=str(source.get("physical_location") or source.get("location") or "").strip(),
+            windows_name=str(
+                source.get("windows_name") or source.get("hostname") or ""
+            ).strip(),
+            physical_location=str(
+                source.get("physical_location") or source.get("location") or ""
+            ).strip(),
         )
 
     def to_mapping(self) -> dict[str, str]:
@@ -477,13 +644,16 @@ class MasterInfo:
         }
 
     def label(self) -> str:
-        return self.alias or self.controller_id or self.windows_name or "Master PC"
+        return self.alias or self.controller_id or self.windows_name or "관리자 PC"
 
 
 @dataclass(frozen=True)
 class SlaveInfo:
     node_id: str
     alias: str = ""
+    rack_type: str = ""
+    rack_id: str = ""
+    fixture_pc_id: str = ""
     host: str = ""
     port: int = 0
     asset_id: str = ""
@@ -497,29 +667,53 @@ class SlaveInfo:
     def from_mapping(cls, data: dict[str, Any]) -> "SlaveInfo":
         variables = data.get("variables") or {}
         if not isinstance(variables, dict):
-            raise FtpSpoolError("Slave variables must be an object.")
+            raise FtpSpoolError("실장기 PC별 입력값은 이름과 값의 묶음이어야 합니다.")
         channels = data.get("channels") or []
         if not isinstance(channels, list):
-            raise FtpSpoolError("Slave channels must be a list.")
-        if len(channels) > MAX_CHANNELS_PER_SLAVE:
+            raise FtpSpoolError("실장기 PC의 실장기 목록 형식이 올바르지 않습니다.")
+        if len(channels) > MAX_FIXTURES_PER_PC:
             raise FtpSpoolError(
-                f"Slave channels exceed the {MAX_CHANNELS_PER_SLAVE}-item limit."
+                f"실장기 PC 한 대에는 실장기를 최대 {MAX_FIXTURES_PER_PC}대만 등록할 수 있습니다."
             )
-        node_id = str(data.get("node_id") or data.get("id") or "").strip()
+        fixture_pc_id = str(
+            data.get("fixture_pc_id")
+            or data.get("fixture_pc")
+            or data.get("pc_name")
+            or ""
+        ).strip()
+        node_id = str(data.get("node_id") or data.get("id") or fixture_pc_id).strip()
         if not node_id:
-            raise FtpSpoolError("Slave entry requires node_id.")
+            raise FtpSpoolError("실장기 PC 이름이 필요합니다. 예: TFT30-1")
+        rack_id = (
+            str(data.get("rack_id") or data.get("rack_name") or "").strip().upper()
+        )
+        rack_type = (
+            str(data.get("rack_type") or data.get("group_type") or "").strip().upper()
+        )
+        if not rack_type and rack_id:
+            match = re.match(r"^(TFT|UTF)", rack_id)
+            rack_type = match.group(1) if match else ""
         return cls(
             node_id=node_id,
             alias=str(data.get("alias") or data.get("name") or "").strip(),
+            rack_type=rack_type,
+            rack_id=rack_id,
+            fixture_pc_id=fixture_pc_id,
             host=str(data.get("host") or data.get("ip") or "").strip(),
             port=int(data.get("port") or 0),
             asset_id=str(data.get("asset_id") or data.get("pc_asset_id") or "").strip(),
-            windows_name=str(data.get("windows_name") or data.get("hostname") or "").strip(),
-            physical_location=str(data.get("physical_location") or data.get("location") or "").strip(),
+            windows_name=str(
+                data.get("windows_name") or data.get("hostname") or ""
+            ).strip(),
+            physical_location=str(
+                data.get("physical_location") or data.get("location") or ""
+            ).strip(),
             notes=str(data.get("notes") or "").strip(),
             variables={str(key): str(value) for key, value in variables.items()},
             channels=tuple(
-                ChannelInfo.from_mapping(item) for item in channels if isinstance(item, dict)
+                ChannelInfo.from_mapping(item)
+                for item in channels
+                if isinstance(item, dict)
             ),
         )
 
@@ -527,6 +721,9 @@ class SlaveInfo:
         return {
             "node_id": self.node_id,
             "alias": self.alias,
+            "rack_type": self.rack_type,
+            "rack_id": self.rack_id,
+            "fixture_pc_id": self.fixture_pc_id,
             "host": self.host,
             "port": self.port,
             "asset_id": self.asset_id,
@@ -538,7 +735,7 @@ class SlaveInfo:
         }
 
     def label(self) -> str:
-        return self.alias or self.node_id
+        return self.fixture_pc_id or self.alias or self.node_id
 
 
 @dataclass(frozen=True)
@@ -553,7 +750,7 @@ class RunProfile:
     def from_mapping(cls, data: dict[str, Any]) -> "RunProfile":
         variables = data.get("variables") or {}
         if not isinstance(variables, dict):
-            raise FtpSpoolError("Run profile variables must be an object.")
+            raise FtpSpoolError("실장기별 입력값은 이름과 값의 묶음이어야 합니다.")
         return cls(
             target=str(data.get("target") or data.get("node_id") or "").strip(),
             package=str(data.get("package") or data.get("macro") or "").strip(),
@@ -582,7 +779,7 @@ class FtpSpoolConfig:
     password: str = ""
     password_env: str = ""
     port: int = 21
-    root_dir: str = "/win_automation_macros"
+    root_dir: str = "/mobile-dram-ae"
     tls: bool = False
     passive: bool = True
     timeout_seconds: float = 20.0
@@ -590,7 +787,7 @@ class FtpSpoolConfig:
     poll_interval_seconds: float = 5.0
     poll_jitter_seconds: float = 3.0
     min_screenshot_interval_seconds: float = 30.0
-    work_dir: str = "rig-ftp-work"
+    work_dir: str = "fixture-work"
     python_executable: str = sys.executable
     capture_on_error: bool = True
     max_output_chars: int = 200_000
@@ -616,16 +813,16 @@ class FtpSpoolConfig:
         runtime_data = data.get("runtime") or {}
         variables = data.get("variables") or {}
         if not isinstance(variables, dict):
-            raise FtpSpoolError("Config field 'variables' must be an object.")
+            raise FtpSpoolError("공통 입력값은 이름과 값의 묶음이어야 합니다.")
         slaves_data = data.get("slaves") or []
         if not isinstance(slaves_data, list):
-            raise FtpSpoolError("Config field 'slaves' must be a list.")
+            raise FtpSpoolError("통신 설정의 실장기 PC 목록 형식이 올바르지 않습니다.")
         profiles_data = data.get("run_profiles") or []
         if not isinstance(profiles_data, list):
-            raise FtpSpoolError("Config field 'run_profiles' must be a list.")
+            raise FtpSpoolError("실장기별 테스트 설정은 목록 형식이어야 합니다.")
         device_tools_data = data.get("device_tools") or []
         if not isinstance(device_tools_data, list):
-            raise FtpSpoolError("Config field 'device_tools' must be a list.")
+            raise FtpSpoolError("장치 도구 설정은 목록 형식이어야 합니다.")
         parsed_device_tools = tuple(
             DeviceToolInfo.from_mapping(item)
             for item in device_tools_data
@@ -633,10 +830,16 @@ class FtpSpoolConfig:
         )
         device_tool_ids = [tool.id.casefold() for tool in parsed_device_tools]
         duplicates = sorted(
-            {tool_id for tool_id in device_tool_ids if device_tool_ids.count(tool_id) > 1}
+            {
+                tool_id
+                for tool_id in device_tool_ids
+                if device_tool_ids.count(tool_id) > 1
+            }
         )
         if duplicates:
-            raise FtpSpoolError(f"Duplicate device tool ids: {', '.join(duplicates)}")
+            raise FtpSpoolError(
+                f"장치 도구 식별값이 중복되었습니다: {', '.join(duplicates)}"
+            )
         password_env = str(ftp_data.get("password_env", "") or "")
         password = str(ftp_data.get("password", "") or "")
         if password_env:
@@ -666,26 +869,40 @@ class FtpSpoolConfig:
             or 10
         )
         if not 1 <= max_staged_margin_bundles <= 50:
-            raise FtpSpoolError("runtime.max_staged_margin_bundles must be between 1 and 50.")
+            raise FtpSpoolError(
+                "runtime.max_staged_margin_bundles must be between 1 and 50."
+            )
         return cls(
-            master=MasterInfo.from_mapping(master_data if isinstance(master_data, dict) else {}),
+            master=MasterInfo.from_mapping(
+                master_data if isinstance(master_data, dict) else {}
+            ),
             host=str(ftp_data.get("host", "") or ""),
             ftp_alias=str(ftp_data.get("alias", "") or ""),
-            ftp_location=str(ftp_data.get("physical_location", ftp_data.get("location", "")) or ""),
+            ftp_location=str(
+                ftp_data.get("physical_location", ftp_data.get("location", "")) or ""
+            ),
             username=str(ftp_data.get("username", "") or ""),
             password=password,
             password_env=password_env,
             port=int(ftp_data.get("port", 21) or 21),
-            root_dir=str(ftp_data.get("root_dir", "/win_automation_macros") or "/win_automation_macros"),
+            root_dir=str(
+                ftp_data.get("root_dir", "/mobile-dram-ae") or "/mobile-dram-ae"
+            ),
             tls=bool(ftp_data.get("tls", False)),
             passive=bool(ftp_data.get("passive", True)),
             timeout_seconds=float(ftp_data.get("timeout_seconds", 20.0) or 20.0),
             node_id=str(runtime_data.get("node_id", data.get("node_id", "")) or ""),
             poll_interval_seconds=float(
-                runtime_data.get("poll_interval_seconds", data.get("poll_interval_seconds", 5.0)) or 5.0
+                runtime_data.get(
+                    "poll_interval_seconds", data.get("poll_interval_seconds", 5.0)
+                )
+                or 5.0
             ),
             poll_jitter_seconds=float(
-                runtime_data.get("poll_jitter_seconds", data.get("poll_jitter_seconds", 3.0)) or 0.0
+                runtime_data.get(
+                    "poll_jitter_seconds", data.get("poll_jitter_seconds", 3.0)
+                )
+                or 0.0
             ),
             min_screenshot_interval_seconds=float(
                 runtime_data.get(
@@ -694,15 +911,29 @@ class FtpSpoolConfig:
                 )
                 or 0.0
             ),
-            work_dir=str(runtime_data.get("work_dir", data.get("work_dir", "rig-ftp-work")) or "rig-ftp-work"),
+            work_dir=str(
+                runtime_data.get("work_dir", data.get("work_dir", "fixture-work"))
+                or "fixture-work"
+            ),
             python_executable=str(
-                runtime_data.get("python_executable", data.get("python_executable", sys.executable))
+                runtime_data.get(
+                    "python_executable", data.get("python_executable", sys.executable)
+                )
                 or sys.executable
             ),
-            capture_on_error=bool(runtime_data.get("capture_on_error", data.get("capture_on_error", True))),
-            max_output_chars=int(runtime_data.get("max_output_chars", data.get("max_output_chars", 200_000)) or 200_000),
+            capture_on_error=bool(
+                runtime_data.get("capture_on_error", data.get("capture_on_error", True))
+            ),
+            max_output_chars=int(
+                runtime_data.get(
+                    "max_output_chars", data.get("max_output_chars", 200_000)
+                )
+                or 200_000
+            ),
             max_run_log_bytes=int(
-                runtime_data.get("max_run_log_bytes", data.get("max_run_log_bytes", 8 * 1024 * 1024))
+                runtime_data.get(
+                    "max_run_log_bytes", data.get("max_run_log_bytes", 8 * 1024 * 1024)
+                )
                 or 8 * 1024 * 1024
             ),
             max_artifact_upload_bytes=int(
@@ -713,21 +944,45 @@ class FtpSpoolConfig:
                 or 16 * 1024 * 1024
             ),
             max_margin_artifact_upload_bytes=max_margin_artifact_upload_bytes,
-            max_result_files=int(runtime_data.get("max_result_files", data.get("max_result_files", 200)) or 200),
-            max_log_files=int(runtime_data.get("max_log_files", data.get("max_log_files", 200)) or 200),
+            max_result_files=int(
+                runtime_data.get("max_result_files", data.get("max_result_files", 200))
+                or 200
+            ),
+            max_log_files=int(
+                runtime_data.get("max_log_files", data.get("max_log_files", 200)) or 200
+            ),
             max_local_run_files=int(
-                runtime_data.get("max_local_run_files", data.get("max_local_run_files", 40)) or 40
+                runtime_data.get(
+                    "max_local_run_files", data.get("max_local_run_files", 40)
+                )
+                or 40
             ),
             max_staged_margin_bundles=max_staged_margin_bundles,
             max_artifact_files=max(0, int(max_artifact_files_value)),
-            max_archive_files=int(runtime_data.get("max_archive_files", data.get("max_archive_files", 500)) or 500),
+            max_archive_files=int(
+                runtime_data.get(
+                    "max_archive_files", data.get("max_archive_files", 500)
+                )
+                or 500
+            ),
             max_screenshot_files=int(
-                runtime_data.get("max_screenshot_files", data.get("max_screenshot_files", 20)) or 20
+                runtime_data.get(
+                    "max_screenshot_files", data.get("max_screenshot_files", 20)
+                )
+                or 20
             ),
             variables={str(key): str(value) for key, value in variables.items()},
             device_tools=parsed_device_tools,
-            slaves=tuple(SlaveInfo.from_mapping(item) for item in slaves_data if isinstance(item, dict)),
-            run_profiles=tuple(RunProfile.from_mapping(item) for item in profiles_data if isinstance(item, dict)),
+            slaves=tuple(
+                SlaveInfo.from_mapping(item)
+                for item in slaves_data
+                if isinstance(item, dict)
+            ),
+            run_profiles=tuple(
+                RunProfile.from_mapping(item)
+                for item in profiles_data
+                if isinstance(item, dict)
+            ),
         )
 
     @classmethod
@@ -735,11 +990,13 @@ class FtpSpoolConfig:
         try:
             data = json.loads(Path(path).read_text(encoding="utf-8"))
         except FileNotFoundError as exc:
-            raise FtpSpoolError(f"FTP spool config not found: {path}") from exc
+            raise FtpSpoolError(f"통신 설정 파일을 찾을 수 없습니다: {path}") from exc
         except json.JSONDecodeError as exc:
-            raise FtpSpoolError(f"FTP spool config is not valid JSON: {path}") from exc
+            raise FtpSpoolError(
+                f"통신 설정 파일 형식이 올바르지 않습니다: {path}"
+            ) from exc
         if not isinstance(data, dict):
-            raise FtpSpoolError("FTP spool config root must be an object.")
+            raise FtpSpoolError("통신 설정 파일의 최상위 형식이 올바르지 않습니다.")
         return cls.from_mapping(data)
 
     def to_mapping(self) -> dict[str, Any]:
@@ -788,22 +1045,22 @@ class FtpSpoolConfig:
 def example_spool_config() -> dict[str, Any]:
     return FtpSpoolConfig(
         master=MasterInfo(
-            controller_id="ae-master-01",
-            alias="AE Master",
-            windows_name="AE-MASTER-01",
-            physical_location="Lab A / Control desk",
+            controller_id="administrator-pc-01",
+            alias="관리자 PC",
+            windows_name="AE-ADMIN-01",
+            physical_location="Mobile AE Lab / Control desk",
         ),
         host="192.168.0.10",
-        ftp_alias="AE FTP",
-        ftp_location="Internal data center / Rack F1",
-        username="macro_user",
+        ftp_alias="테스트 통신 서버",
+        ftp_location="Internal data center / Server F1",
+        username="ae_operator",
         password="change-me",
-        root_dir="/win_automation_macros",
-        node_id="rig-pc-04",
+        root_dir="/mobile-dram-ae",
+        node_id="TFT30-1",
         python_executable="python",
         variables={
             "line": "line-a",
-            "channel": "ch1",
+            "operator": "",
         },
         device_tools=(
             DeviceToolInfo(
@@ -841,39 +1098,37 @@ def example_spool_config() -> dict[str, Any]:
         ),
         slaves=(
             SlaveInfo(
-                node_id="rig-pc-04",
-                alias="PC04",
+                node_id="TFT30-1",
+                alias="TFT30-1",
+                rack_type="TFT",
+                rack_id="TFT30",
+                fixture_pc_id="TFT30-1",
                 host="192.168.0.104",
-                port=0,
-                asset_id="PC-ASSET-004",
-                windows_name="RIG-PC-04",
-                physical_location="Lab A / Rack R2 / Shelf 1",
-                notes="Line A channel 4",
-                variables={"channel": "ch4"},
-                channels=(
+                asset_id="PC-ASSET-TFT30-1",
+                windows_name="AE-TFT30-1",
+                physical_location="Mobile AE Lab / TFT30 / PC 1",
+                notes="TFT30의 CH1~CH4 연결 PC",
+                variables={"test_owner": ""},
+                channels=tuple(
                     ChannelInfo(
-                        channel_id="CH4",
-                        slot_id="A4",
-                        fixture_id="FIXTURE-A04",
+                        channel_id=f"CH{index}",
+                        slot_id=f"S{index}",
+                        fixture_id=f"TFT30-CH{index}",
                         fixture_model="Mobile DRAM Fixture",
-                        fixture_serial="FX-A04-001",
-                        physical_location="Rack R2 / Shelf 1 / Position 4",
-                        com_port="COM4",
+                        fixture_serial=f"AE-FIXTURE-{index:04d}",
+                        physical_location=f"Mobile AE Lab / TFT30 / CH{index}",
+                        com_port=f"COM{10 + index}",
                         baud_rate=115200,
-                        console_identity="VID_0403&PID_6001",
-                        usb_location="USB-HUB-R2 / Port 4",
-                        soc_vendor="qualcomm",
-                        soc_model="SM8850",
-                        firmware_tool_id="qc-qdl",
-                        download_identity="VID_05C6&PID_9008",
-                        download_serial="REPLACE_WITH_QDL_SERIAL",
-                        storage_type="ufs",
-                        adb_serial="QC-CH4",
-                        adb_enabled=True,
-                        power_on_command="POWER ON",
-                        power_off_command="POWER OFF",
+                        console_identity=f"REPLACE_WITH_CH{index}_HWID",
+                        usb_location=f"TFT30-1 Hub-A / Port {index}",
+                        soc_vendor="mediatek",
+                        soc_model="MTK24D",
+                        dram_part="LPDDR5X",
+                        material_id=f"AA-{index}",
+                        fault_status="정상",
                         state="idle",
-                    ),
+                    )
+                    for index in range(1, 5)
                 ),
             ),
         ),
@@ -883,8 +1138,11 @@ def example_spool_config() -> dict[str, Any]:
 def write_example_spool_config(path: str | Path, *, force: bool = False) -> Path:
     output = Path(path)
     if output.exists() and not force:
-        raise FtpSpoolError(f"Config already exists: {output}")
-    output.write_text(json.dumps(example_spool_config(), indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+        raise FtpSpoolError(f"설정 파일이 이미 있습니다: {output}")
+    output.write_text(
+        json.dumps(example_spool_config(), indent=2, ensure_ascii=True) + "\n",
+        encoding="utf-8",
+    )
     return output
 
 
@@ -903,12 +1161,14 @@ def build_slave_rig_config(
             continue
         folded = channel_id.casefold()
         if folded in seen_ids:
-            raise FtpSpoolError(f"Slave {slave.node_id} has duplicate channel id {channel_id!r}.")
+            raise FtpSpoolError(
+                f"실장기 PC {slave.node_id}에 실장기 번호 {channel_id!r}가 중복되어 있습니다."
+            )
         seen_ids.add(folded)
         if channel.firmware_tool_id and channel.firmware_tool_id not in tool_ids:
             raise FtpSpoolError(
-                f"{slave.label()} / {channel_id} references unknown device tool "
-                f"{channel.firmware_tool_id!r}."
+                f"{slave.label()} / {channel_id}에 등록되지 않은 장치 도구 "
+                f"{channel.firmware_tool_id!r}가 지정되어 있습니다."
             )
         commands = {
             key: value
@@ -960,7 +1220,9 @@ def build_slave_rig_config(
                 "download_wait_seconds": channel.download_wait_seconds,
                 "download_poll_interval_seconds": channel.download_poll_interval_seconds,
                 "adb": {
-                    "enabled": bool(channel.adb_enabled or channel.adb_required_after_update),
+                    "enabled": bool(
+                        channel.adb_enabled or channel.adb_required_after_update
+                    ),
                     "executable": channel.adb_executable or "adb.exe",
                     "serial": channel.adb_serial,
                     "required_after_update": channel.adb_required_after_update,
@@ -984,20 +1246,15 @@ def build_slave_rig_config(
 
 
 class SpoolBackend(Protocol):
-    def ensure_dir(self, path: str) -> None:
-        ...
+    def ensure_dir(self, path: str) -> None: ...
 
-    def write_bytes(self, path: str, data: bytes) -> None:
-        ...
+    def write_bytes(self, path: str, data: bytes) -> None: ...
 
-    def read_bytes(self, path: str) -> bytes:
-        ...
+    def read_bytes(self, path: str) -> bytes: ...
 
-    def delete(self, path: str) -> None:
-        ...
+    def delete(self, path: str) -> None: ...
 
-    def list_files(self, path: str) -> list[str]:
-        ...
+    def list_files(self, path: str) -> list[str]: ...
 
 
 class LocalSpoolBackend:
@@ -1027,13 +1284,17 @@ class LocalSpoolBackend:
         directory = self.root / _relative_path(path)
         if not directory.exists():
             return []
-        return sorted(item.name for item in directory.iterdir() if item.is_file() and not item.name.endswith(".tmp"))
+        return sorted(
+            item.name
+            for item in directory.iterdir()
+            if item.is_file() and not item.name.endswith(".tmp")
+        )
 
 
 class FtpSpoolBackend:
     def __init__(self, config: FtpSpoolConfig) -> None:
         if not config.host:
-            raise FtpSpoolError("FTP host is required.")
+            raise FtpSpoolError("통신 서버 주소가 필요합니다.")
         self.config = config
 
     def ensure_dir(self, path: str) -> None:
@@ -1088,7 +1349,9 @@ class FtpSpoolBackend:
     def _connect(self) -> FTP:
         ftp_class = FTP_TLS if self.config.tls else FTP
         ftp = ftp_class()
-        ftp.connect(self.config.host, self.config.port, timeout=self.config.timeout_seconds)
+        ftp.connect(
+            self.config.host, self.config.port, timeout=self.config.timeout_seconds
+        )
         ftp.login(self.config.username, self.config.password)
         if isinstance(ftp, FTP_TLS):
             ftp.prot_p()
@@ -1134,7 +1397,11 @@ class SpoolJob:
             kind=kind,
             payload=dict(payload),
             variables=dict(variables or {}),
-            origin={str(key): str(value) for key, value in (origin or {}).items() if str(value).strip()},
+            origin={
+                str(key): str(value)
+                for key, value in (origin or {}).items()
+                if str(value).strip()
+            },
             created_at=_utc_now(),
         )
 
@@ -1143,7 +1410,11 @@ class SpoolJob:
         variables = data.get("variables") or {}
         payload = data.get("payload") or {}
         origin = data.get("origin") or {}
-        if not isinstance(variables, dict) or not isinstance(payload, dict) or not isinstance(origin, dict):
+        if (
+            not isinstance(variables, dict)
+            or not isinstance(payload, dict)
+            or not isinstance(origin, dict)
+        ):
             raise FtpSpoolError("Job variables, payload, and origin must be objects.")
         return cls(
             job_id=str(data.get("job_id") or ""),
@@ -1221,7 +1492,9 @@ class PackageInfo:
     details: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_mapping(cls, data: dict[str, Any], *, fallback_name: str = "") -> "PackageInfo":
+    def from_mapping(
+        cls, data: dict[str, Any], *, fallback_name: str = ""
+    ) -> "PackageInfo":
         name = _safe_name(str(data.get("name") or fallback_name))
         variables = data.get("variables") or {}
         details = data.get("details") or {}
@@ -1253,7 +1526,9 @@ class PackageInfo:
         }
 
 
-def backend_from_config(config: FtpSpoolConfig, *, local_root: str | Path | None = None) -> SpoolBackend:
+def backend_from_config(
+    config: FtpSpoolConfig, *, local_root: str | Path | None = None
+) -> SpoolBackend:
     if local_root is not None:
         return LocalSpoolBackend(local_root)
     return FtpSpoolBackend(config)
@@ -1298,7 +1573,9 @@ def deploy_package(
     package_name = name or source_path.name
     safe_package_name = _safe_name(package_name)
     resolved_runner = runner.strip().casefold() or "auto"
-    resolved_variables = {str(key): str(value) for key, value in (variables or {}).items()}
+    resolved_variables = {
+        str(key): str(value) for key, value in (variables or {}).items()
+    }
     bundle = None
     margin_bundle = None
     workflow_inspection: dict[str, Any] | None = None
@@ -1309,7 +1586,7 @@ def deploy_package(
             except MarginBundleError as exc:
                 raise FtpSpoolError(str(exc)) from exc
             resolved_runner = "dram_margin"
-        elif source_path.name.casefold().endswith(".rigseq.zip"):
+        elif source_path.name.casefold().endswith((".fixtureseq.zip", ".rigseq.zip")):
             try:
                 bundle = parse_rig_sequence_bundle(source_bytes)
             except RigSequenceBundleError as exc:
@@ -1392,7 +1669,8 @@ def deploy_package(
             if margin_bundle is not None
             else source_path.stem
         ),
-        notes=notes or (str(package_details.get("purpose") or "") if bundle is not None else ""),
+        notes=notes
+        or (str(package_details.get("purpose") or "") if bundle is not None else ""),
         uploaded_at=_utc_now(),
         runner=resolved_runner,
         variables=resolved_variables,
@@ -1400,7 +1678,9 @@ def deploy_package(
     )
     backend.write_bytes(
         f"packages/{safe_package_name}.meta.json",
-        (json.dumps(package.to_mapping(), indent=2, ensure_ascii=True) + "\n").encode("utf-8"),
+        (json.dumps(package.to_mapping(), indent=2, ensure_ascii=True) + "\n").encode(
+            "utf-8"
+        ),
     )
     return remote_path
 
@@ -1429,7 +1709,8 @@ def inspect_sk_commander_workflow(recipe: AutomationRecipe) -> dict[str, Any]:
 
         text_value = step.text.casefold()
         if step.kind == "type" and any(
-            marker in text_value for marker in ("${seq_path}", "[seq_path]", "{seq_path}")
+            marker in text_value
+            for marker in ("${seq_path}", "[seq_path]", "{seq_path}")
         ):
             roles.add("sk_seq_path")
             has_seq_path_variable = True
@@ -1448,20 +1729,30 @@ def inspect_sk_commander_workflow(recipe: AutomationRecipe) -> dict[str, Any]:
         ).casefold()
         normalized = re.sub(r"[^0-9a-z가-힣]+", " ", searchable)
         if step.kind == "click":
-            if any(token in normalized for token in ("power reset", "power_reset", "전원 리셋", "전원 reset")):
+            if any(
+                token in normalized
+                for token in ("power reset", "power_reset", "전원 리셋", "전원 reset")
+            ):
                 roles.add("sk_power_reset")
             elif any(token in normalized for token in ("reset", "리셋", "초기화")):
                 roles.add("sk_reset")
-            if any(token in normalized for token in ("load", "불러오기", "seq open", "sequence open")):
+            if any(
+                token in normalized
+                for token in ("load", "불러오기", "seq open", "sequence open")
+            ):
                 roles.add("sk_load")
             if any(token in normalized for token in ("start", "시작", "실행 시작")):
                 roles.add("sk_start")
             if any(token in normalized for token in ("stop", "정지", "중단")):
                 roles.add("sk_stop")
         if step.kind.startswith("monitor_"):
-            if any(token in normalized for token in ("serial", "console", "시리얼", "콘솔")):
+            if any(
+                token in normalized for token in ("serial", "console", "시리얼", "콘솔")
+            ):
                 roles.add("sk_serial_monitor")
-            if any(token in normalized for token in ("grid", "progress", "그리드", "진행")):
+            if any(
+                token in normalized for token in ("grid", "progress", "그리드", "진행")
+            ):
                 roles.add("sk_grid_status")
         for child in step.children:
             visit(child)
@@ -1512,14 +1803,20 @@ def list_packages(backend: SpoolBackend) -> list[PackageInfo]:
     return sorted(packages, key=lambda item: (item.title.lower(), item.name.lower()))
 
 
-def submit_job(backend: SpoolBackend, job: SpoolJob, targets: Sequence[str]) -> list[str]:
-    cleaned_targets = [_clean_node_id(target) for target in targets if _clean_node_id(target)]
+def submit_job(
+    backend: SpoolBackend, job: SpoolJob, targets: Sequence[str]
+) -> list[str]:
+    cleaned_targets = [
+        _clean_node_id(target) for target in targets if _clean_node_id(target)
+    ]
     if not cleaned_targets:
         cleaned_targets = ["all"]
     written: list[str] = []
     data = (job.to_json() + "\n").encode("utf-8")
     for target in cleaned_targets:
-        ensure_node_dirs(backend, target) if target != "all" else backend.ensure_dir("commands/all/pending")
+        ensure_node_dirs(backend, target) if target != "all" else backend.ensure_dir(
+            "commands/all/pending"
+        )
         path = f"commands/{target}/pending/{job.job_id}.json"
         backend.write_bytes(path, data)
         written.append(path)
@@ -1556,7 +1853,9 @@ def request_stop(
         "requested_at": _utc_now(),
     }
     path = f"control/{node}/stop.json"
-    backend.write_bytes(path, json.dumps(payload, indent=2, ensure_ascii=True).encode("utf-8"))
+    backend.write_bytes(
+        path, json.dumps(payload, indent=2, ensure_ascii=True).encode("utf-8")
+    )
     return path
 
 
@@ -1571,7 +1870,9 @@ def stop_requested(backend: SpoolBackend, node_id: str, *, job_id: str = "") -> 
         if not target:
             continue
         try:
-            data = json.loads(backend.read_bytes(f"control/{target}/stop.json").decode("utf-8"))
+            data = json.loads(
+                backend.read_bytes(f"control/{target}/stop.json").decode("utf-8")
+            )
         except Exception:
             continue
         requested_job = str(data.get("job_id") or "")
@@ -1590,7 +1891,7 @@ def run_slave_once(
 ) -> list[JobResult]:
     node = _clean_node_id(node_id or config.node_id)
     if not node:
-        raise FtpSpoolError("Slave node_id is required.")
+        raise FtpSpoolError("실장기 PC의 내부 식별값이 필요합니다.")
     if sys.platform.startswith("win"):
         from .topology import validate_agent_ownership
 
@@ -1602,8 +1903,24 @@ def run_slave_once(
     if ensure_directories:
         ensure_node_dirs(backend, node)
     active_status = status_context if status_context is not None else {}
+    owner = next(
+        (slave for slave in config.slaves if _clean_node_id(slave.node_id) == node),
+        None,
+    )
+    if owner is not None:
+        active_status.update(
+            {
+                "alias": owner.alias,
+                "fixture_pc_id": owner.fixture_pc_id or owner.label(),
+                "rack_type": owner.rack_type,
+                "rack_id": owner.rack_id,
+                "asset_id": owner.asset_id,
+                "windows_name": owner.windows_name,
+                "physical_location": owner.physical_location,
+            }
+        )
     active_status["channels"] = merge_channel_rows(
-        _configured_channels(config, node),
+        _configured_channels_with_remote_metadata(backend, config, node),
         [
             *(
                 item
@@ -1677,7 +1994,9 @@ def run_slave_once(
             active_status["last_origin"] = dict(job.origin)
         _update_channel_status(active_status, job, result)
     if processed_broadcast and config.slaves:
-        cleanup_completed_broadcast_jobs(backend, [slave.node_id for slave in config.slaves])
+        cleanup_completed_broadcast_jobs(
+            backend, [slave.node_id for slave in config.slaves]
+        )
     final_message = "waiting"
     if active_status.get("last_job"):
         outcome = "PASS" if active_status.get("last_ok") else "FAIL"
@@ -1693,12 +2012,21 @@ def run_slave_once(
     final_job = ""
     if running_channels:
         channel_names = [
-            str(item.get("channel_id") or item.get("name") or item.get("slot_id") or "CH")
+            str(
+                item.get("channel_id")
+                or item.get("name")
+                or item.get("slot_id")
+                or "CH"
+            )
             for item in running_channels
         ]
         final_message = "active CH: " + ", ".join(channel_names[:8])
         final_job = next(
-            (str(item.get("local_job_id") or "") for item in running_channels if item.get("local_job_id")),
+            (
+                str(item.get("local_job_id") or "")
+                for item in running_channels
+                if item.get("local_job_id")
+            ),
             "",
         )
     write_status(
@@ -1716,7 +2044,9 @@ def run_slave_once(
 def agent_instance_lock(config: FtpSpoolConfig, node_id: str) -> Iterator[Path]:
     node = _clean_node_id(node_id)
     if not node:
-        raise FtpSpoolError("Slave node_id is required for the Agent lock.")
+        raise FtpSpoolError(
+            "통신 프로그램 중복 실행 확인에 실장기 PC 내부 식별값이 필요합니다."
+        )
     lock_dir = Path(tempfile.gettempdir()) / "ae-workbench-agent-locks"
     lock_dir.mkdir(parents=True, exist_ok=True)
     lock_path = lock_dir / f".agent-{_safe_name(node)}.lock"
@@ -1735,7 +2065,7 @@ def agent_instance_lock(config: FtpSpoolConfig, node_id: str) -> Iterator[Path]:
                 msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
             except OSError as exc:
                 raise FtpSpoolError(
-                    f"Agent {node}가 이미 이 PC에서 실행 중입니다. 중복 EXE를 닫으세요."
+                    f"통신 프로그램 {node}가 이미 이 PC에서 실행 중입니다. 중복 EXE를 닫으세요."
                 ) from exc
         else:
             import fcntl
@@ -1744,7 +2074,7 @@ def agent_instance_lock(config: FtpSpoolConfig, node_id: str) -> Iterator[Path]:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError as exc:
                 raise FtpSpoolError(
-                    f"Agent {node}가 이미 이 PC에서 실행 중입니다. 중복 프로세스를 종료하세요."
+                    f"통신 프로그램 {node}가 이미 이 PC에서 실행 중입니다. 중복 프로세스를 종료하세요."
                 ) from exc
         locked = True
         yield lock_path
@@ -1772,7 +2102,7 @@ def slave_loop(
 ) -> None:
     node = _clean_node_id(node_id or config.node_id)
     if not node:
-        raise FtpSpoolError("Slave node_id is required.")
+        raise FtpSpoolError("실장기 PC의 내부 식별값이 필요합니다.")
     if sys.platform.startswith("win"):
         from .topology import validate_agent_ownership
 
@@ -1818,7 +2148,7 @@ def _slave_loop_unlocked(
                 raise
             failures += 1
             directories_ready = False
-            print(f"slave poll failed ({failures}): {exc}", file=sys.stderr)
+            print(f"실장기 PC 통신 확인 실패 ({failures}): {exc}", file=sys.stderr)
         else:
             failures = 0
             directories_ready = True
@@ -1842,7 +2172,9 @@ def execute_job(
 ) -> JobResult:
     started = _utc_now()
     variables = {"node_id": node_id, **config.variables, **job.variables}
-    timeout = float(job.payload.get("timeout_seconds", job.payload.get("timeout", 0)) or 0)
+    timeout = float(
+        job.payload.get("timeout_seconds", job.payload.get("timeout", 0)) or 0
+    )
     try:
         if stop_requested(backend, node_id, job_id=job.job_id):
             return JobResult(
@@ -1853,7 +2185,7 @@ def execute_job(
                 returncode=130,
                 started_at=started,
                 finished_at=_utc_now(),
-                stderr="Stopped before start by master stop signal.",
+                stderr="관리자 PC의 긴급 중단 요청으로 시작 전에 중지했습니다.",
             )
         if job.kind == "shell":
             return _execute_shell(
@@ -1967,7 +2299,9 @@ def execute_job(
 def publish_result(backend: SpoolBackend, result: JobResult) -> None:
     node = _clean_node_id(result.node_id)
     result_json = json.dumps(result.to_mapping(), indent=2, ensure_ascii=True) + "\n"
-    backend.write_bytes(f"results/{node}/{result.job_id}.json", result_json.encode("utf-8"))
+    backend.write_bytes(
+        f"results/{node}/{result.job_id}.json", result_json.encode("utf-8")
+    )
     log_text = "\n".join(
         [
             f"job_id={result.job_id}",
@@ -2007,7 +2341,10 @@ def write_status(
     }
     if details:
         status.update(details)
-    backend.write_bytes(f"status/{_clean_node_id(node_id)}.json", json.dumps(status, indent=2).encode("utf-8"))
+    backend.write_bytes(
+        f"status/{_clean_node_id(node_id)}.json",
+        json.dumps(status, indent=2).encode("utf-8"),
+    )
 
 
 def publish_local_sequence_progress(
@@ -2021,7 +2358,9 @@ def publish_local_sequence_progress(
 ) -> None:
     node = _clean_node_id(node_id)
     if not node:
-        raise FtpSpoolError("Local sequence reporting requires a Node ID.")
+        raise FtpSpoolError(
+            "실장기 PC에서 진행 상황을 공유하려면 내부 식별값이 필요합니다."
+        )
     row = dict(channel_row)
     row.setdefault("execution_origin", "local_fixture_pc")
     row.setdefault("execution_route", "direct_serial")
@@ -2030,13 +2369,15 @@ def publish_local_sequence_progress(
     _write_local_channel_snapshot(config, node, row)
     with _LOCAL_STATUS_LOCK:
         try:
-            existing = json.loads(backend.read_bytes(f"status/{node}.json").decode("utf-8"))
+            existing = json.loads(
+                backend.read_bytes(f"status/{node}.json").decode("utf-8")
+            )
         except Exception:
             existing = {}
         if not isinstance(existing, dict):
             existing = {}
         channels = merge_channel_rows(
-            _configured_channels(config, node),
+            _configured_channels_with_remote_metadata(backend, config, node),
             [
                 *(
                     item
@@ -2050,15 +2391,26 @@ def publish_local_sequence_progress(
             key: value
             for key, value in existing.items()
             if key
-            not in {"node_id", "state", "message", "current_job", "updated_at", "channels"}
+            not in {
+                "node_id",
+                "state",
+                "message",
+                "current_job",
+                "updated_at",
+                "channels",
+            }
         }
         details["channels"] = channels
         write_status(
             backend,
             node,
-            state="running" if str(row.get("state") or "").casefold() == "running" else "idle",
+            state="running"
+            if str(row.get("state") or "").casefold() == "running"
+            else "idle",
             message=message,
-            current_job=job_id if str(row.get("state") or "").casefold() == "running" else "",
+            current_job=job_id
+            if str(row.get("state") or "").casefold() == "running"
+            else "",
             details=details,
         )
 
@@ -2071,8 +2423,14 @@ def publish_local_sequence_result(
 ) -> JobResult:
     details = dict(result.details)
     result_dir_value = str(details.get("result_dir") or "")
-    if result_dir_value and not details.get("artifact_path") and config.max_artifact_files <= 0:
-        details["artifact_error"] = "FTP run artifact upload is disabled by retention policy."
+    if (
+        result_dir_value
+        and not details.get("artifact_path")
+        and config.max_artifact_files <= 0
+    ):
+        details["artifact_error"] = (
+            "보관 정책에 따라 실행 결과 파일 전송이 꺼져 있습니다."
+        )
     elif result_dir_value and not details.get("artifact_path"):
         try:
             artifact_bytes, members = build_artifact_zip_bytes(
@@ -2083,9 +2441,7 @@ def publish_local_sequence_result(
                 raise FtpSpoolError(
                     f"Run artifact exceeds upload limit: {len(artifact_bytes)} bytes"
                 )
-            artifact_path = (
-                f"artifacts/{_clean_node_id(result.node_id)}/{_safe_name(result.job_id)}.zip"
-            )
+            artifact_path = f"artifacts/{_clean_node_id(result.node_id)}/{_safe_name(result.job_id)}.zip"
             backend.write_bytes(artifact_path, artifact_bytes)
             details.update(
                 {
@@ -2101,7 +2457,11 @@ def publish_local_sequence_result(
     with _LOCAL_STATUS_LOCK:
         context = _read_status_context(backend, published.node_id)
         context["channels"] = merge_channel_rows(
-            _configured_channels(config, published.node_id),
+            _configured_channels_with_remote_metadata(
+                backend,
+                config,
+                published.node_id,
+            ),
             [
                 *(
                     item
@@ -2160,7 +2520,11 @@ def publish_local_monitor_result(
     with _LOCAL_STATUS_LOCK:
         context = _read_status_context(backend, observed.node_id)
         context["channels"] = merge_channel_rows(
-            _configured_channels(config, observed.node_id),
+            _configured_channels_with_remote_metadata(
+                backend,
+                config,
+                observed.node_id,
+            ),
             [
                 *(
                     item
@@ -2253,7 +2617,8 @@ def _load_local_channel_snapshots(
         if (
             not isinstance(value, dict)
             or value.get("schema") != "rig-local-channel-status/v1"
-            or _clean_node_id(str(value.get("node_id") or "")) != _clean_node_id(node_id)
+            or _clean_node_id(str(value.get("node_id") or ""))
+            != _clean_node_id(node_id)
             or not isinstance(value.get("channel"), dict)
         ):
             continue
@@ -2276,7 +2641,9 @@ def _load_local_channel_snapshots(
                 age_seconds = float("inf")
             stale_after = max(
                 180.0,
-                config.poll_interval_seconds * 3.0 + config.poll_jitter_seconds * 2.0 + 30.0,
+                config.poll_interval_seconds * 3.0
+                + config.poll_jitter_seconds * 2.0
+                + 30.0,
             )
             if age_seconds > stale_after:
                 row.update(
@@ -2290,7 +2657,9 @@ def _load_local_channel_snapshots(
     return rows
 
 
-def _configured_channels(config: FtpSpoolConfig, node_id: str) -> tuple[ChannelInfo, ...]:
+def _configured_channels(
+    config: FtpSpoolConfig, node_id: str
+) -> tuple[ChannelInfo, ...]:
     node = _clean_node_id(node_id)
     for slave in config.slaves:
         if _clean_node_id(slave.node_id) == node:
@@ -2298,25 +2667,52 @@ def _configured_channels(config: FtpSpoolConfig, node_id: str) -> tuple[ChannelI
     return ()
 
 
+def _configured_channels_with_remote_metadata(
+    backend: SpoolBackend,
+    config: FtpSpoolConfig,
+    node_id: str,
+) -> tuple[ChannelInfo, ...]:
+    node = _clean_node_id(node_id)
+    slave = next(
+        (item for item in config.slaves if _clean_node_id(item.node_id) == node),
+        None,
+    )
+    if slave is None:
+        return ()
+    try:
+        payload = read_fixture_metadata(backend, slave.node_id)
+        return apply_fixture_metadata(slave, payload).channels
+    except FtpSpoolError:
+        return slave.channels
+
+
 def _channel_key(data: dict[str, Any]) -> str:
-    return str(
-        data.get("channel_id")
-        or data.get("channel")
-        or data.get("slot_id")
-        or data.get("slot")
-        or data.get("name")
-        or ""
-    ).strip().casefold()
+    return (
+        str(
+            data.get("channel_id")
+            or data.get("channel")
+            or data.get("slot_id")
+            or data.get("slot")
+            or data.get("name")
+            or ""
+        )
+        .strip()
+        .casefold()
+    )
 
 
 def _channel_activity(channels: Any) -> tuple[str, str, str]:
-    active = [
-        item
-        for item in channels
-        if isinstance(item, dict)
-        and str(item.get("state") or "").casefold()
-        in {"running", "run", "busy", "blue", "grid_progress", "progress"}
-    ] if isinstance(channels, list) else []
+    active = (
+        [
+            item
+            for item in channels
+            if isinstance(item, dict)
+            and str(item.get("state") or "").casefold()
+            in {"running", "run", "busy", "blue", "grid_progress", "progress"}
+        ]
+        if isinstance(channels, list)
+        else []
+    )
     if not active:
         return "idle", "", ""
     names = [
@@ -2324,7 +2720,11 @@ def _channel_activity(channels: Any) -> tuple[str, str, str]:
         for item in active
     ]
     job_id = next(
-        (str(item.get("local_job_id") or "") for item in active if item.get("local_job_id")),
+        (
+            str(item.get("local_job_id") or "")
+            for item in active
+            if item.get("local_job_id")
+        ),
         "",
     )
     return "running", job_id, "active CH: " + ", ".join(names[:8])
@@ -2353,11 +2753,175 @@ def merge_channel_rows(
         if not key:
             continue
         if key in indexes:
-            merged[indexes[key]].update(row)
+            current = merged[indexes[key]]
+            newer_metadata = _newer_shared_metadata(current, row)
+            current.update(row)
+            current.update(newer_metadata)
         elif len(merged) < MAX_CHANNELS_PER_SLAVE:
             indexes[key] = len(merged)
             merged.append(row)
     return merged
+
+
+def _newer_shared_metadata(
+    current: dict[str, Any],
+    incoming: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge operator fields by their independent edit clocks.
+
+    Binary is maintained manually and may be updated independently from the
+    mounted material or fault information. Treating every field as one record
+    allowed a newer material edit to overwrite a newer Binary edit from the
+    other PC.
+    """
+    general_source = _newer_metadata_source(
+        current,
+        incoming,
+        timestamp_field="metadata_updated_at",
+    )
+    binary_source = _newer_metadata_source(
+        current,
+        incoming,
+        timestamp_field="binary_updated_at",
+        fallback_timestamp_field="metadata_updated_at",
+    )
+    merged = {
+        field: general_source[field]
+        for field in GENERAL_METADATA_FIELDS
+        if field in general_source
+    }
+    merged.update(
+        {
+            field: binary_source[field]
+            for field in BINARY_METADATA_FIELDS
+            if field in binary_source
+        }
+    )
+    return merged
+
+
+def _newer_metadata_source(
+    current: dict[str, Any],
+    incoming: dict[str, Any],
+    *,
+    timestamp_field: str,
+    fallback_timestamp_field: str = "",
+) -> dict[str, Any]:
+    current_stamp = _timestamp_order(current.get(timestamp_field))
+    incoming_stamp = _timestamp_order(incoming.get(timestamp_field))
+    if fallback_timestamp_field:
+        current_stamp = current_stamp or _timestamp_order(
+            current.get(fallback_timestamp_field)
+        )
+        incoming_stamp = incoming_stamp or _timestamp_order(
+            incoming.get(fallback_timestamp_field)
+        )
+    if incoming_stamp is None and current_stamp is not None:
+        return current
+    if (
+        current_stamp is None
+        or incoming_stamp is None
+        or incoming_stamp >= current_stamp
+    ):
+        return incoming
+    return current
+
+
+def _timestamp_order(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def read_fixture_metadata(
+    backend: SpoolBackend,
+    node_id: str,
+) -> dict[str, Any]:
+    node = _clean_node_id(node_id)
+    if not node:
+        raise FtpSpoolError("실장기 PC 이름이 필요합니다.")
+    try:
+        payload = json.loads(
+            backend.read_bytes(f"fixture-metadata/{node}.json").decode("utf-8")
+        )
+    except Exception:
+        return {
+            "schema": FIXTURE_METADATA_SCHEMA,
+            "fixture_pc_id": node_id,
+            "channels": [],
+        }
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema") != FIXTURE_METADATA_SCHEMA
+    ):
+        raise FtpSpoolError(f"{node_id}의 실장기 정보 파일 형식을 읽을 수 없습니다.")
+    channels = payload.get("channels")
+    if not isinstance(channels, list):
+        raise FtpSpoolError(f"{node_id}의 실장기 정보 목록 형식이 올바르지 않습니다.")
+    return payload
+
+
+def publish_fixture_metadata(
+    backend: SpoolBackend,
+    slave: SlaveInfo,
+) -> str:
+    """Merge operator metadata without replacing newer edits."""
+    existing = read_fixture_metadata(backend, slave.node_id)
+    existing_channels = [
+        dict(item) for item in existing.get("channels", []) if isinstance(item, dict)
+    ]
+    channels = merge_channel_rows(
+        existing_channels,
+        [channel.to_mapping() for channel in slave.channels],
+    )
+    payload = {
+        "schema": FIXTURE_METADATA_SCHEMA,
+        "fixture_pc_id": slave.fixture_pc_id or slave.node_id,
+        "node_id": slave.node_id,
+        "rack_type": slave.rack_type,
+        "rack_id": slave.rack_id,
+        "updated_at": _utc_now(),
+        "channels": [
+            {
+                key: value
+                for key, value in row.items()
+                if key
+                in {*SHARED_CHANNEL_METADATA_FIELDS, "channel_id", "name", "slot_id"}
+            }
+            for row in channels
+        ],
+    }
+    path = f"fixture-metadata/{_clean_node_id(slave.node_id)}.json"
+    backend.write_bytes(path, json.dumps(payload, indent=2).encode("utf-8"))
+    return path
+
+
+def apply_fixture_metadata(
+    slave: SlaveInfo,
+    payload: dict[str, Any],
+) -> SlaveInfo:
+    if payload.get("schema") != FIXTURE_METADATA_SCHEMA:
+        raise FtpSpoolError("지원하지 않는 실장기 정보 파일입니다.")
+    raw_channels = payload.get("channels") or []
+    if not isinstance(raw_channels, list):
+        raise FtpSpoolError("실장기 정보 목록 형식이 올바르지 않습니다.")
+    channels = merge_channel_rows(slave.channels, raw_channels)
+    return replace(
+        slave,
+        rack_type=str(payload.get("rack_type") or slave.rack_type).strip().upper(),
+        rack_id=str(payload.get("rack_id") or slave.rack_id).strip().upper(),
+        fixture_pc_id=str(
+            payload.get("fixture_pc_id") or slave.fixture_pc_id or slave.node_id
+        ).strip(),
+        channels=tuple(ChannelInfo.from_mapping(item) for item in channels),
+    )
 
 
 def _update_channel_status(
@@ -2366,11 +2930,19 @@ def _update_channel_status(
     result: JobResult,
 ) -> None:
     raw_channels = status_context.get("channels")
-    channels = [dict(item) for item in raw_channels if isinstance(item, dict)] if isinstance(raw_channels, list) else []
+    channels = (
+        [dict(item) for item in raw_channels if isinstance(item, dict)]
+        if isinstance(raw_channels, list)
+        else []
+    )
 
-    def upsert(channel_id: str = "", slot_id: str = "", name: str = "") -> dict[str, Any] | None:
+    def upsert(
+        channel_id: str = "", slot_id: str = "", name: str = ""
+    ) -> dict[str, Any] | None:
         target_keys = {
-            value.strip().casefold() for value in (channel_id, slot_id, name) if value.strip()
+            value.strip().casefold()
+            for value in (channel_id, slot_id, name)
+            if value.strip()
         }
         if not target_keys:
             return None
@@ -2394,7 +2966,9 @@ def _update_channel_status(
         return created
 
     details = result.details if isinstance(result.details, dict) else {}
-    job_channel = str(details.get("channel_id") or job.variables.get("channel") or "").strip()
+    job_channel = str(
+        details.get("channel_id") or job.variables.get("channel") or ""
+    ).strip()
     job_slot = str(details.get("slot_id") or job.variables.get("slot_id") or "").strip()
     if job.kind == "rig" and isinstance(details.get("firmware_plan"), dict):
         target = str(details.get("rig_target") or "")
@@ -2409,6 +2983,10 @@ def _update_channel_status(
                     "binary_version": job.variables.get("binary_version", ""),
                     "binary_source_path": job.variables.get("binary_source_path", ""),
                     "binary_updated_at": job.variables.get("binary_updated_at", ""),
+                    "binary_updated_by": job.variables.get("binary_updated_by", ""),
+                    "binary_update_source": job.variables.get(
+                        "binary_update_source", ""
+                    ),
                     "execution_route": "firmware_adapter",
                     "execution_origin": "master_remote",
                     "execution_phase": "completed" if result.ok else "failed",
@@ -2439,6 +3017,7 @@ def _update_channel_status(
                     "soc_model": details.get("soc_model", ""),
                     "dram_part": details.get("dram_part", ""),
                     "lot_id": details.get("lot_id", ""),
+                    "material_id": details.get("material_id", ""),
                     "sample_id": details.get("sample_id", ""),
                     "current_test": details.get("current_test", ""),
                     "failure_class": details.get("failure_class", ""),
@@ -2495,8 +3074,12 @@ def _update_channel_status(
                         "soc_model": item.get("soc_model", ""),
                         "binary_name": item.get("binary_name", ""),
                         "binary_version": item.get("binary_version", ""),
+                        "binary_updated_at": item.get("binary_updated_at", ""),
+                        "binary_updated_by": item.get("binary_updated_by", ""),
+                        "binary_update_source": item.get("binary_update_source", ""),
                         "dram_part": item.get("dram_part", ""),
                         "lot_id": item.get("lot_id", ""),
+                        "material_id": item.get("material_id", ""),
                         "sample_id": item.get("sample_id", ""),
                         "current_test": item.get("current_test", ""),
                         "sequence_name": item.get("sequence_name", ""),
@@ -2505,6 +3088,8 @@ def _update_channel_status(
                         "campaign_attempt": item.get("campaign_attempt", "1"),
                         "failure_class": item.get("failure_class", ""),
                         "acceptance_result": item.get("acceptance_result", ""),
+                        "boot_stage": item.get("boot_stage", ""),
+                        "fault_status": item.get("fault_status", ""),
                         "execution_route": item.get("execution_route", ""),
                         "execution_origin": item.get("execution_origin", ""),
                         "execution_phase": item.get("execution_phase", ""),
@@ -2515,7 +3100,9 @@ def _update_channel_status(
                 channel["current_grid"] = str(item.get("current_grid") or "")
                 channel["completed_grids"] = int(item.get("completed_grids") or 0)
                 channel["total_grids"] = int(item.get("total_grids") or 0)
-                channel["updated_at"] = str(item.get("updated_at") or result.finished_at)
+                channel["updated_at"] = str(
+                    item.get("updated_at") or result.finished_at
+                )
     elif job.kind in {"sequence", "sequence_local"}:
         channel = upsert(job_channel, job_slot)
         if channel is not None:
@@ -2536,12 +3123,21 @@ def _update_channel_status(
                     "binary_version": job.variables.get("binary_version", ""),
                     "binary_source_path": job.variables.get("binary_source_path", ""),
                     "binary_updated_at": job.variables.get("binary_updated_at", ""),
+                    "binary_updated_by": job.variables.get("binary_updated_by", ""),
+                    "binary_update_source": job.variables.get(
+                        "binary_update_source", ""
+                    ),
                     "dram_part": job.variables.get("dram_part", ""),
                     "lot_id": job.variables.get("lot_id", ""),
+                    "material_id": job.variables.get(
+                        "material_id", job.variables.get("sample_id", "")
+                    ),
                     "sample_id": job.variables.get("sample_id", ""),
                     "current_test": details.get("current_test", ""),
                     "sequence_name": details.get("sequence_name", ""),
-                    "campaign_id": details.get("campaign_id", job.variables.get("campaign_id", "")),
+                    "campaign_id": details.get(
+                        "campaign_id", job.variables.get("campaign_id", "")
+                    ),
                     "campaign_title": details.get(
                         "campaign_title", job.variables.get("campaign_title", "")
                     ),
@@ -2552,6 +3148,10 @@ def _update_channel_status(
                     or _classify_failure(result),
                     "acceptance_result": details.get("acceptance_result", "")
                     or ("pending" if result.ok else "fail"),
+                    "boot_stage": details.get(
+                        "boot_stage", job.variables.get("boot_stage", "")
+                    ),
+                    "fault_status": job.variables.get("fault_status", ""),
                     "execution_route": details.get("execution_route", ""),
                     "execution_origin": details.get("execution_origin", ""),
                     "execution_phase": details.get("execution_phase", ""),
@@ -2587,6 +3187,7 @@ def _update_channel_status(
         channel = upsert(monitor_channel, monitor_slot)
         if channel is None:
             continue
+        _apply_sk_commander_readings(channel, monitor)
         incoming_origin = str(details.get("execution_origin") or "")
         preserve_master_origin = (
             incoming_origin == "local_fixture_pc"
@@ -2605,12 +3206,26 @@ def _update_channel_status(
             },
         )
         expected_state = str(monitor.get("monitor_state") or "").strip()
-        channel["state"] = expected_state if monitor.get("ok") and expected_state else "fail"
+        channel["state"] = (
+            expected_state if monitor.get("ok") and expected_state else "fail"
+        )
         normalized_state = expected_state.casefold()
-        if not monitor.get("ok") or normalized_state in {"fail", "failed", "error", "red"}:
+        if not monitor.get("ok") or normalized_state in {
+            "fail",
+            "failed",
+            "error",
+            "red",
+        }:
             channel["acceptance_result"] = "fail"
             channel["failure_class"] = "test"
-        elif normalized_state in {"pass", "passed", "done", "complete", "completed", "green"}:
+        elif normalized_state in {
+            "pass",
+            "passed",
+            "done",
+            "complete",
+            "completed",
+            "green",
+        }:
             channel["acceptance_result"] = "pass"
             channel["failure_class"] = ""
         else:
@@ -2627,6 +3242,49 @@ def _update_channel_status(
     _update_campaign_run_history(status_context, job, result, channels)
 
 
+def _apply_sk_commander_readings(
+    channel: dict[str, Any],
+    monitor: dict[str, Any],
+) -> None:
+    for reading in _iter_monitor_readings(monitor):
+        if not reading.get("ok"):
+            continue
+        role = str(reading.get("element_role") or "").strip().casefold()
+        actual = str(reading.get("actual") or "").strip()
+        if not actual:
+            continue
+        if role in {"sk_soc", "soc", "soc_model"}:
+            channel["soc_model"] = actual
+            folded = actual.casefold()
+            if folded.startswith("mtk"):
+                channel["soc_vendor"] = "mediatek"
+            elif folded.startswith(("sm", "qc", "qcom")):
+                channel["soc_vendor"] = "qualcomm"
+        elif role in {"sk_dram", "sk_material", "dram", "material"}:
+            channel["material_id"] = actual
+            channel["sample_id"] = actual
+        elif role in {"sk_test", "test_name", "current_test"}:
+            channel["current_test"] = actual
+        elif role in {"sk_boot_stage", "boot_stage", "boot_level"}:
+            match = re.search(
+                r"\b(BL1|BL2|LK|OS)(?:\d+)?\b",
+                actual,
+                flags=re.IGNORECASE,
+            )
+            if match:
+                channel["boot_stage"] = match.group(1).upper()
+
+
+def _iter_monitor_readings(monitor: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    yield monitor
+    details = monitor.get("details")
+    if not isinstance(details, list):
+        return
+    for item in details:
+        if isinstance(item, dict):
+            yield from _iter_monitor_readings(item)
+
+
 def _update_campaign_run_history(
     status_context: dict[str, Any],
     job: SpoolJob,
@@ -2634,13 +3292,28 @@ def _update_campaign_run_history(
     channels: list[dict[str, Any]],
 ) -> None:
     raw_runs = status_context.get("campaign_runs")
-    runs = [dict(item) for item in raw_runs if isinstance(item, dict)] if isinstance(raw_runs, list) else []
+    runs = (
+        [dict(item) for item in raw_runs if isinstance(item, dict)]
+        if isinstance(raw_runs, list)
+        else []
+    )
     details = result.details if isinstance(result.details, dict) else {}
-    campaign_id = str(details.get("campaign_id") or job.variables.get("campaign_id") or "").strip()
-    channel_id = str(details.get("channel_id") or job.variables.get("channel") or "").strip()
+    campaign_id = str(
+        details.get("campaign_id") or job.variables.get("campaign_id") or ""
+    ).strip()
+    channel_id = str(
+        details.get("channel_id") or job.variables.get("channel") or ""
+    ).strip()
     slot_id = str(details.get("slot_id") or job.variables.get("slot_id") or "").strip()
     try:
-        attempt = max(1, int(details.get("campaign_attempt") or job.variables.get("campaign_attempt") or 1))
+        attempt = max(
+            1,
+            int(
+                details.get("campaign_attempt")
+                or job.variables.get("campaign_attempt")
+                or 1
+            ),
+        )
     except (TypeError, ValueError):
         attempt = 1
 
@@ -2653,7 +3326,9 @@ def _update_campaign_run_history(
             {
                 "campaign_id": campaign_id,
                 "campaign_title": str(
-                    details.get("campaign_title") or job.variables.get("campaign_title") or ""
+                    details.get("campaign_title")
+                    or job.variables.get("campaign_title")
+                    or ""
                 ),
                 "campaign_attempt": attempt,
                 "channel_id": channel_id,
@@ -2669,7 +3344,8 @@ def _update_campaign_run_history(
                 ),
                 "acceptance_result": details.get("acceptance_result")
                 or ("pending" if result.ok else "fail"),
-                "failure_class": details.get("failure_class") or _classify_failure(result),
+                "failure_class": details.get("failure_class")
+                or _classify_failure(result),
                 "sequence_name": details.get("sequence_name", ""),
                 "current_grid": details.get("current_grid", ""),
                 "completed_grids": int(details.get("completed_grids") or 0),
@@ -2714,7 +3390,9 @@ def _update_campaign_run_history(
                         "channel_id": item_channel,
                         "slot_id": item_slot,
                         "state": str(item.get("state") or "error"),
-                        "acceptance_result": str(item.get("acceptance_result") or "fail"),
+                        "acceptance_result": str(
+                            item.get("acceptance_result") or "fail"
+                        ),
                         "failure_class": str(item.get("failure_class") or ""),
                         "sequence_name": str(item.get("sequence_name") or ""),
                         "current_grid": str(item.get("current_grid") or ""),
@@ -2790,7 +3468,9 @@ def _find_campaign_run(
     return None
 
 
-def _apply_nonempty_channel_values(target: dict[str, Any], values: dict[str, Any]) -> None:
+def _apply_nonempty_channel_values(
+    target: dict[str, Any], values: dict[str, Any]
+) -> None:
     for key, value in values.items():
         if value is None:
             continue
@@ -2809,9 +3489,13 @@ def _classify_failure(result: JobResult) -> str:
     text = f"{result.stderr}\n{result.stdout}".casefold()
     if any(token in text for token in ("checksum", "package", "launcher", "preflight")):
         return "setup"
-    if any(token in text for token in ("selector", "window", "component", "automation")):
+    if any(
+        token in text for token in ("selector", "window", "component", "automation")
+    ):
         return "automation"
-    if any(token in text for token in ("ftp", "network", "permission", "access denied")):
+    if any(
+        token in text for token in ("ftp", "network", "permission", "access denied")
+    ):
         return "infrastructure"
     if "monitor condition" in text:
         return "test"
@@ -2860,7 +3544,11 @@ def _monitor_grid_progress(monitor: dict[str, Any]) -> tuple[int, int] | None:
     ).casefold()
     if not any(token in marker for token in ("grid", "progress", "그리드", "진행")):
         return None
-    for value in (monitor.get("actual"), monitor.get("expected"), monitor.get("block_name")):
+    for value in (
+        monitor.get("actual"),
+        monitor.get("expected"),
+        monitor.get("block_name"),
+    ):
         match = re.search(r"(?<!\d)(\d+)\s*/\s*(\d+)(?!\d)", str(value or ""))
         if match:
             return int(match.group(1)), int(match.group(2))
@@ -2926,6 +3614,9 @@ def classify_status_rows(
             {
                 "node_id": slave.node_id,
                 "alias": slave.alias,
+                "fixture_pc_id": slave.fixture_pc_id or slave.label(),
+                "rack_type": slave.rack_type,
+                "rack_id": slave.rack_id,
                 "host": slave.host,
                 "asset_id": slave.asset_id,
                 "windows_name": slave.windows_name,
@@ -2946,12 +3637,20 @@ def classify_status_rows(
         configured_slave = configured_by_node.get(node_id)
         if configured_slave is not None:
             row.setdefault("alias", configured_slave.alias)
+            row.setdefault(
+                "fixture_pc_id",
+                configured_slave.fixture_pc_id or configured_slave.label(),
+            )
+            row.setdefault("rack_type", configured_slave.rack_type)
+            row.setdefault("rack_id", configured_slave.rack_id)
             row.setdefault("host", configured_slave.host)
             row.setdefault("asset_id", configured_slave.asset_id)
             row.setdefault("windows_name", configured_slave.windows_name)
             row.setdefault("physical_location", configured_slave.physical_location)
         configured_channels = configured_slave.channels if configured_slave else ()
-        reported_channels = row.get("channels") if isinstance(row.get("channels"), list) else []
+        reported_channels = (
+            row.get("channels") if isinstance(row.get("channels"), list) else []
+        )
         row["channels"] = merge_channel_rows(configured_channels, reported_channels)
         reported_state = str(row.get("state") or "unknown").strip().casefold()
         updated_at = str(row.get("updated_at") or "").strip()
@@ -2961,7 +3660,9 @@ def classify_status_rows(
                 updated = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
                 if updated.tzinfo is None:
                     updated = updated.replace(tzinfo=timezone.utc)
-                age_seconds = max(0.0, (current - updated.astimezone(timezone.utc)).total_seconds())
+                age_seconds = max(
+                    0.0, (current - updated.astimezone(timezone.utc)).total_seconds()
+                )
             except ValueError:
                 age_seconds = None
 
@@ -2972,13 +3673,17 @@ def classify_status_rows(
             if updated_at and age_seconds is not None:
                 previous = str(row.get("message") or "").strip()
                 stale_message = f"Last heartbeat {int(age_seconds)}s ago"
-                row["message"] = f"{stale_message} | {previous}" if previous else stale_message
+                row["message"] = (
+                    f"{stale_message} | {previous}" if previous else stale_message
+                )
             for channel in row["channels"]:
                 channel["reported_state"] = channel.get("state", "")
                 channel["state"] = "offline"
         elif reported_state == "running":
             row["health"] = "running"
-        elif reported_state in {"error", "failed", "fail"} or row.get("last_ok") is False:
+        elif (
+            reported_state in {"error", "failed", "fail"} or row.get("last_ok") is False
+        ):
             row["health"] = "error"
         else:
             row["health"] = "online"
@@ -2994,14 +3699,18 @@ def list_results(backend: SpoolBackend, node_id: str) -> list[dict[str, Any]]:
         if not name.endswith(".json"):
             continue
         try:
-            data = json.loads(backend.read_bytes(f"results/{node}/{name}").decode("utf-8"))
+            data = json.loads(
+                backend.read_bytes(f"results/{node}/{name}").decode("utf-8")
+            )
         except Exception:
             continue
         if isinstance(data, dict):
             job_id = str(data.get("job_id") or Path(name).stem)
             try:
                 triage = json.loads(
-                    backend.read_bytes(f"triage/{node}/{_safe_name(job_id)}.json").decode("utf-8")
+                    backend.read_bytes(
+                        f"triage/{node}/{_safe_name(job_id)}.json"
+                    ).decode("utf-8")
                 )
             except Exception:
                 triage = None
@@ -3047,7 +3756,9 @@ def save_triage_record(
     node = _clean_node_id(node_id)
     raw_job_id = str(job_id or "").strip()
     if not node or not raw_job_id:
-        raise FtpSpoolError("Node ID and job ID are required for triage.")
+        raise FtpSpoolError(
+            "결과를 분류하려면 실장기 PC 내부 식별값과 작업 ID가 필요합니다."
+        )
     safe_job_id = _safe_name(raw_job_id)
     payload = {
         "schema": "rig-ae-triage/v1",
@@ -3068,16 +3779,24 @@ def save_triage_record(
     return path
 
 
-def archive_job(backend: SpoolBackend, node_id: str, source_path: str, job: SpoolJob) -> None:
+def archive_job(
+    backend: SpoolBackend, node_id: str, source_path: str, job: SpoolJob
+) -> None:
     node = _clean_node_id(node_id)
-    backend.write_bytes(f"archive/{node}/{job.job_id}.json", backend.read_bytes(source_path))
+    backend.write_bytes(
+        f"archive/{node}/{job.job_id}.json", backend.read_bytes(source_path)
+    )
 
 
-def cleanup_completed_broadcast_jobs(backend: SpoolBackend, node_ids: Sequence[str]) -> list[str]:
+def cleanup_completed_broadcast_jobs(
+    backend: SpoolBackend, node_ids: Sequence[str]
+) -> list[str]:
     nodes = [_clean_node_id(node) for node in node_ids if _clean_node_id(node)]
     if not nodes:
         return []
-    archived_by_node = {node: set(backend.list_files(f"archive/{node}")) for node in nodes}
+    archived_by_node = {
+        node: set(backend.list_files(f"archive/{node}")) for node in nodes
+    }
     deleted: list[str] = []
     for name in backend.list_files("commands/all/pending"):
         if not name.endswith(".json"):
@@ -3191,7 +3910,7 @@ def _run_process(
     extra_error = ""
     if stopped:
         returncode = 130
-        extra_error = "Stopped by master stop signal."
+        extra_error = "관리자 PC의 긴급 중단 요청으로 중지했습니다."
     elif timed_out:
         returncode = 124
         extra_error = f"Timed out after {timeout:g}s."
@@ -3237,7 +3956,9 @@ class _RemoteWorkflowStopEvent:
             return True
         if not self.remote_stopped and now - self.last_remote_check >= 2.0:
             self.last_remote_check = now
-            self.remote_stopped = stop_requested(self.backend, self.node_id, job_id=self.job_id)
+            self.remote_stopped = stop_requested(
+                self.backend, self.node_id, job_id=self.job_id
+            )
         return self.remote_stopped
 
 
@@ -3255,21 +3976,37 @@ def _execute_sequence(
 ) -> JobResult:
     package = str(job.payload.get("package", "") or "")
     if not package:
-        raise FtpSpoolError("Sequence job requires a Rig SEQ package.")
+        raise FtpSpoolError("SEQ 테스트 실행에는 검사 완료된 SEQ 파일이 필요합니다.")
     package_name = _safe_name(_render_placeholders(package, variables))
     try:
-        bundle = parse_rig_sequence_bundle(backend.read_bytes(f"packages/{package_name}"))
+        bundle = parse_rig_sequence_bundle(
+            backend.read_bytes(f"packages/{package_name}")
+        )
     except RigSequenceBundleError as exc:
         raise FtpSpoolError(str(exc)) from exc
 
     launcher_value = str(job.payload.get("launcher_package", "") or "")
     launcher_value = launcher_value or variables.get("launcher_package", "")
-    launcher_name = _safe_name(_render_placeholders(launcher_value, variables)) if launcher_value else ""
-    backend_mode = str(
-        job.payload.get("sequence_backend", "")
-        or variables.get("sequence_backend", "")
-        or ("sk_commander" if launcher_name else "serial" if variables.get("com_port") else "")
-    ).strip().casefold()
+    launcher_name = (
+        _safe_name(_render_placeholders(launcher_value, variables))
+        if launcher_value
+        else ""
+    )
+    backend_mode = (
+        str(
+            job.payload.get("sequence_backend", "")
+            or variables.get("sequence_backend", "")
+            or (
+                "sk_commander"
+                if launcher_name
+                else "serial"
+                if variables.get("com_port")
+                else ""
+            )
+        )
+        .strip()
+        .casefold()
+    )
     if backend_mode == "serial":
         return _execute_serial_sequence_bundle(
             backend,
@@ -3296,15 +4033,28 @@ def _execute_sequence(
             backend.read_bytes(f"packages/{launcher_name}.meta.json").decode("utf-8")
         )
     except Exception as exc:
-        raise FtpSpoolError(f"SK Commander launcher metadata was not found: {launcher_name}") from exc
-    if not isinstance(launcher_metadata, dict) or launcher_metadata.get("runner") != "workflow":
-        raise FtpSpoolError("SK Commander launcher must be a Picker-exported workflow package.")
+        raise FtpSpoolError(
+            f"SK Commander launcher metadata was not found: {launcher_name}"
+        ) from exc
+    if (
+        not isinstance(launcher_metadata, dict)
+        or launcher_metadata.get("runner") != "workflow"
+    ):
+        raise FtpSpoolError(
+            "SK Commander launcher must be a Picker-exported workflow package."
+        )
     launcher_details = launcher_metadata.get("details") or {}
-    sk_profile = launcher_details.get("sk_commander") if isinstance(launcher_details, dict) else {}
+    sk_profile = (
+        launcher_details.get("sk_commander")
+        if isinstance(launcher_details, dict)
+        else {}
+    )
     if not isinstance(sk_profile, dict):
         sk_profile = {}
     explicit_roles = [str(value) for value in sk_profile.get("explicit_roles", [])]
-    missing_roles = [str(value) for value in sk_profile.get("missing_required_roles", [])]
+    missing_roles = [
+        str(value) for value in sk_profile.get("missing_required_roles", [])
+    ]
     if explicit_roles and missing_roles:
         raise FtpSpoolError(
             "SK Commander control profile is incomplete: " + ", ".join(missing_roles)
@@ -3316,17 +4066,18 @@ def _execute_sequence(
     try:
         campaign_attempt = int(variables.get("campaign_attempt") or 1)
     except ValueError as exc:
-        raise FtpSpoolError("campaign_attempt must be an integer.") from exc
+        raise FtpSpoolError("실행 회차는 정수여야 합니다.") from exc
     if campaign_attempt < 1 or campaign_attempt > repeat_count:
-        raise FtpSpoolError(
-            f"campaign_attempt must be between 1 and {repeat_count} for this package."
-        )
+        raise FtpSpoolError(f"실행 회차는 1부터 {repeat_count} 사이여야 합니다.")
 
     work_dir = Path(_render_placeholders(config.work_dir, variables))
     sequence_dir = work_dir / "sequences" / bundle.bundle_id
     sequence_dir.mkdir(parents=True, exist_ok=True)
     sequence_path = sequence_dir / "sequence.seq"
-    if not sequence_path.exists() or sequence_path.read_bytes() != bundle.sequence_bytes:
+    if (
+        not sequence_path.exists()
+        or sequence_path.read_bytes() != bundle.sequence_bytes
+    ):
         sequence_path.write_bytes(bundle.sequence_bytes)
     os.utime(sequence_dir, None)
     _prune_staged_sequence_dirs(
@@ -3425,7 +4176,8 @@ def _execute_sequence(
         "slot_id": variables.get("slot_id", ""),
         "sequence_name": bundle.recipe_name,
         "sequence_bundle_id": bundle.bundle_id,
-        "current_test": variables.get("test_name", "") or package_details.get("purpose", ""),
+        "current_test": variables.get("test_name", "")
+        or package_details.get("purpose", ""),
         "current_grid": current_grid,
         "total_grids": total_grids,
         "completed_grids": completed_grids,
@@ -3461,7 +4213,9 @@ def _execute_sequence_batch(
     if not isinstance(raw_runs, list) or not raw_runs:
         raise FtpSpoolError("Direct serial batch requires one or more runs.")
     if len(raw_runs) > 4:
-        raise FtpSpoolError("Direct serial batch supports at most four CH runs per Slave PC.")
+        raise FtpSpoolError(
+            "실장기 PC 한 대에서는 직접 COM 테스트를 최대 4대까지 실행할 수 있습니다."
+        )
 
     prepared: list[dict[str, Any]] = []
     ports: set[str] = set()
@@ -3474,31 +4228,50 @@ def _execute_sequence_batch(
             raise FtpSpoolError(f"Direct serial batch run {index} requires a package.")
         raw_variables = raw_run.get("variables") or {}
         if not isinstance(raw_variables, dict):
-            raise FtpSpoolError(f"Direct serial batch run {index} variables must be an object.")
-        run_variables = {**variables, **{str(key): str(value) for key, value in raw_variables.items()}}
-        mode = str(raw_run.get("sequence_backend") or run_variables.get("sequence_backend") or "serial")
+            raise FtpSpoolError(
+                f"Direct serial batch run {index} variables must be an object."
+            )
+        run_variables = {
+            **variables,
+            **{str(key): str(value) for key, value in raw_variables.items()},
+        }
+        mode = str(
+            raw_run.get("sequence_backend")
+            or run_variables.get("sequence_backend")
+            or "serial"
+        )
         if mode.strip().casefold() != "serial":
             raise FtpSpoolError("A sequence batch may contain direct serial runs only.")
         com_port = str(run_variables.get("com_port") or "").strip()
-        channel = str(run_variables.get("channel") or run_variables.get("slot_id") or f"CH{index}").strip()
+        channel = str(
+            run_variables.get("channel") or run_variables.get("slot_id") or f"CH{index}"
+        ).strip()
         if not com_port:
             raise FtpSpoolError(f"{channel}: direct serial batch requires com_port.")
         port_key = com_port.casefold()
         channel_key = channel.casefold()
         if port_key in ports:
-            raise FtpSpoolError(f"Direct serial batch cannot open the same COM twice: {com_port}")
+            raise FtpSpoolError(
+                f"Direct serial batch cannot open the same COM twice: {com_port}"
+            )
         if channel_key in channel_keys:
-            raise FtpSpoolError(f"Direct serial batch contains a duplicate CH: {channel}")
+            raise FtpSpoolError(
+                f"Direct serial batch contains a duplicate CH: {channel}"
+            )
         ports.add(port_key)
         channel_keys.add(channel_key)
 
         package_name = _safe_name(_render_placeholders(package, run_variables))
         try:
-            bundle = parse_rig_sequence_bundle(backend.read_bytes(f"packages/{package_name}"))
+            bundle = parse_rig_sequence_bundle(
+                backend.read_bytes(f"packages/{package_name}")
+            )
             sequence_text = bundle.sequence_bytes.decode("utf-8")
             blocks = parse_serial_sequence(sequence_text)
         except (RigSequenceBundleError, UnicodeDecodeError) as exc:
-            raise FtpSpoolError(f"{channel}: invalid direct serial SEQ package: {exc}") from exc
+            raise FtpSpoolError(
+                f"{channel}: invalid direct serial SEQ package: {exc}"
+            ) from exc
         if not blocks:
             raise FtpSpoolError(f"{channel}: direct serial SEQ has no commands.")
         package_details = bundle.package_details()
@@ -3519,7 +4292,11 @@ def _execute_sequence_batch(
                     "fixture_serial": run_variables.get("fixture_serial", ""),
                     "physical_location": run_variables.get("fixture_location", ""),
                     "com_port": com_port,
-                    "baud_rate": int(run_variables.get("baud_rate") or run_variables.get("baud") or 115200),
+                    "baud_rate": int(
+                        run_variables.get("baud_rate")
+                        or run_variables.get("baud")
+                        or 115200
+                    ),
                     "console_identity": run_variables.get("console_identity", ""),
                     "usb_location": run_variables.get("usb_location", ""),
                     "state": "running",
@@ -3562,7 +4339,10 @@ def _execute_sequence_batch(
                     row["total_grids"] = int(match.group(2))
                     row["current_grid"] = match.group(3).strip()
             now = time.monotonic()
-            if message.startswith(("GRID ", "GRID_DONE ")) or now - last_status_at >= 1.5:
+            if (
+                message.startswith(("GRID ", "GRID_DONE "))
+                or now - last_status_at >= 1.5
+            ):
                 last_status_at = now
                 snapshot = [dict(progress_rows[item["channel"]]) for item in prepared]
         if snapshot is not None:
@@ -3588,7 +4368,9 @@ def _execute_sequence_batch(
                 "stop_job_id": job.job_id,
                 "defer_result_prune": True,
             },
-            variables={str(key): str(value) for key, value in item["variables"].items()},
+            variables={
+                str(key): str(value) for key, value in item["variables"].items()
+            },
             created_at=job.created_at,
         )
         try:
@@ -3626,7 +4408,9 @@ def _execute_sequence_batch(
                 },
             )
 
-    with ThreadPoolExecutor(max_workers=len(prepared), thread_name_prefix="rig-serial") as executor:
+    with ThreadPoolExecutor(
+        max_workers=len(prepared), thread_name_prefix="rig-serial"
+    ) as executor:
         child_results = list(executor.map(run_child, prepared))
 
     channel_results: list[dict[str, Any]] = []
@@ -3635,22 +4419,35 @@ def _execute_sequence_batch(
         details = result.details if isinstance(result.details, dict) else {}
         channel_row = {
             **item["initial"],
-            "state": "pass" if result.ok else "stopped" if result.returncode == 130 else "error",
+            "state": "pass"
+            if result.ok
+            else "stopped"
+            if result.returncode == 130
+            else "error",
             "ok": result.ok,
             "returncode": result.returncode,
             "execution_route": details.get("execution_route") or "direct_serial",
             "execution_origin": details.get("execution_origin")
             or item["initial"].get("execution_origin", "master_remote"),
             "execution_phase": details.get("execution_phase")
-            or ("completed" if result.ok else "stopped" if result.returncode == 130 else "failed"),
+            or (
+                "completed"
+                if result.ok
+                else "stopped"
+                if result.returncode == 130
+                else "failed"
+            ),
             "completed_grids": int(details.get("completed_grids") or 0),
-            "total_grids": int(details.get("total_grids") or item["initial"]["total_grids"]),
+            "total_grids": int(
+                details.get("total_grids") or item["initial"]["total_grids"]
+            ),
             "current_grid": details.get("current_grid") or "",
             "acceptance_result": details.get("acceptance_result")
             or ("pass" if result.ok else "fail"),
             "failure_class": details.get("failure_class") or _classify_failure(result),
             "sequence_name": details.get("sequence_name") or item["bundle"].recipe_name,
-            "campaign_id": details.get("campaign_id") or item["initial"].get("campaign_id", ""),
+            "campaign_id": details.get("campaign_id")
+            or item["initial"].get("campaign_id", ""),
             "campaign_title": details.get("campaign_title")
             or item["initial"].get("campaign_title", ""),
             "campaign_attempt": details.get("campaign_attempt")
@@ -3661,6 +4458,9 @@ def _execute_sequence_batch(
             "binary_version": item["variables"].get("binary_version", ""),
             "dram_part": item["variables"].get("dram_part", ""),
             "lot_id": item["variables"].get("lot_id", ""),
+            "material_id": item["variables"].get(
+                "material_id", item["variables"].get("sample_id", "")
+            ),
             "sample_id": item["variables"].get("sample_id", ""),
             "updated_at": result.finished_at,
             "error": result.stderr[-1000:],
@@ -3675,7 +4475,9 @@ def _execute_sequence_batch(
             result_roots.setdefault(result_dir.parent, set()).add(result_dir.name)
 
     for root, preserve in result_roots.items():
-        _prune_direct_serial_results(root, preserve=preserve, limit=config.max_local_run_files)
+        _prune_direct_serial_results(
+            root, preserve=preserve, limit=config.max_local_run_files
+        )
 
     passed = sum(1 for result in child_results if result.ok)
     stopped = any(result.returncode == 130 for result in child_results)
@@ -3691,7 +4493,8 @@ def _execute_sequence_batch(
     except Exception:
         pass
     stdout = "\n".join(
-        f"[{item['channel']}] {result.stdout}" for item, result in zip(prepared, child_results, strict=True)
+        f"[{item['channel']}] {result.stdout}"
+        for item, result in zip(prepared, child_results, strict=True)
     )
     stderr = "\n".join(
         f"[{item['channel']}] {result.stderr}"
@@ -3712,7 +4515,11 @@ def _execute_sequence_batch(
             "sequence_backend": "serial",
             "execution_route": "direct_serial",
             "execution_origin": "master_remote",
-            "execution_phase": "completed" if passed == len(child_results) else "stopped" if stopped else "failed",
+            "execution_phase": "completed"
+            if passed == len(child_results)
+            else "stopped"
+            if stopped
+            else "failed",
             "batch_size": len(child_results),
             "passed_channels": passed,
             "channels": channel_results,
@@ -3721,7 +4528,9 @@ def _execute_sequence_batch(
                 for row in channel_results
                 if str(row.get("artifact_path") or "")
             ],
-            "completed_grids": sum(int(row["completed_grids"]) for row in channel_results),
+            "completed_grids": sum(
+                int(row["completed_grids"]) for row in channel_results
+            ),
             "total_grids": sum(int(row["total_grids"]) for row in channel_results),
         },
     )
@@ -3742,24 +4551,32 @@ def _execute_serial_sequence_bundle(
     max_output_chars: int,
     progress_callback: Callable[[str, str], None] | None = None,
 ) -> JobResult:
-    channel = str(variables.get("channel") or variables.get("slot_id") or "serial").strip()
+    channel = str(
+        variables.get("channel") or variables.get("slot_id") or "serial"
+    ).strip()
     com_port = str(variables.get("com_port") or "").strip()
     if not com_port:
-        raise FtpSpoolError("Direct serial SEQ requires the target CH com_port variable.")
+        raise FtpSpoolError(
+            "Direct serial SEQ requires the target CH com_port variable."
+        )
     try:
         baud = int(variables.get("baud_rate") or variables.get("baud") or 115200)
         command_timeout = float(variables.get("serial_command_timeout_seconds") or 30.0)
         idle_seconds = float(variables.get("serial_idle_seconds") or 0.75)
         character_delay_ms = int(variables.get("serial_character_delay_ms") or 0)
     except ValueError as exc:
-        raise FtpSpoolError("Direct serial baud and timing values must be numeric.") from exc
+        raise FtpSpoolError(
+            "Direct serial baud and timing values must be numeric."
+        ) from exc
     try:
         sequence_text = bundle.sequence_bytes.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise FtpSpoolError("Rig SEQ must be UTF-8 for direct serial execution.") from exc
+        raise FtpSpoolError(
+            "직접 COM으로 실행할 SEQ는 UTF-8 형식이어야 합니다."
+        ) from exc
     blocks = parse_serial_sequence(sequence_text)
     if not blocks:
-        raise FtpSpoolError("Rig SEQ has no serial commands.")
+        raise FtpSpoolError("SEQ에 실장기로 보낼 명령이 없습니다.")
 
     package_details = bundle.package_details()
     campaign_id = str(package_details.get("campaign_id") or "")
@@ -3767,11 +4584,9 @@ def _execute_serial_sequence_bundle(
     try:
         campaign_attempt = int(variables.get("campaign_attempt") or 1)
     except ValueError as exc:
-        raise FtpSpoolError("campaign_attempt must be an integer.") from exc
+        raise FtpSpoolError("실행 회차는 정수여야 합니다.") from exc
     if campaign_attempt < 1 or campaign_attempt > repeat_count:
-        raise FtpSpoolError(
-            f"campaign_attempt must be between 1 and {repeat_count} for this package."
-        )
+        raise FtpSpoolError(f"실행 회차는 1부터 {repeat_count} 사이여야 합니다.")
 
     work_dir = Path(_render_placeholders(config.work_dir, variables))
     result_root = work_dir / "serial-results"
@@ -3779,7 +4594,9 @@ def _execute_serial_sequence_bundle(
     result_dir.mkdir(parents=True, exist_ok=True)
     log_path = result_dir / "console.log"
     summary_path = result_dir / "manifest.json"
-    console_log = BoundedTextLog(log_path, max_bytes=config.max_run_log_bytes, reset=True)
+    console_log = BoundedTextLog(
+        log_path, max_bytes=config.max_run_log_bytes, reset=True
+    )
     execution_origin = str(
         job.payload.get("execution_origin")
         or variables.get("execution_origin")
@@ -3788,7 +4605,9 @@ def _execute_serial_sequence_bundle(
     grid_descriptors = build_grid_descriptors(
         blocks,
         recipe=bundle.recipe,
-        default_temperature_c=str(variables.get("temperature_c") or variables.get("temperature") or ""),
+        default_temperature_c=str(
+            variables.get("temperature_c") or variables.get("temperature") or ""
+        ),
         default_vdd_v=str(variables.get("vdd_v") or variables.get("vdd") or ""),
     )
 
@@ -3831,7 +4650,9 @@ def _execute_serial_sequence_bundle(
             except Exception:
                 continue
 
-    watcher = threading.Thread(target=watch_stop, name=f"serial-stop-{job.job_id}", daemon=True)
+    watcher = threading.Thread(
+        target=watch_stop, name=f"serial-stop-{job.job_id}", daemon=True
+    )
     watcher.start()
     session = SerialConsoleSession(port_config, output_callback=append_console)
     error = ""
@@ -3875,7 +4696,10 @@ def _execute_serial_sequence_bundle(
             for command in sequence_result.commands
         ]
         if not ok and not stopped and command_rows:
-            failed = next((row for row in reversed(command_rows) if not row["ok"]), command_rows[-1])
+            failed = next(
+                (row for row in reversed(command_rows) if not row["ok"]),
+                command_rows[-1],
+            )
             error = f"Serial command failed: {failed['block']} / {failed['command']}"
 
     acceptance_result = "pass" if ok else "stopped" if stopped else "fail"
@@ -3935,7 +4759,7 @@ def _execute_serial_sequence_bundle(
     artifact_error = ""
     artifact_members: list[str] = []
     if config.max_artifact_files <= 0:
-        artifact_error = "FTP run artifact upload is disabled by retention policy."
+        artifact_error = "보관 정책에 따라 실행 결과 파일 전송이 꺼져 있습니다."
     else:
         try:
             artifact_bytes, artifact_members = build_artifact_zip_bytes(
@@ -3946,7 +4770,9 @@ def _execute_serial_sequence_bundle(
                 raise FtpSpoolError(
                     f"Run artifact exceeds upload limit: {len(artifact_bytes)} bytes"
                 )
-            artifact_path = f"artifacts/{_clean_node_id(node_id)}/{_safe_name(job.job_id)}.zip"
+            artifact_path = (
+                f"artifacts/{_clean_node_id(node_id)}/{_safe_name(job.job_id)}.zip"
+            )
             backend.write_bytes(artifact_path, artifact_bytes)
         except Exception as exc:
             artifact_error = str(exc)
@@ -3973,7 +4799,8 @@ def _execute_serial_sequence_bundle(
         "usb_location": variables.get("usb_location", ""),
         "sequence_name": bundle.recipe_name,
         "sequence_bundle_id": bundle.bundle_id,
-        "current_test": variables.get("test_name", "") or package_details.get("purpose", ""),
+        "current_test": variables.get("test_name", "")
+        or package_details.get("purpose", ""),
         "completed_grids": completed_grids,
         "total_grids": len(blocks),
         "current_grid": current_grid,
@@ -4040,7 +4867,9 @@ def _prune_direct_serial_results(
             not grid_dir.is_dir()
             or grid_dir.is_symlink()
             or any(
-                not member.is_file() or member.is_symlink() or member.suffix.casefold() != ".log"
+                not member.is_file()
+                or member.is_symlink()
+                or member.suffix.casefold() != ".log"
                 for member in grid_dir.iterdir()
             )
         ):
@@ -4075,12 +4904,16 @@ def _prune_staged_sequence_dirs(
             not path.is_dir()
             or path.is_symlink()
             or len(path.name) != 16
-            or not all(character in "0123456789abcdef" for character in path.name.casefold())
+            or not all(
+                character in "0123456789abcdef" for character in path.name.casefold()
+            )
         ):
             return False
         members = list(path.iterdir())
         return bool(members) and all(
-            member.is_file() and not member.is_symlink() and member.name == "sequence.seq"
+            member.is_file()
+            and not member.is_symlink()
+            and member.name == "sequence.seq"
             for member in members
         )
 
@@ -4141,7 +4974,9 @@ def _execute_workflow_unlocked(
     recipe = monitor_only_recipe(exported.recipe) if monitor_only else exported.recipe
     if monitor_only and not recipe.steps:
         raise FtpSpoolError("Workflow package has no monitor rules.")
-    dataset = DataSet.from_text(exported.data_text, first_row_headers=exported.first_row_headers)
+    dataset = DataSet.from_text(
+        exported.data_text, first_row_headers=exported.first_row_headers
+    )
     rows = dataset.rows or [{}]
     stop_event = _RemoteWorkflowStopEvent(backend, node_id, job.job_id, timeout=timeout)
     output: list[str] = []
@@ -4210,7 +5045,7 @@ def _execute_workflow_unlocked(
             error = f"Timed out after {timeout:g}s."
         elif stop_event.remote_stopped:
             returncode = 130
-            error = "Stopped by master stop signal."
+            error = "관리자 PC의 긴급 중단 요청으로 중지했습니다."
         else:
             returncode = 1
             error = str(exc)
@@ -4232,7 +5067,9 @@ def _execute_workflow_unlocked(
         )
 
     returncode = 3 if monitor_failures else 0
-    stderr = f"{monitor_failures} monitor condition(s) failed." if monitor_failures else ""
+    stderr = (
+        f"{monitor_failures} monitor condition(s) failed." if monitor_failures else ""
+    )
     return _limit_result(
         JobResult(
             job_id=job.job_id,
@@ -4251,7 +5088,9 @@ def _execute_workflow_unlocked(
     )
 
 
-def _wait_for_workflow_delay(seconds: float, stop_event: _RemoteWorkflowStopEvent) -> None:
+def _wait_for_workflow_delay(
+    seconds: float, stop_event: _RemoteWorkflowStopEvent
+) -> None:
     deadline = time.monotonic() + max(0.0, seconds)
     while time.monotonic() < deadline:
         if stop_event.is_set():
@@ -4325,7 +5164,9 @@ def _execute_dram_margin(
         raise FtpSpoolError("DRAM margin job requires a package.")
     package_name = _safe_name(_render_placeholders(package, variables))
     try:
-        bundle = parse_margin_remote_bundle(backend.read_bytes(f"packages/{package_name}"))
+        bundle = parse_margin_remote_bundle(
+            backend.read_bytes(f"packages/{package_name}")
+        )
     except MarginBundleError as exc:
         raise FtpSpoolError(str(exc)) from exc
     target = bundle.manifest["target"]
@@ -4422,11 +5263,9 @@ def _execute_dram_margin(
                 f"Compressed DRAM margin artifact exceeds upload limit: {len(artifact_bytes)} bytes"
             )
         elif config.max_artifact_files <= 0:
-            details["artifact_error"] = "FTP artifact upload is disabled."
+            details["artifact_error"] = "통신 서버 결과 파일 전송이 꺼져 있습니다."
         else:
-            artifact_path = (
-                f"artifacts/{_clean_node_id(node_id)}/{_safe_name(job.job_id)}-margin.zip"
-            )
+            artifact_path = f"artifacts/{_clean_node_id(node_id)}/{_safe_name(job.job_id)}-margin.zip"
             try:
                 backend.write_bytes(artifact_path, artifact_bytes)
             except Exception as exc:
@@ -4448,12 +5287,16 @@ def _execute_dram_margin(
         limit=config.max_local_run_files,
     )
     manifest_code = campaign.get("returncode")
-    if isinstance(manifest_code, int) and code not in {124, 130} and code != manifest_code:
+    if (
+        isinstance(manifest_code, int)
+        and code not in {124, 130}
+        and code != manifest_code
+    ):
         stderr = "\n".join(
             part
             for part in (
                 stderr,
-                f"Controller exit {code} differs from campaign manifest {manifest_code}.",
+                f"실행 프로그램 종료 코드 {code}가 테스트 결과 목록의 {manifest_code}와 다릅니다.",
             )
             if part
         )
@@ -4507,7 +5350,9 @@ def _resolve_margin_channel(
 ) -> ChannelInfo:
     channels = _configured_channels(config, node_id)
     if not channels:
-        raise FtpSpoolError(f"DRAM margin target PC has no configured fixtures: {node_id}")
+        raise FtpSpoolError(
+            f"DRAM margin target PC has no configured fixtures: {node_id}"
+        )
     node = _clean_node_id(node_id)
     slave = next(
         (
@@ -4636,7 +5481,9 @@ def _run_margin_controller_process(
     if stopped:
         code = 130
         stderr = "\n".join(
-            part for part in (stderr.strip(), "Stopped by master stop signal.") if part
+            part
+            for part in (stderr.strip(), "관리자 PC의 긴급 중단 요청으로 중지했습니다.")
+            if part
         )
     elif timed_out:
         code = 124
@@ -4654,11 +5501,7 @@ def _margin_result_details(
 ) -> dict[str, Any]:
     status = str(campaign.get("status") or "execution-error")
     acceptance = (
-        "pass"
-        if status == "pass"
-        else "stopped"
-        if status == "interrupted"
-        else "fail"
+        "pass" if status == "pass" else "stopped" if status == "interrupted" else "fail"
     )
     failure_class = (
         ""
@@ -4672,26 +5515,42 @@ def _margin_result_details(
         else "automation"
     )
     target = bundle.manifest["target"]
+    hardware_identity = target.get("hardware_identity") or {"declared": False}
+    declared_identity = (
+        hardware_identity if hardware_identity.get("declared") is True else {}
+    )
+    margin_assessment = campaign.get("margin_assessment")
+    if not isinstance(margin_assessment, dict):
+        margin_assessment = {}
     return {
         "channel_id": channel.channel_id or channel.name,
         "slot_id": channel.slot_id,
-        "fixture_id": channel.fixture_id,
+        "fixture_id": channel.fixture_id or declared_identity.get("fixture_id", ""),
         "fixture_model": channel.fixture_model,
         "fixture_serial": channel.fixture_serial,
         "physical_location": channel.physical_location,
-        "soc_vendor": channel.soc_vendor,
-        "soc_model": channel.soc_model,
-        "dram_part": channel.dram_part,
+        "soc_vendor": channel.soc_vendor or declared_identity.get("soc_vendor", ""),
+        "soc_model": channel.soc_model or declared_identity.get("soc_part", ""),
+        "dram_part": channel.dram_part or declared_identity.get("dram_part_number", ""),
         "lot_id": channel.lot_id,
+        "material_id": channel.material_id,
         "sample_id": channel.sample_id,
         "current_test": f"DRAM margin: {target['backend']} / {target['execution_context']}",
         "execution_route": "dram_margin",
         "execution_origin": "master_remote",
-        "execution_phase": "stopped" if status == "interrupted" else "completed" if status == "pass" else "failed",
+        "execution_phase": "stopped"
+        if status == "interrupted"
+        else "completed"
+        if status == "pass"
+        else "failed",
         "acceptance_result": acceptance,
         "failure_class": failure_class,
         "margin_status": status,
         "margin_result": str(campaign.get("margin_result") or "not-evaluated"),
+        "margin_assessment": str(margin_assessment.get("status") or "not-evaluated"),
+        "margin_failed_assessments": int(margin_assessment.get("failed") or 0),
+        "margin_unassessed_rows": int(margin_assessment.get("unassessed") or 0),
+        "margin_raw_point_failures": bool(campaign.get("raw_point_failures", False)),
         "physical_unit_acceptance": str(
             campaign.get("physical_unit_acceptance") or "not-evaluated"
         ),
@@ -4730,7 +5589,9 @@ def _prune_margin_run_dirs(root: Path, *, preserve: Path, limit: int) -> None:
 def _remove_owned_margin_run(path: Path) -> None:
     if path.is_symlink() or not path.is_dir():
         return
-    for member in sorted(path.rglob("*"), key=lambda item: len(item.parts), reverse=True):
+    for member in sorted(
+        path.rglob("*"), key=lambda item: len(item.parts), reverse=True
+    ):
         if member.is_symlink() or member.is_file():
             member.unlink(missing_ok=True)
         elif member.is_dir():
@@ -4749,7 +5610,7 @@ def _execute_rig(
 ) -> JobResult:
     args = job.payload.get("args") or []
     if not isinstance(args, list):
-        raise FtpSpoolError("Rig job payload 'args' must be a list.")
+        raise FtpSpoolError("실장기 제어 작업의 args 값은 목록이어야 합니다.")
     argv = [_render_placeholders(str(item), variables) for item in args]
     stdout_buffer = io.StringIO()
     stderr_buffer = io.StringIO()
@@ -4822,7 +5683,7 @@ def _execute_rig(
     if journal_value:
         journal = Path(journal_value)
         if config.max_artifact_files <= 0:
-            details["artifact_error"] = "FTP firmware artifact upload is disabled."
+            details["artifact_error"] = "Binary 결과 파일 전송이 꺼져 있습니다."
         else:
             try:
                 artifact_bytes, members = build_artifact_zip_bytes(
@@ -4928,7 +5789,9 @@ def capture_screenshot(
             age = (datetime.now(timezone.utc) - latest_at).total_seconds()
             remaining = config.min_screenshot_interval_seconds - age
             if remaining > 0:
-                raise FtpSpoolError(f"Screenshot rate limit: retry after {remaining:.0f}s.")
+                raise FtpSpoolError(
+                    f"Screenshot rate limit: retry after {remaining:.0f}s."
+                )
     data = _capture_screen_png()
     name = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{_safe_name(label)}.png"
     path = f"screenshots/{node}/{name}"
@@ -4940,7 +5803,11 @@ def capture_screenshot(
 
 def list_screenshots(backend: SpoolBackend, node_id: str) -> list[str]:
     node = _clean_node_id(node_id)
-    return [f"screenshots/{node}/{name}" for name in backend.list_files(f"screenshots/{node}") if name.endswith(".png")]
+    return [
+        f"screenshots/{node}/{name}"
+        for name in backend.list_files(f"screenshots/{node}")
+        if name.endswith(".png")
+    ]
 
 
 def _latest_screenshot_time(backend: SpoolBackend, node_id: str) -> datetime | None:
@@ -4948,7 +5815,9 @@ def _latest_screenshot_time(backend: SpoolBackend, node_id: str) -> datetime | N
     for path in list_screenshots(backend, node_id):
         timestamp = PurePosixPath(path).name.split("-", 1)[0]
         try:
-            captured_at = datetime.strptime(timestamp, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+            captured_at = datetime.strptime(timestamp, "%Y%m%dT%H%M%SZ").replace(
+                tzinfo=timezone.utc
+            )
         except ValueError:
             continue
         if latest is None or captured_at > latest:
@@ -4956,14 +5825,20 @@ def _latest_screenshot_time(backend: SpoolBackend, node_id: str) -> datetime | N
     return latest
 
 
-def cleanup_node_files(backend: SpoolBackend, node_id: str, config: FtpSpoolConfig) -> None:
+def cleanup_node_files(
+    backend: SpoolBackend, node_id: str, config: FtpSpoolConfig
+) -> None:
     node = _clean_node_id(node_id)
     _prune_dir(backend, f"results/{node}", max_files=max(0, config.max_result_files))
     _prune_dir(backend, f"triage/{node}", max_files=max(0, config.max_result_files))
     _prune_dir(backend, f"logs/{node}", max_files=max(0, config.max_log_files))
-    _prune_dir(backend, f"artifacts/{node}", max_files=max(0, config.max_artifact_files))
+    _prune_dir(
+        backend, f"artifacts/{node}", max_files=max(0, config.max_artifact_files)
+    )
     _prune_dir(backend, f"archive/{node}", max_files=max(0, config.max_archive_files))
-    _prune_dir(backend, f"screenshots/{node}", max_files=max(0, config.max_screenshot_files))
+    _prune_dir(
+        backend, f"screenshots/{node}", max_files=max(0, config.max_screenshot_files)
+    )
 
 
 def _prune_dir(backend: SpoolBackend, path: str, *, max_files: int) -> None:
@@ -5084,7 +5959,9 @@ def _relative_path(path: str) -> Path:
 
 def _safe_name(value: str) -> str:
     name = PurePosixPath(value).name
-    cleaned = "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in name).strip("._")
+    cleaned = "".join(
+        ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in name
+    ).strip("._")
     return cleaned or "package"
 
 
@@ -5093,7 +5970,10 @@ def _ps_quote_for_script(value: str) -> str:
 
 
 def _clean_node_id(value: str) -> str:
-    cleaned = "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in str(value).strip())
+    cleaned = "".join(
+        ch if ch.isalnum() or ch in {"-", "_", "."} else "_"
+        for ch in str(value).strip()
+    )
     return cleaned.strip("._")
 
 
@@ -5103,4 +5983,6 @@ def _new_job_id() -> str:
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return (
+        datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    )

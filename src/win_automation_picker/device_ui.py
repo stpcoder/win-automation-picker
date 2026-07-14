@@ -50,7 +50,7 @@ from .serial_console import (
 from .topology import PortObservation, match_configured_ports
 
 
-RIG_DEVICE_CONFIG = "rig-commander.config.json"
+RIG_DEVICE_CONFIG = "fixture-device.config.json"
 
 
 class DeviceWorkspaceMixin:
@@ -74,7 +74,7 @@ class DeviceWorkspaceMixin:
         tabs.grid(row=0, column=0, sticky="nsew")
         console = ttk.Frame(tabs, padding=10)
         binary = ttk.Frame(tabs, padding=10)
-        tabs.add(console, text="4채널 콘솔")
+        tabs.add(console, text="실장기 콘솔")
         tabs.add(binary, text="Binary 업데이트")
         self.device_workspace_notebook = tabs
         self._build_serial_console_page(console)
@@ -97,7 +97,9 @@ class DeviceWorkspaceMixin:
         )
         self.device_target_combo.grid(row=0, column=1, sticky="w")
         self.device_target_combo.bind("<<ComboboxSelected>>", lambda _event: self._device_target_changed())
-        self.device_local_hint_var = tk.StringVar(value="이 PC Agent에 등록된 최대 4개 CH를 직접 연결합니다.")
+        self.device_local_hint_var = tk.StringVar(
+            value="이 실장기 PC에 등록된 최대 4대 실장기를 직접 연결합니다."
+        )
         ttk.Label(target, textvariable=self.device_local_hint_var, style="Muted.TLabel").grid(
             row=1, column=0, columnspan=5, sticky="w", pady=(7, 0)
         )
@@ -175,13 +177,13 @@ class DeviceWorkspaceMixin:
         self.device_publish_local_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
             sequence_bar,
-            text="Master 상태 공유",
+            text="관리자 PC에 상태 공유",
             variable=self.device_publish_local_var,
         ).grid(row=1, column=0, sticky="w", pady=(8, 0))
         context = ttk.Frame(sequence_bar, style="Panel.TFrame")
         context.grid(row=1, column=1, columnspan=6, sticky="ew", pady=(8, 0))
         context.columnconfigure(1, weight=1)
-        ttk.Label(context, text="시험명", style="Panel.TLabel").grid(row=0, column=0, padx=(0, 5))
+        ttk.Label(context, text="테스트 이름", style="Panel.TLabel").grid(row=0, column=0, padx=(0, 5))
         self.device_test_name_var = tk.StringVar(value="")
         ttk.Entry(context, textvariable=self.device_test_name_var, width=20).grid(
             row=0, column=1, sticky="ew", padx=(0, 10)
@@ -196,7 +198,7 @@ class DeviceWorkspaceMixin:
         ttk.Entry(context, textvariable=self.device_vdd_var, width=7).grid(
             row=0, column=5, padx=(0, 10)
         )
-        ttk.Label(context, text="시도", style="Panel.TLabel").grid(row=0, column=6, padx=(0, 5))
+        ttk.Label(context, text="실행 회차", style="Panel.TLabel").grid(row=0, column=6, padx=(0, 5))
         self.device_attempt_var = tk.StringVar(value="1")
         ttk.Spinbox(context, from_=1, to=999, width=5, textvariable=self.device_attempt_var).grid(
             row=0, column=7
@@ -212,10 +214,10 @@ class DeviceWorkspaceMixin:
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(3, weight=1)
 
-        target = ttk.Labelframe(parent, text="1  대상 CH", padding=12)
+        target = ttk.Labelframe(parent, text="1  대상 실장기", padding=12)
         target.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         target.columnconfigure(3, weight=1)
-        ttk.Label(target, text="PC").grid(row=0, column=0, padx=(0, 6))
+        ttk.Label(target, text="실장기 PC").grid(row=0, column=0, padx=(0, 6))
         self.device_binary_target_var = tk.StringVar(value="")
         self.device_binary_target_combo = ttk.Combobox(
             target,
@@ -227,7 +229,7 @@ class DeviceWorkspaceMixin:
         self.device_binary_target_combo.bind(
             "<<ComboboxSelected>>", lambda _event: self._refresh_device_binary_channels()
         )
-        ttk.Label(target, text="CH").grid(row=0, column=2, padx=(14, 6))
+        ttk.Label(target, text="실장기 번호").grid(row=0, column=2, padx=(14, 6))
         self.device_binary_channel_var = tk.StringVar(value="")
         self.device_binary_channel_combo = ttk.Combobox(
             target,
@@ -239,13 +241,13 @@ class DeviceWorkspaceMixin:
         self.device_binary_channel_combo.bind(
             "<<ComboboxSelected>>", lambda _event: self._render_device_binary_profile()
         )
-        self.device_binary_profile_var = tk.StringVar(value="대상 PC와 CH를 선택하세요.")
+        self.device_binary_profile_var = tk.StringVar(value="실장기 PC와 실장기 번호를 선택하세요.")
         ttk.Label(target, textvariable=self.device_binary_profile_var).grid(
             row=1, column=0, columnspan=4, sticky="w", pady=(9, 0)
         )
         target_actions = ttk.Frame(target)
         target_actions.grid(row=0, column=4, rowspan=2, sticky="e", padx=(14, 0))
-        ttk.Button(target_actions, text="PC 환경", command=self._submit_device_system_check).pack(
+        ttk.Button(target_actions, text="실장기 PC 환경", command=self._submit_device_system_check).pack(
             side="left", padx=(0, 6)
         )
         ttk.Button(target_actions, text="통신 점검", command=lambda: self._submit_device_probe("normal")).pack(
@@ -272,7 +274,7 @@ class DeviceWorkspaceMixin:
             text="XML 선택 · 전체 검사",
             command=self._browse_device_binary_package,
         ).grid(row=0, column=2, padx=(7, 0))
-        ttk.Label(binary, text="Release metadata").grid(
+        ttk.Label(binary, text="Binary 정보").grid(
             row=1,
             column=0,
             sticky="w",
@@ -291,7 +293,7 @@ class DeviceWorkspaceMixin:
         self.device_binary_mode_var = tk.StringVar(value="download-only")
         self.device_download_radio = ttk.Radiobutton(
             options,
-            text="Download only",
+            text="Binary만 올리기",
             variable=self.device_binary_mode_var,
             value="download-only",
             command=self._render_device_binary_profile,
@@ -307,7 +309,7 @@ class DeviceWorkspaceMixin:
         self.device_format_radio.pack(side="left", padx=(12, 0))
         self.device_provision_radio = ttk.Radiobutton(
             options,
-            text="UFS Provision only",
+            text="UFS 설정만 적용",
             variable=self.device_binary_mode_var,
             value="provision-only",
             command=self._render_device_binary_profile,
@@ -381,7 +383,7 @@ class DeviceWorkspaceMixin:
         )
         advanced["menu"] = advanced_menu
 
-        log_frame = ttk.Labelframe(parent, text="작업 결과는 오늘 작업 > PC · CH 상태에서 확인", padding=8)
+        log_frame = ttk.Labelframe(parent, text="작업 결과는 테스트 진행 > 실장기 상태에서 확인", padding=8)
         log_frame.grid(row=3, column=0, sticky="nsew")
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
@@ -641,12 +643,13 @@ class DeviceWorkspaceMixin:
         selected_node = str((slave or {}).get("node_id") or "")
         if selected_node and local_node and selected_node != local_node:
             self.device_local_hint_var.set(
-                f"{selected_node}는 원격 PC이며 Master는 그 COM을 소유하지 않습니다. 해당 PC의 Agent/콘솔을 사용하세요."
+                f"{selected_node}는 다른 실장기 PC입니다. 해당 PC의 통신 화면이나 콘솔을 사용하세요."
             )
         else:
             location = str((slave or {}).get("physical_location") or "위치 미설정")
             self.device_local_hint_var.set(
-                f"이 PC가 COM을 직접 소유합니다. 위치: {location} · 원격 요청은 FTP를 통해 Agent가 실행합니다."
+                f"이 실장기 PC가 COM을 직접 사용합니다. 위치: {location} · "
+                "관리자 PC의 요청은 통신 서버를 거쳐 이 PC의 통신 프로그램이 실행합니다."
             )
         for column, row in enumerate(channels):
             channel = ChannelInfo.from_mapping(row)
@@ -702,7 +705,7 @@ class DeviceWorkspaceMixin:
         if not channels:
             ttk.Label(
                 self.device_console_grid,
-                text="Rig 설정 > 원격 PC · CH에서 이 PC의 COM과 baud를 등록하세요.",
+                text="초기 설정 > 실장기 PC 목록에서 이 PC의 COM과 baud를 등록하세요.",
             ).grid(row=0, column=0, columnspan=4, sticky="nsew")
 
     def _device_selected_slave(self, label: str) -> dict[str, Any] | None:
@@ -771,7 +774,7 @@ class DeviceWorkspaceMixin:
             self._show_error(
                 FtpSpoolError(
                     "실시간 콘솔은 COM을 물리적으로 소유한 실장기 연결 PC에서만 열 수 있습니다. "
-                    "이 PC의 Agent Node ID 또는 Windows 이름을 연결 구조와 일치시키세요."
+                    "이 실장기 PC의 내부 식별값 또는 Windows 이름을 연결 구조와 일치시키세요."
                 )
             )
             return
@@ -929,7 +932,7 @@ class DeviceWorkspaceMixin:
                 backend = None
             node_id = self.node_id_var.get().strip() or config.node_id
             if publish_to_master and not node_id:
-                raise FtpSpoolError("Master 상태 공유에는 이 PC Node ID가 필요합니다.")
+                raise FtpSpoolError("관리자 PC에 상태를 공유하려면 이 실장기 PC 식별값이 필요합니다.")
         except BaseException as exc:
             self._show_error(exc)
             return
@@ -1046,7 +1049,7 @@ class DeviceWorkspaceMixin:
                         publish_progress(f"현장 직접 실행: {item.config.id} | {message}")
 
                 try:
-                    result_dir = Path(config.work_dir or "rig-ftp-work") / "serial-results" / re.sub(
+                    result_dir = Path(config.work_dir or "fixture-work") / "serial-results" / re.sub(
                         r"[^A-Za-z0-9_.-]+", "_", run_job.job_id
                     )
                     run_console_log = BoundedTextLog(
@@ -1220,7 +1223,7 @@ class DeviceWorkspaceMixin:
         config,
         console_log: BoundedTextLog | None = None,
     ) -> tuple[Path, dict[str, Any]]:
-        root = Path(config.work_dir or "rig-ftp-work") / "serial-results"
+        root = Path(config.work_dir or "fixture-work") / "serial-results"
         result_dir = root / re.sub(r"[^A-Za-z0-9_.-]+", "_", job_id)
         result_dir.mkdir(parents=True, exist_ok=True)
         log_path = result_dir / "console.log"
@@ -1369,7 +1372,7 @@ class DeviceWorkspaceMixin:
     def _selected_binary_channel(self) -> tuple[dict[str, Any], ChannelInfo]:
         slave = self._device_selected_slave(self.device_binary_target_var.get())
         if slave is None:
-            raise FtpSpoolError("Binary 대상 PC를 선택하세요.")
+            raise FtpSpoolError("Binary를 적용할 실장기 PC를 선택하세요.")
         requested = self.device_binary_channel_var.get().strip().casefold()
         for row in slave.get("channels", []):
             if not isinstance(row, dict):
@@ -1383,7 +1386,7 @@ class DeviceWorkspaceMixin:
         try:
             slave, channel = self._selected_binary_channel()
         except BaseException:
-            self.device_binary_profile_var.set("대상 PC와 CH를 선택하세요.")
+            self.device_binary_profile_var.set("실장기 PC와 실장기 번호를 선택하세요.")
             return
         vendor = channel.soc_vendor.casefold()
         is_qc = vendor == "qualcomm"
@@ -1598,8 +1601,8 @@ class DeviceWorkspaceMixin:
 
     def _browse_device_binary_metadata(self) -> None:
         path = filedialog.askopenfilename(
-            title="Seq Generator Binary Metadata",
-            filetypes=[("Rig Binary Metadata", "*.rigbinary.json"), ("JSON", "*.json")],
+            title="Binary 정보 불러오기",
+            filetypes=[("Binary 정보", "*.fixturebinary.json"), ("JSON", "*.json")],
         )
         if not path:
             return
@@ -1706,7 +1709,7 @@ class DeviceWorkspaceMixin:
             expected_sha256 = self._device_binary_direct_sha256
         else:
             raise FtpSpoolError(
-                "현재 PC/CH에서 XML 선택 · 전체 검사로 package 지문을 확정하거나 Release metadata를 불러오세요."
+                "현재 실장기에서 XML 선택 · 전체 검사로 파일 확인값을 확정하거나 Binary 정보를 불러오세요."
             )
         node, target, args = self._device_base_rig_args()
         args.extend(
@@ -1788,7 +1791,7 @@ class DeviceWorkspaceMixin:
         elif evidence_path.suffix.casefold() != ".zip":
             messagebox.showerror(
                 "실기 증거 검증",
-                "FTP artifact ZIP 또는 업데이트 저널의 manifest.json을 선택하세요.",
+                "통신 결과 ZIP 또는 업데이트 기록의 manifest.json을 선택하세요.",
                 parent=self,
             )
             return
@@ -1819,7 +1822,7 @@ class DeviceWorkspaceMixin:
 
     def _open_device_qualification_dialog(self) -> None:
         dialog = tk.Toplevel(self)
-        dialog.title("Binary 실기 Qualification")
+        dialog.title("Binary 실제 장비 확인")
         dialog.transient(self)
         dialog.configure(background="#f1f5f9")
         dialog.geometry("840x590")

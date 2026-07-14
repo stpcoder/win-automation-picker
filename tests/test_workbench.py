@@ -184,4 +184,4 @@ def test_readiness_rejects_stale_sequence_and_accepts_current_artifacts(tmp_path
 
     assert stale.sequence_ready is False
     assert stale.ready_to_upload is False
-    assert any("다시 빌드" in issue for issue in stale.issues)
+    assert any("다시 해야" in issue for issue in stale.issues)

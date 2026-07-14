@@ -1102,7 +1102,7 @@ def build_device_preflight_report(
             add(
                 "agent_local_adapter",
                 target.host.is_local(),
-                "Built-in firmware adapters execute only on the fixture-owning Agent PC.",
+                "내장 Binary 업데이트 기능은 해당 실장기가 연결된 실장기 PC에서만 실행됩니다.",
             )
         if tool.adapter_kind == "qualcomm-qdl":
             add(

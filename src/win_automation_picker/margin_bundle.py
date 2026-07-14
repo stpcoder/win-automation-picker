@@ -42,6 +42,8 @@ _LEGACY_TARGET_KEYS = {
     "dq_count",
 }
 _V06_TARGET_KEYS = _LEGACY_TARGET_KEYS | {"signal_target", "operating_conditions"}
+_V07_TARGET_KEYS = _V06_TARGET_KEYS | {"hardware_identity"}
+_V08_TARGET_KEYS = _V07_TARGET_KEYS | {"approved_capabilities_sha256"}
 _DIMENSION_UNITS = {
     "fixed": "none",
     "cbt-vref": "mV",
@@ -104,6 +106,9 @@ class MarginRemoteBundle:
             "backend": target["backend"],
             "execution_context": target["execution_context"],
             "soc_profile": target["soc_profile"],
+            "approved_capabilities_sha256": target.get(
+                "approved_capabilities_sha256", ""
+            ),
             "signal_target": target.get(
                 "signal_target", {"kind": "all", "physical_index": 0, "label": "ALL"}
             ),
@@ -116,6 +121,9 @@ class MarginRemoteBundle:
                     "temperature": None,
                     "rails": [],
                 },
+            ),
+            "hardware_identity": target.get(
+                "hardware_identity", {"declared": False}
             ),
             "adb_serial": target["adb_serial"],
             "sweep_count": target["sweep_count"],
@@ -178,6 +186,66 @@ def _axis_values(axis: object, label: str) -> tuple[int, ...]:
     if not values or values[-1] != stop or len(values) > 2048:
         raise MarginBundleError(f"DRAM margin {label} axis point count is invalid")
     return values
+
+
+def _validate_sweep_acceptance(
+    value: object,
+    *,
+    x_values: tuple[int, ...],
+    y_values: tuple[int, ...] | None,
+    label: str,
+) -> None:
+    if value is None:
+        return
+    keys = {
+        "source_document_kind",
+        "source_document_sha256",
+        "minimum_x_negative",
+        "minimum_x_positive",
+        "minimum_y_negative",
+        "minimum_y_positive",
+    }
+    if not isinstance(value, dict) or set(value) != keys:
+        raise MarginBundleError(f"DRAM margin {label} acceptance contract is invalid")
+    source_kind = value["source_document_kind"]
+    source_sha256 = value["source_document_sha256"]
+    if (
+        not isinstance(source_kind, str)
+        or _SAFE_ID.fullmatch(source_kind) is None
+        or not isinstance(source_sha256, str)
+        or _SHA256.fullmatch(source_sha256) is None
+    ):
+        raise MarginBundleError(f"DRAM margin {label} acceptance source is invalid")
+
+    def requirement(name: str) -> float:
+        raw = value[name]
+        if not _number(raw) or float(raw) < 0:
+            raise MarginBundleError(
+                f"DRAM margin {label} {name} requirement is invalid"
+            )
+        return float(raw)
+
+    x_negative = requirement("minimum_x_negative")
+    x_positive = requirement("minimum_x_positive")
+    if x_negative > max(0, -min(x_values)) or x_positive > max(0, max(x_values)):
+        raise MarginBundleError(
+            f"DRAM margin {label} X acceptance exceeds its sweep range"
+        )
+    if y_values is None:
+        if (
+            value["minimum_y_negative"] is not None
+            or value["minimum_y_positive"] is not None
+        ):
+            raise MarginBundleError(
+                f"DRAM margin {label} 1D acceptance cannot contain Y requirements"
+            )
+        return
+    y_negative = requirement("minimum_y_negative")
+    y_positive = requirement("minimum_y_positive")
+    if y_negative > max(0, -min(y_values)) or y_positive > max(0, max(y_values)):
+        raise MarginBundleError(
+            f"DRAM margin {label} Y acceptance exceeds its sweep range"
+        )
 
 
 def _signal_target(value: object, label: str) -> dict[str, Any]:
@@ -346,6 +414,59 @@ def _manifest_operating_conditions(value: object) -> dict[str, Any]:
     }
 
 
+def _plan_hardware_identity(value: object) -> dict[str, Any]:
+    if value is None:
+        return {"declared": False}
+    keys = {
+        "soc_vendor",
+        "soc_part",
+        "silicon_revision",
+        "dram_standard",
+        "dram_part_number",
+        "channel",
+        "rank",
+        "fixture_id",
+        "device_id",
+    }
+    if not isinstance(value, dict) or set(value) != keys:
+        raise MarginBundleError("DRAM margin plan hardware identity is invalid")
+    vendor = value["soc_vendor"]
+    standard = value["dram_standard"]
+    channel = value["channel"]
+    rank = value["rank"]
+    identifier_keys = keys - {"soc_vendor", "dram_standard", "channel", "rank"}
+    if (
+        vendor not in {"qualcomm", "mediatek"}
+        or standard not in {"LPDDR4", "LPDDR4X", "LPDDR5", "LPDDR5X"}
+        or any(
+            not isinstance(value[key], str)
+            or _SAFE_ID.fullmatch(value[key]) is None
+            for key in identifier_keys
+        )
+        or not isinstance(channel, int)
+        or isinstance(channel, bool)
+        or not 0 <= channel <= 15
+        or not isinstance(rank, int)
+        or isinstance(rank, bool)
+        or not 0 <= rank <= 15
+    ):
+        raise MarginBundleError("DRAM margin plan hardware identity is invalid")
+    return {"declared": True, **value}
+
+
+def _manifest_hardware_identity(value: object) -> dict[str, Any]:
+    if value == {"declared": False}:
+        return {"declared": False}
+    if not isinstance(value, dict) or value.get("declared") is not True:
+        raise MarginBundleError("DRAM margin manifest hardware identity is invalid")
+    normalized = _plan_hardware_identity(
+        {key: item for key, item in value.items() if key != "declared"}
+    )
+    if normalized != value:
+        raise MarginBundleError("DRAM margin manifest hardware identity is invalid")
+    return normalized
+
+
 def _validate_v2_reference_approval(
     reference: dict[str, Any], manifest: dict[str, Any]
 ) -> None:
@@ -440,9 +561,11 @@ def _validate_plan_reference_contract(
     runner_path: str,
 ) -> None:
     plan_target = plan.get("target") if isinstance(plan, dict) else None
+    plan_schema = plan.get("schema") if isinstance(plan, dict) else None
     if (
         not isinstance(plan_target, dict)
-        or plan.get("schema") != "dram-margin-plan/v3"
+        or plan_schema
+        not in {"dram-margin-plan/v3", "dram-margin-plan/v4", "dram-margin-plan/v5"}
         or plan_target.get("target_id") != target["target_id"]
         or plan_target.get("transport", "local") != target["transport"]
         or plan_target.get("backend", "fixed") != target["backend"]
@@ -492,10 +615,21 @@ def _validate_plan_reference_contract(
     point_count = 0
     dimensions: list[str] = []
     signal_target: dict[str, Any] | None = None
+    sweep_names: set[str] = set()
     for index, sweep in enumerate(sweeps):
         if not isinstance(sweep, dict):
             raise MarginBundleError(f"DRAM margin sweep {index + 1} is invalid")
         mode = sweep.get("mode")
+        sweep_name = sweep.get("name")
+        if (
+            not isinstance(sweep_name, str)
+            or _SAFE_ID.fullmatch(sweep_name) is None
+            or sweep_name.casefold() in sweep_names
+        ):
+            raise MarginBundleError(
+                f"DRAM margin sweep {index + 1} name is invalid or duplicated"
+            )
+        sweep_names.add(sweep_name.casefold())
         x = sweep.get("x")
         y = sweep.get("y")
         x_values = _axis_values(x, f"sweep {index + 1} X")
@@ -526,6 +660,12 @@ def _validate_plan_reference_contract(
             raise MarginBundleError(
                 f"DRAM margin sweep {index + 1} must contain nominal zero"
             )
+        _validate_sweep_acceptance(
+            sweep.get("acceptance"),
+            x_values=x_values,
+            y_values=None if y is None else y_values,
+            label=f"sweep {index + 1}",
+        )
         point_count += len(x_values) * len(y_values)
         sweep_target = _signal_target(sweep.get("signal_target"), f"sweep {index + 1}")
         _validate_signal_binding(sweep_target, memory, mode, f"sweep {index + 1}")
@@ -555,6 +695,17 @@ def _validate_plan_reference_contract(
     expected_conditions = _plan_operating_conditions(
         plan_target.get("operating_conditions")
     )
+    expected_hardware_identity = _plan_hardware_identity(
+        plan_target.get("hardware_identity")
+    )
+    if (
+        plan_schema in {"dram-margin-plan/v4", "dram-margin-plan/v5"}
+        and target["backend"] == "vendor"
+        and not expected_hardware_identity["declared"]
+    ):
+        raise MarginBundleError(
+            "DRAM margin plan v4 vendor target requires exact hardware identity"
+        )
     expected_signal_target = signal_target or {
         "kind": "all",
         "physical_index": 0,
@@ -571,6 +722,13 @@ def _validate_plan_reference_contract(
         raise MarginBundleError(
             "DRAM margin manifest operating conditions differ from its plan"
         )
+    if "hardware_identity" in target and (
+        _manifest_hardware_identity(target["hardware_identity"])
+        != expected_hardware_identity
+    ):
+        raise MarginBundleError(
+            "DRAM margin manifest hardware identity differs from its plan"
+        )
     if (
         not isinstance(reference, dict)
         or reference.get("schema") not in _REFERENCE_SCHEMAS
@@ -579,7 +737,16 @@ def _validate_plan_reference_contract(
     ):
         raise MarginBundleError("DRAM margin PHY reference does not match its manifest")
     spec_digest = str(safety.get("approved_register_spec_sha256") or "")
+    capability_digest = str(safety.get("approved_capabilities_sha256") or "")
     mapping_digest = str(mapping.get("source_sha256") or "")
+    if target["backend"] == "vendor" and (
+        plan_schema != "dram-margin-plan/v5"
+        or _SHA256.fullmatch(capability_digest) is None
+        or target.get("approved_capabilities_sha256") != capability_digest
+    ):
+        raise MarginBundleError(
+            "DRAM margin vendor plan or manifest capability digest is invalid"
+        )
     if (
         reference.get("approved_spec_sha256", "") != spec_digest
         or reference.get("dq_mapping_sha256", "") != mapping_digest
@@ -717,6 +884,8 @@ def parse_margin_remote_bundle(data: bytes) -> MarginRemoteBundle:
     if not isinstance(target, dict) or target_keys not in {
         frozenset(_LEGACY_TARGET_KEYS),
         frozenset(_V06_TARGET_KEYS),
+        frozenset(_V07_TARGET_KEYS),
+        frozenset(_V08_TARGET_KEYS),
     }:
         raise MarginBundleError("DRAM margin target metadata is invalid")
     sweep_count = target.get("sweep_count")
@@ -746,6 +915,21 @@ def parse_margin_remote_bundle(data: bytes) -> MarginRemoteBundle:
     if target_keys == frozenset(_V06_TARGET_KEYS):
         _signal_target(target["signal_target"], "manifest")
         _manifest_operating_conditions(target["operating_conditions"])
+    elif target_keys in {
+        frozenset(_V07_TARGET_KEYS),
+        frozenset(_V08_TARGET_KEYS),
+    }:
+        _signal_target(target["signal_target"], "manifest")
+        _manifest_operating_conditions(target["operating_conditions"])
+        _manifest_hardware_identity(target["hardware_identity"])
+        if target_keys == frozenset(_V08_TARGET_KEYS) and (
+            not isinstance(target["approved_capabilities_sha256"], str)
+            or (
+                target["approved_capabilities_sha256"]
+                and _SHA256.fullmatch(target["approved_capabilities_sha256"]) is None
+            )
+        ):
+            raise MarginBundleError("DRAM margin target capability digest is invalid")
     artifacts = manifest["artifacts"]
     plan_path = str(artifacts["plan"]["path"])
     reference_path = str(artifacts["reference"]["path"])
@@ -829,6 +1013,42 @@ def _verify_staged_bundle(bundle: MarginRemoteBundle, destination: Path) -> None
             raise MarginBundleError(f"Staged DRAM margin member changed: {relative}")
 
 
+def _validate_campaign_margin_assessment(manifest: dict[str, Any]) -> None:
+    assessment = manifest.get("margin_assessment")
+    if assessment is None:
+        return
+    if assessment == {"status": "pending"}:
+        return
+    keys = {"status", "rows", "passed", "failed", "unassessed"}
+    if not isinstance(assessment, dict) or set(assessment) != keys:
+        raise MarginBundleError("DRAM 마진 최소 기준 판정 정보가 올바르지 않습니다")
+    counts = [assessment[key] for key in ("rows", "passed", "failed", "unassessed")]
+    if (
+        assessment["status"] not in {"PASS", "FAIL", "UNASSESSED"}
+        or any(
+            not isinstance(value, int) or isinstance(value, bool) or value < 0
+            for value in counts
+        )
+        or assessment["rows"]
+        != assessment["passed"] + assessment["failed"] + assessment["unassessed"]
+        or (assessment["status"] == "PASS" and assessment["failed"] + assessment["unassessed"])
+        or (assessment["status"] == "FAIL" and assessment["failed"] == 0)
+        or (assessment["status"] == "UNASSESSED" and assessment["unassessed"] == 0)
+        or (
+            assessment["status"] == "PASS"
+            and manifest.get("margin_result") != "pass"
+        )
+        or (
+            assessment["status"] == "FAIL"
+            and manifest.get("margin_result") != "fail"
+        )
+    ):
+        raise MarginBundleError("DRAM 마진 최소 기준 판정 정보가 올바르지 않습니다")
+    raw_point_failures = manifest.get("raw_point_failures")
+    if raw_point_failures is not None and not isinstance(raw_point_failures, bool):
+        raise MarginBundleError("DRAM 마진 원시 실패 point 정보가 올바르지 않습니다")
+
+
 def build_margin_campaign_artifact(
     result_dir: str | Path,
     *,
@@ -841,11 +1061,11 @@ def build_margin_campaign_artifact(
         manifest = json.loads(manifest_data.decode("utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise MarginBundleError(
-            f"Cannot read DRAM margin campaign manifest: {exc}"
+            f"DRAM 마진 테스트 결과 목록을 읽을 수 없습니다: {exc}"
         ) from exc
     files = manifest.get("files") if isinstance(manifest, dict) else None
     if manifest.get("schema") != CAMPAIGN_SCHEMA or not isinstance(files, list):
-        raise MarginBundleError("DRAM margin campaign manifest schema is invalid")
+        raise MarginBundleError("DRAM 마진 테스트 결과 목록 형식이 올바르지 않습니다")
     status = manifest.get("status")
     returncode = manifest.get("returncode")
     expected_codes = {
@@ -870,15 +1090,16 @@ def build_margin_campaign_artifact(
         or isinstance(manifest.get("result_rows", 0), bool)
         or int(manifest.get("result_rows", 0)) < 0
     ):
-        raise MarginBundleError("DRAM margin campaign outcome contract is invalid")
+        raise MarginBundleError("DRAM 마진 테스트 판정 정보가 올바르지 않습니다")
+    _validate_campaign_margin_assessment(manifest)
     if len(files) > MAX_CAMPAIGN_FILES:
-        raise MarginBundleError("DRAM margin campaign contains too many files")
+        raise MarginBundleError("DRAM 마진 테스트 결과 파일이 너무 많습니다")
     ordered: list[tuple[str, bytes]] = [("campaign-manifest.json", manifest_data)]
     expected_paths = {"campaign-manifest.json"}
     total = len(manifest_data)
     for row in files:
         if not isinstance(row, dict):
-            raise MarginBundleError("DRAM margin campaign file metadata is invalid")
+            raise MarginBundleError("DRAM 마진 테스트 파일 정보가 올바르지 않습니다")
         relative = _safe_member_path(row.get("path"))
         size = row.get("size")
         digest = row.get("sha256")
@@ -892,11 +1113,11 @@ def build_margin_campaign_artifact(
             or not path.is_file()
             or path.is_symlink()
         ):
-            raise MarginBundleError(f"DRAM margin campaign file is invalid: {relative}")
+            raise MarginBundleError(f"DRAM 마진 테스트 파일이 올바르지 않습니다: {relative}")
         data = path.read_bytes()
         if len(data) != size or _digest(data) != digest:
             raise MarginBundleError(
-                f"DRAM margin campaign checksum mismatch: {relative}"
+                f"DRAM 마진 테스트 파일의 확인값이 일치하지 않습니다: {relative}"
             )
         expected_paths.add(relative)
         ordered.append((relative, data))
@@ -904,15 +1125,15 @@ def build_margin_campaign_artifact(
     actual_paths: set[str] = set()
     for path in root.rglob("*"):
         if path.is_symlink():
-            raise MarginBundleError("DRAM margin campaign folder contains a symlink")
+            raise MarginBundleError("DRAM 마진 테스트 폴더에는 바로가기 파일을 넣을 수 없습니다")
         if path.is_file():
             actual_paths.add(path.relative_to(root).as_posix())
     if actual_paths != expected_paths:
-        raise MarginBundleError("DRAM margin campaign folder contains unindexed files")
+        raise MarginBundleError("DRAM 마진 테스트 폴더에 목록에 없는 파일이 있습니다")
     limit = max(1024, int(max_uncompressed_bytes))
     if total > limit:
         raise MarginBundleError(
-            f"DRAM margin campaign is {total} bytes; configured artifact limit is {limit}"
+            f"DRAM 마진 테스트 결과는 {total}바이트로, 설정한 보관 한도 {limit}바이트를 넘습니다"
         )
     buffer = io.BytesIO()
     with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:

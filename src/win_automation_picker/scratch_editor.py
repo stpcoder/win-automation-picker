@@ -266,7 +266,7 @@ class ScratchWorkspace(tk.Canvas):
             x + 36,
             y + height / 2 - 2,
             anchor="w",
-            text="매크로를 실행하면",
+            text="자동 실행 순서를 실행하면",
             fill="#ffffff",
             font=("TkDefaultFont", self._layout.title_font, "bold"),
         )

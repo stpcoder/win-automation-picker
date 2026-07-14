@@ -31,136 +31,251 @@ from .ftp_spool import (
 )
 
 
-DEFAULT_CONFIG = "rig-ftp.info"
-LEGACY_CONFIG = "rig-ftp.config.json"
-DEFAULT_CONFIG_FILES = (DEFAULT_CONFIG, LEGACY_CONFIG)
+DEFAULT_CONFIG = "fixture-connection.info"
+LEGACY_CONFIG = "rig-ftp.info"
+LEGACY_JSON_CONFIG = "rig-ftp.config.json"
+DEFAULT_CONFIG_FILES = (DEFAULT_CONFIG, LEGACY_CONFIG, LEGACY_JSON_CONFIG)
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="rig-ftp",
-        description="Distribute macro and rig jobs through an FTP-backed master/slave spool.",
+        prog="fixture-communication",
+        description="통신 서버를 통해 여러 실장기 PC의 테스트 실행과 상태 확인을 관리합니다.",
     )
     parser.add_argument(
         "-c",
         "--config",
         default=DEFAULT_CONFIG,
-        help=f"Path to FTP spool config JSON/info. Default search: {', '.join(DEFAULT_CONFIG_FILES)}",
+        help=f"통신 설정 파일 경로입니다. 기본값: {DEFAULT_CONFIG}",
     )
     parser.add_argument(
         "--local-root",
         default="",
-        help="Use a local folder as the spool backend instead of FTP. Useful for tests and dry lab trials.",
+        help="통신 서버 대신 로컬 폴더를 사용합니다. 기능 점검용입니다.",
     )
     subparsers = parser.add_subparsers(dest="command_name", required=True)
 
-    init_config = subparsers.add_parser("init-config", help="Write an example FTP spool config.")
-    init_config.add_argument("-o", "--output", default=DEFAULT_CONFIG, help="Output config path.")
-    init_config.add_argument("--force", action="store_true", help="Overwrite an existing config.")
+    init_config = subparsers.add_parser(
+        "init-config", help="통신 설정 예시 파일을 만듭니다."
+    )
+    init_config.add_argument(
+        "-o", "--output", default=DEFAULT_CONFIG, help="저장 경로입니다."
+    )
+    init_config.add_argument(
+        "--force", action="store_true", help="기존 파일을 덮어씁니다."
+    )
     init_config.set_defaults(func=_cmd_init_config)
 
-    init_server = subparsers.add_parser("init-server", help="Create the FTP spool folder structure.")
-    init_server.add_argument("--node", action="append", default=[], help="Pre-create folders for this slave node.")
+    init_server = subparsers.add_parser(
+        "init-server", help="통신 서버의 전용 폴더를 만듭니다."
+    )
+    init_server.add_argument(
+        "--fixture-pc",
+        dest="node",
+        action="append",
+        default=[],
+        help="미리 준비할 실장기 PC 내부 식별값입니다.",
+    )
     init_server.set_defaults(func=_cmd_init_server)
 
-    deploy = subparsers.add_parser("deploy", help="Upload an exported macro or helper script to packages/.")
-    deploy.add_argument("--file", required=True, help="Local file to upload.")
-    deploy.add_argument("--name", default="", help="Package name on the spool. Defaults to file name.")
-    deploy.add_argument("--title", default="", help="Human-readable package title.")
-    deploy.add_argument("--notes", default="", help="Package notes shown in GUI package lists.")
+    deploy = subparsers.add_parser(
+        "deploy", help="자동 실행 순서 또는 SEQ를 통신 서버에 올립니다."
+    )
+    deploy.add_argument("--file", required=True, help="올릴 파일의 로컬 경로입니다.")
+    deploy.add_argument("--name", default="", help="통신 서버에서 사용할 파일명입니다.")
+    deploy.add_argument("--title", default="", help="목록에 표시할 제목입니다.")
+    deploy.add_argument("--notes", default="", help="목록에 표시할 설명입니다.")
     deploy.set_defaults(func=_cmd_deploy)
 
-    packages = subparsers.add_parser("packages", help="List uploaded macro packages.")
-    packages.add_argument("--json", action="store_true", help="Print JSON.")
+    packages = subparsers.add_parser(
+        "packages", help="통신 서버에 올린 실행 파일을 표시합니다."
+    )
+    packages.add_argument(
+        "--json", action="store_true", help="JSON 형식으로 표시합니다."
+    )
     packages.set_defaults(func=_cmd_packages)
 
-    submit_python = subparsers.add_parser("submit-python", help="Submit a package-backed Python job.")
+    submit_python = subparsers.add_parser(
+        "submit-python", help="Python 실행 파일을 전송합니다."
+    )
     _add_submit_args(submit_python)
-    submit_python.add_argument("--package", required=True, help="Package file under packages/, e.g. smoke.py.")
-    submit_python.add_argument("--arg", action="append", default=[], help="Argument passed to the Python script.")
+    submit_python.add_argument(
+        "--package", required=True, help="통신 서버에 올린 Python 파일명입니다."
+    )
+    submit_python.add_argument(
+        "--arg", action="append", default=[], help="Python 파일에 전달할 인자입니다."
+    )
     submit_python.set_defaults(func=_cmd_submit_python)
 
     submit_workflow = subparsers.add_parser(
         "submit-workflow",
-        help="Submit an exported workflow for the slave's embedded runner.",
+        help="자동 실행 순서를 실장기 PC에 전송합니다.",
     )
     _add_submit_args(submit_workflow)
-    submit_workflow.add_argument("--package", required=True, help="Exported workflow under packages/.")
+    submit_workflow.add_argument(
+        "--package", required=True, help="통신 서버에 올린 자동 실행 순서 파일명입니다."
+    )
     submit_workflow.set_defaults(func=_cmd_submit_workflow)
 
     submit_monitor = subparsers.add_parser(
         "submit-monitor",
-        help="Evaluate only monitor blocks from an exported workflow.",
+        help="자동 실행 순서의 상태 확인 항목만 한 번 검사합니다.",
     )
     _add_submit_args(submit_monitor)
-    submit_monitor.add_argument("--package", required=True, help="Exported workflow under packages/.")
+    submit_monitor.add_argument(
+        "--package", required=True, help="통신 서버에 올린 자동 실행 순서 파일명입니다."
+    )
     submit_monitor.set_defaults(func=_cmd_submit_monitor)
 
     submit_margin = subparsers.add_parser(
         "submit-margin",
-        help="Submit a checksummed DRAM margin campaign bundle to one fixture PC.",
+        help="검사 완료된 DRAM 마진 테스트 실행 파일을 실장기 PC 한 대에 전송합니다.",
     )
     _add_submit_args(submit_margin)
-    submit_margin.add_argument("--package", required=True, help="*.drammargin.zip under packages/.")
+    submit_margin.add_argument(
+        "--package",
+        required=True,
+        help="통신 서버에 올린 DRAM 마진 테스트 파일명입니다.",
+    )
     submit_margin.add_argument("--probe-timeout", type=float, default=120.0)
     submit_margin.add_argument("--sweep-timeout", type=float, default=3600.0)
     submit_margin.set_defaults(func=_cmd_submit_margin)
 
-    submit_shell = subparsers.add_parser("submit-shell", help="Submit a shell command job.")
+    submit_shell = subparsers.add_parser(
+        "submit-shell", help="고급 사용자용 명령을 전송합니다."
+    )
     _add_submit_args(submit_shell)
     command_group = submit_shell.add_mutually_exclusive_group(required=True)
-    command_group.add_argument("--command", help="Shell command line.")
-    command_group.add_argument("--args", nargs=argparse.REMAINDER, help="Executable and arguments without shell parsing.")
-    submit_shell.add_argument("--cwd", default="", help="Working directory on the slave.")
+    command_group.add_argument("--command", help="실행할 명령 한 줄입니다.")
+    command_group.add_argument(
+        "--args", nargs=argparse.REMAINDER, help="실행 파일과 인자 목록입니다."
+    )
+    submit_shell.add_argument("--cwd", default="", help="실장기 PC의 작업 폴더입니다.")
     submit_shell.set_defaults(func=_cmd_submit_shell)
 
-    submit_rig = subparsers.add_parser("submit-rig", help="Submit a rig-commander argument list.")
-    _add_submit_args(submit_rig)
-    submit_rig.add_argument("rig_args", nargs=argparse.REMAINDER, help="Arguments after -- are passed to rig-commander.")
-    submit_rig.set_defaults(func=_cmd_submit_rig)
+    submit_device = subparsers.add_parser(
+        "submit-device", help="실장기 직접 제어 명령을 전송합니다."
+    )
+    _add_submit_args(submit_device)
+    submit_device.add_argument(
+        "device_args",
+        nargs=argparse.REMAINDER,
+        help="-- 뒤의 인자를 실장기 직접 제어 프로그램에 전달합니다.",
+    )
+    submit_device.set_defaults(func=_cmd_submit_device)
 
-    screenshot = subparsers.add_parser("screenshot", help="Request a full-screen screenshot from slave nodes.")
-    screenshot.add_argument("--target", action="append", default=[], help="Slave node id. Default: all.")
-    screenshot.add_argument("--job-id", default="", help="Optional explicit job id.")
-    screenshot.add_argument("--label", default="manual", help="Screenshot label used in the output file name.")
+    screenshot = subparsers.add_parser(
+        "screenshot", help="실장기 PC의 전체 화면을 요청합니다."
+    )
+    screenshot.add_argument(
+        "--target",
+        action="append",
+        default=[],
+        help="실장기 PC 내부 식별값입니다. 기본값은 전체입니다.",
+    )
+    screenshot.add_argument(
+        "--job-id", default="", help="필요할 때 지정하는 작업 ID입니다."
+    )
+    screenshot.add_argument(
+        "--label", default="manual", help="화면 파일명에 넣을 구분 이름입니다."
+    )
     screenshot.set_defaults(func=_cmd_screenshot)
 
-    stop = subparsers.add_parser("stop", help="Request emergency stop on slave nodes.")
-    stop.add_argument("--target", action="append", default=[], help="Slave node id. Default: all.")
-    stop.add_argument("--job-id", default="", help="Optional job id to stop. Empty stops the current/next job.")
-    stop.add_argument("--reason", default="", help="Reason recorded in the stop file.")
+    stop = subparsers.add_parser("stop", help="실장기 PC에 긴급 중단을 요청합니다.")
+    stop.add_argument(
+        "--target",
+        action="append",
+        default=[],
+        help="실장기 PC 내부 식별값입니다. 기본값은 전체입니다.",
+    )
+    stop.add_argument(
+        "--job-id",
+        default="",
+        help="중단할 작업 ID입니다. 비우면 현재 또는 다음 작업을 중단합니다.",
+    )
+    stop.add_argument("--reason", default="", help="중단 이유입니다.")
     stop.set_defaults(func=_cmd_stop)
 
-    clear_stop_parser = subparsers.add_parser("clear-stop", help="Clear stop signal for slave nodes.")
-    clear_stop_parser.add_argument("--target", action="append", default=[], help="Slave node id. Default: all.")
+    clear_stop_parser = subparsers.add_parser(
+        "clear-stop", help="긴급 중단 신호를 해제합니다."
+    )
+    clear_stop_parser.add_argument(
+        "--target",
+        action="append",
+        default=[],
+        help="실장기 PC 내부 식별값입니다. 기본값은 전체입니다.",
+    )
     clear_stop_parser.set_defaults(func=_cmd_clear_stop)
 
-    slave = subparsers.add_parser("slave", help="Run slave polling loop.")
-    slave.add_argument("--node-id", default="", help="Override config runtime.node_id.")
-    slave.add_argument("--once", action="store_true", help="Poll and execute once, then exit.")
-    slave.add_argument("--count", type=int, default=0, help="Polling rounds. 0 means forever unless --once.")
-    slave.set_defaults(func=_cmd_slave)
+    fixture_pc = subparsers.add_parser(
+        "fixture-pc", help="실장기 PC에서 새 테스트 요청을 확인합니다."
+    )
+    fixture_pc.add_argument(
+        "--fixture-pc",
+        dest="node_id",
+        default="",
+        help="실장기 PC 내부 식별값을 지정합니다.",
+    )
+    fixture_pc.add_argument(
+        "--once", action="store_true", help="한 번 확인한 뒤 종료합니다."
+    )
+    fixture_pc.add_argument(
+        "--count", type=int, default=0, help="확인 횟수입니다. 0은 계속 확인합니다."
+    )
+    fixture_pc.set_defaults(func=_cmd_fixture_pc)
 
-    status = subparsers.add_parser("status", help="Print slave status rows.")
-    status.add_argument("--json", action="store_true", help="Print JSON.")
+    status = subparsers.add_parser("status", help="실장기 PC 상태를 표시합니다.")
+    status.add_argument("--json", action="store_true", help="JSON 형식으로 표시합니다.")
     status.set_defaults(func=_cmd_status)
 
-    results = subparsers.add_parser("results", help="Print result rows for one slave node.")
-    results.add_argument("--node-id", required=True, help="Slave node id.")
-    results.add_argument("--json", action="store_true", help="Print JSON.")
+    results = subparsers.add_parser(
+        "results", help="실장기 PC 한 대의 결과를 표시합니다."
+    )
+    results.add_argument(
+        "--fixture-pc",
+        dest="node_id",
+        required=True,
+        help="실장기 PC 내부 식별값입니다.",
+    )
+    results.add_argument(
+        "--json", action="store_true", help="JSON 형식으로 표시합니다."
+    )
     results.set_defaults(func=_cmd_results)
 
-    screenshots = subparsers.add_parser("screenshots", help="List screenshot files for one slave node.")
-    screenshots.add_argument("--node-id", required=True, help="Slave node id.")
+    screenshots = subparsers.add_parser(
+        "screenshots", help="실장기 PC의 화면 파일을 표시합니다."
+    )
+    screenshots.add_argument(
+        "--fixture-pc",
+        dest="node_id",
+        required=True,
+        help="실장기 PC 내부 식별값입니다.",
+    )
     screenshots.set_defaults(func=_cmd_screenshots)
 
-    cleanup = subparsers.add_parser("cleanup", help="Apply retention cleanup for one slave node.")
-    cleanup.add_argument("--node-id", required=True, help="Slave node id.")
+    cleanup = subparsers.add_parser(
+        "cleanup", help="실장기 PC의 오래된 통신 파일을 정리합니다."
+    )
+    cleanup.add_argument(
+        "--fixture-pc",
+        dest="node_id",
+        required=True,
+        help="실장기 PC 내부 식별값입니다.",
+    )
     cleanup.set_defaults(func=_cmd_cleanup)
 
-    monitor = subparsers.add_parser("monitor", help="Repeat status display.")
-    monitor.add_argument("--interval", type=float, default=5.0, help="Seconds between status polls.")
-    monitor.add_argument("--count", type=int, default=0, help="Number of polls. 0 means until Ctrl+C.")
+    monitor = subparsers.add_parser(
+        "monitor", help="실장기 PC 상태를 반복해서 표시합니다."
+    )
+    monitor.add_argument(
+        "--interval", type=float, default=5.0, help="상태 확인 간격(초)입니다."
+    )
+    monitor.add_argument(
+        "--count",
+        type=int,
+        default=0,
+        help="확인 횟수입니다. 0은 Ctrl+C 전까지 계속합니다.",
+    )
     monitor.set_defaults(func=_cmd_monitor)
 
     return parser
@@ -178,10 +293,10 @@ def main(argv: Sequence[str] | None = None, *, gui_on_empty: bool = True) -> int
     try:
         return int(args.func(args) or 0)
     except FtpSpoolError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        print(f"오류: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
-        print("stopped", file=sys.stderr)
+        print("중지됨", file=sys.stderr)
         return 130
 
 
@@ -190,34 +305,43 @@ def _add_submit_args(parser: argparse.ArgumentParser) -> None:
         "--target",
         action="append",
         default=[],
-        help="Slave node id. Repeat for multiple nodes. Use all to broadcast.",
+        help="실장기 PC 내부 식별값입니다. 여러 대면 반복하고, 전체는 all을 사용합니다.",
     )
-    parser.add_argument("--job-id", default="", help="Optional explicit job id.")
-    parser.add_argument("--timeout", type=float, default=0.0, help="Job timeout seconds. 0 means no timeout.")
+    parser.add_argument(
+        "--job-id", default="", help="필요할 때 지정하는 작업 ID입니다."
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=0.0,
+        help="제한 시간(초)입니다. 0은 제한하지 않습니다.",
+    )
     parser.add_argument(
         "--var",
         action="append",
         default=[],
-        help="Job variable KEY=VALUE. Use [KEY] or {KEY} placeholders in commands and args.",
+        help="실장기별 입력값 KEY=VALUE입니다. 명령에서는 [KEY] 또는 {KEY}로 사용합니다.",
     )
 
 
 def _cmd_init_config(args: argparse.Namespace) -> int:
     path = write_example_spool_config(args.output, force=bool(args.force))
-    print(f"Wrote {path}")
+    print(f"통신 설정 파일 저장: {path}")
     return 0
 
 
 def _cmd_init_server(args: argparse.Namespace) -> int:
     config, backend = _load(args)
     initialize_spool(backend, nodes=args.node)
-    print(f"Initialized spool root {config.root_dir}")
+    print(f"통신 서버 폴더 준비 완료: {config.root_dir}")
     return 0
 
 
 def _cmd_deploy(args: argparse.Namespace) -> int:
     _config, backend = _load(args)
-    remote_path = deploy_package(backend, args.file, name=args.name, title=args.title, notes=args.notes)
+    remote_path = deploy_package(
+        backend, args.file, name=args.name, title=args.title, notes=args.notes
+    )
     print(remote_path)
     return 0
 
@@ -226,10 +350,16 @@ def _cmd_packages(args: argparse.Namespace) -> int:
     _config, backend = _load(args)
     packages = list_packages(backend)
     if args.json:
-        print(json.dumps([package.to_mapping() for package in packages], indent=2, ensure_ascii=True))
+        print(
+            json.dumps(
+                [package.to_mapping() for package in packages],
+                indent=2,
+                ensure_ascii=True,
+            )
+        )
         return 0
     if not packages:
-        print("No packages have been uploaded.")
+        print("등록된 SEQ 또는 자동 실행 순서가 없습니다.")
         return 0
     for package in packages:
         title = f" | {package.title}" if package.title else ""
@@ -277,10 +407,16 @@ def _cmd_submit_monitor(args: argparse.Namespace) -> int:
 
 
 def _cmd_submit_margin(args: argparse.Namespace) -> int:
-    if not args.target or any(str(target).casefold() == "all" for target in args.target):
-        raise FtpSpoolError("DRAM margin requires exactly one explicit fixture PC target.")
+    if not args.target or any(
+        str(target).casefold() == "all" for target in args.target
+    ):
+        raise FtpSpoolError(
+            "DRAM margin requires exactly one explicit fixture PC target."
+        )
     if len(args.target) != 1:
-        raise FtpSpoolError("DRAM margin accepts one fixture PC per job.")
+        raise FtpSpoolError(
+            "DRAM 마진 작업 한 건에는 실장기 PC 한 대만 선택할 수 있습니다."
+        )
     job = _job(
         args,
         kind="dram_margin",
@@ -309,19 +445,19 @@ def _cmd_submit_shell(args: argparse.Namespace) -> int:
     return _submit(args, _job(args, kind="shell", payload=payload))
 
 
-def _cmd_submit_rig(args: argparse.Namespace) -> int:
-    rig_args = list(args.rig_args)
-    if rig_args and rig_args[0] == "--":
-        rig_args = rig_args[1:]
-    if not rig_args:
-        raise FtpSpoolError("submit-rig requires rig-commander args after --.")
+def _cmd_submit_device(args: argparse.Namespace) -> int:
+    device_args = list(args.device_args)
+    if device_args and device_args[0] == "--":
+        device_args = device_args[1:]
+    if not device_args:
+        raise FtpSpoolError("submit-device 뒤에 --와 실장기 제어 인자를 입력하세요.")
     return _submit(
         args,
         _job(
             args,
             kind="rig",
             payload={
-                "args": rig_args,
+                "args": device_args,
                 "timeout_seconds": float(args.timeout or 0.0),
             },
         ),
@@ -351,11 +487,11 @@ def _cmd_clear_stop(args: argparse.Namespace) -> int:
     targets = args.target or ["all"]
     for target in targets:
         clear_stop(backend, target)
-        print(f"cleared control/{target}/stop.json")
+        print(f"긴급 중단 신호 해제: {target}")
     return 0
 
 
-def _cmd_slave(args: argparse.Namespace) -> int:
+def _cmd_fixture_pc(args: argparse.Namespace) -> int:
     config, backend = _load(args)
     if args.once:
         node = args.node_id or config.node_id
@@ -369,7 +505,12 @@ def _cmd_slave(args: argparse.Namespace) -> int:
             if result.stderr:
                 print(result.stderr, file=sys.stderr)
         return 0 if all(result.ok for result in results) else 1
-    slave_loop(backend, config, node_id=args.node_id or None, count=max(0, int(args.count or 0)))
+    slave_loop(
+        backend,
+        config,
+        node_id=args.node_id or None,
+        count=max(0, int(args.count or 0)),
+    )
     return 0
 
 
@@ -391,7 +532,9 @@ def _cmd_results(args: argparse.Namespace) -> int:
         return 0
     for row in rows:
         state = "OK" if row.get("ok") else "FAIL"
-        print(f"[{state}] {row.get('node_id')} {row.get('job_id')} {row.get('kind')} rc={row.get('returncode')}")
+        print(
+            f"[{state}] {row.get('node_id')} {row.get('job_id')} {row.get('kind')} rc={row.get('returncode')}"
+        )
     return 0
 
 
@@ -405,7 +548,7 @@ def _cmd_screenshots(args: argparse.Namespace) -> int:
 def _cmd_cleanup(args: argparse.Namespace) -> int:
     config, backend = _load(args)
     cleanup_node_files(backend, args.node_id, config)
-    print(f"Cleaned retained files for {args.node_id}")
+    print(f"오래된 통신 파일 정리 완료: {args.node_id}")
     return 0
 
 
@@ -445,7 +588,9 @@ def _submit(args: argparse.Namespace, job: SpoolJob) -> int:
     return 0
 
 
-def _job(args: argparse.Namespace, *, kind: str, payload: dict[str, object]) -> SpoolJob:
+def _job(
+    args: argparse.Namespace, *, kind: str, payload: dict[str, object]
+) -> SpoolJob:
     return SpoolJob.create(
         kind=kind,
         payload=payload,
@@ -458,11 +603,11 @@ def _parse_vars(items: Sequence[str]) -> dict[str, str]:
     result: dict[str, str] = {}
     for item in items:
         if "=" not in item:
-            raise FtpSpoolError(f"Variable must be KEY=VALUE: {item}")
+            raise FtpSpoolError(f"입력값은 이름=값 형식으로 적어야 합니다: {item}")
         key, value = item.split("=", 1)
         key = key.strip()
         if not key:
-            raise FtpSpoolError(f"Variable key is empty: {item}")
+            raise FtpSpoolError(f"입력값 이름이 비어 있습니다: {item}")
         result[key] = value
     return result
 
@@ -492,7 +637,7 @@ def _resolve_config_path(path: str) -> Path:
 
 def _print_status(rows: Sequence[dict[str, object]]) -> None:
     if not rows:
-        print("No slave status has been published.")
+        print("아직 실장기 PC 상태가 올라오지 않았습니다.")
         return
     for row in rows:
         print(

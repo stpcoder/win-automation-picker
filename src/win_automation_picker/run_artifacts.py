@@ -453,7 +453,7 @@ def _render_grid_log(
     status: str,
 ) -> str:
     lines = [
-        "# Rig Grid Log",
+        "# 실장기 Grid Log",
         f"grid_index={descriptor.index}",
         f"grid_name={descriptor.name}",
         f"status={status}",
