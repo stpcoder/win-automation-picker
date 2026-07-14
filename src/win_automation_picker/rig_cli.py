@@ -38,7 +38,7 @@ from .rig import (
     select_serial_targets,
     write_example_config,
 )
-from .windows_compat import assess_windows_environment
+from .windows_compat import assess_windows_environment, configure_windows_console_utf8
 
 
 DEFAULT_CONFIG = "fixture-device.config.json"
@@ -329,6 +329,7 @@ def main(
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
     cancel_callback: Callable[[], bool] | None = None,
 ) -> int:
+    configure_windows_console_utf8()
     args_list = list(sys.argv[1:] if argv is None else argv)
     if not args_list:
         return interactive_loop()

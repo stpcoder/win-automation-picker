@@ -29,6 +29,7 @@ from .ftp_spool import (
     submit_job,
     write_example_spool_config,
 )
+from .windows_compat import configure_windows_console_utf8
 
 
 DEFAULT_CONFIG = "fixture-connection.info"
@@ -282,6 +283,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None, *, gui_on_empty: bool = True) -> int:
+    configure_windows_console_utf8()
     raw_args = list(sys.argv[1:] if argv is None else argv)
     if not raw_args and gui_on_empty:
         return _run_gui()

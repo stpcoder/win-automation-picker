@@ -1,4 +1,20 @@
-from win_automation_picker.windows_compat import assess_windows_environment
+import io
+
+from win_automation_picker.windows_compat import (
+    assess_windows_environment,
+    configure_windows_console_utf8,
+)
+
+
+def test_configure_windows_console_utf8_handles_korean_on_legacy_code_page() -> None:
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding="cp1252")
+
+    configure_windows_console_utf8(platform_name="win32", streams=(stream,))
+    stream.write("실장기")
+    stream.flush()
+
+    assert raw.getvalue().decode("utf-8") == "실장기"
 
 
 def test_windows_11_environment_reports_ready() -> None:
