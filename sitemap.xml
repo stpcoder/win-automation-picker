@@ -2,54 +2,102 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://stpcoder.github.io/win-automation-picker/</loc>
-         <lastmod>2026-07-14</lastmod>
+         <lastmod>2026-07-15</lastmod>
     </url>
     <url>
          <loc>https://stpcoder.github.io/win-automation-picker/operation/</loc>
-         <lastmod>2026-07-14</lastmod>
+         <lastmod>2026-07-15</lastmod>
+    </url>
+    <url>
+         <loc>https://stpcoder.github.io/win-automation-picker/operation/automation-recording/</loc>
+         <lastmod>2026-07-15</lastmod>
+    </url>
+    <url>
+         <loc>https://stpcoder.github.io/win-automation-picker/operation/direct-control-binary/</loc>
+         <lastmod>2026-07-15</lastmod>
     </url>
     <url>
          <loc>https://stpcoder.github.io/win-automation-picker/operation/dram-margin/</loc>
-         <lastmod>2026-07-14</lastmod>
+         <lastmod>2026-07-15</lastmod>
     </url>
     <url>
          <loc>https://stpcoder.github.io/win-automation-picker/operation/fixture-info/</loc>
-         <lastmod>2026-07-14</lastmod>
+         <lastmod>2026-07-15</lastmod>
+    </url>
+    <url>
+         <loc>https://stpcoder.github.io/win-automation-picker/operation/monitoring-detail/</loc>
+         <lastmod>2026-07-15</lastmod>
+    </url>
+    <url>
+         <loc>https://stpcoder.github.io/win-automation-picker/operation/multi-pc-operation/</loc>
+         <lastmod>2026-07-15</lastmod>
     </url>
     <url>
          <loc>https://stpcoder.github.io/win-automation-picker/operation/prepare/</loc>
-         <lastmod>2026-07-14</lastmod>
+         <lastmod>2026-07-15</lastmod>
     </url>
     <url>
          <loc>https://stpcoder.github.io/win-automation-picker/operation/run-monitor/</loc>
-         <lastmod>2026-07-14</lastmod>
+         <lastmod>2026-07-15</lastmod>
+    </url>
+    <url>
+         <loc>https://stpcoder.github.io/win-automation-picker/operation/test-workflow/</loc>
+         <lastmod>2026-07-15</lastmod>
     </url>
     <url>
          <loc>https://stpcoder.github.io/win-automation-picker/setup/admin-pc/</loc>
-         <lastmod>2026-07-14</lastmod>
+         <lastmod>2026-07-15</lastmod>
+    </url>
+    <url>
+         <loc>https://stpcoder.github.io/win-automation-picker/setup/config-files/</loc>
+         <lastmod>2026-07-15</lastmod>
+    </url>
+    <url>
+         <loc>https://stpcoder.github.io/win-automation-picker/setup/connection-structure/</loc>
+         <lastmod>2026-07-15</lastmod>
     </url>
     <url>
          <loc>https://stpcoder.github.io/win-automation-picker/setup/fixture-pc/</loc>
-         <lastmod>2026-07-14</lastmod>
+         <lastmod>2026-07-15</lastmod>
+    </url>
+    <url>
+         <loc>https://stpcoder.github.io/win-automation-picker/setup/program-install/</loc>
+         <lastmod>2026-07-15</lastmod>
+    </url>
+    <url>
+         <loc>https://stpcoder.github.io/win-automation-picker/setup/screen-guide/</loc>
+         <lastmod>2026-07-15</lastmod>
     </url>
     <url>
          <loc>https://stpcoder.github.io/win-automation-picker/setup/sk-commander/</loc>
-         <lastmod>2026-07-14</lastmod>
+         <lastmod>2026-07-15</lastmod>
     </url>
     <url>
          <loc>https://stpcoder.github.io/win-automation-picker/troubleshooting/</loc>
-         <lastmod>2026-07-14</lastmod>
+         <lastmod>2026-07-15</lastmod>
+    </url>
+    <url>
+         <loc>https://stpcoder.github.io/win-automation-picker/troubleshooting/button-guide/</loc>
+         <lastmod>2026-07-15</lastmod>
     </url>
     <url>
          <loc>https://stpcoder.github.io/win-automation-picker/troubleshooting/communication/</loc>
-         <lastmod>2026-07-14</lastmod>
+         <lastmod>2026-07-15</lastmod>
+    </url>
+    <url>
+         <loc>https://stpcoder.github.io/win-automation-picker/troubleshooting/full-checklist/</loc>
+         <lastmod>2026-07-15</lastmod>
     </url>
     <url>
          <loc>https://stpcoder.github.io/win-automation-picker/troubleshooting/sk-commander/</loc>
-         <lastmod>2026-07-14</lastmod>
+         <lastmod>2026-07-15</lastmod>
+    </url>
+    <url>
+         <loc>https://stpcoder.github.io/win-automation-picker/troubleshooting/support-scope/</loc>
+         <lastmod>2026-07-15</lastmod>
     </url>
     <url>
          <loc>https://stpcoder.github.io/win-automation-picker/troubleshooting/test-execution/</loc>
-         <lastmod>2026-07-14</lastmod>
+         <lastmod>2026-07-15</lastmod>
     </url>
 </urlset>
