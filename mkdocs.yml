@@ -12,8 +12,10 @@ theme:
   features:
     - navigation.sections
     - navigation.expand
+    - navigation.indexes
     - navigation.top
     - navigation.footer
+    - toc.follow
     - search.highlight
     - search.suggest
     - content.code.copy
@@ -26,6 +28,8 @@ theme:
     code: Roboto Mono
 extra_css:
   - stylesheets/extra.css
+extra_javascript:
+  - javascripts/manual.js
 markdown_extensions:
   - admonition
   - attr_list
@@ -37,18 +41,37 @@ markdown_extensions:
       alternate_style: true
 nav:
   - 초기 설정:
-      - 전체 순서: index.md
-      - 관리자 PC 설정: setup/admin-pc.md
-      - 실장기 PC 설정: setup/fixture-pc.md
-      - SK Commander 항목 연결: setup/sk-commander.md
+      - 설치 및 실행:
+          - 초기 설정 절차: index.md
+          - 프로그램 설치 및 실행: setup/program-install.md
+      - 관리자 PC와 실장기 PC:
+          - 관리자 PC 설정: setup/admin-pc.md
+          - 실장기 PC 설정: setup/fixture-pc.md
+          - 설치 구조와 연결 정보: setup/connection-structure.md
+          - SK Commander 항목 연결: setup/sk-commander.md
+      - 화면과 파일:
+          - 화면 구성: setup/screen-guide.md
+          - 설정 파일과 폴더: setup/config-files.md
   - 테스트 운용:
-      - 운용 순서: operation/index.md
-      - SEQ와 자동 실행 순서 준비: operation/prepare.md
-      - 테스트 실행과 상태 확인: operation/run-monitor.md
-      - SoC별 DRAM 마진 설정: operation/dram-margin.md
-      - 실장기 정보 수정과 Excel: operation/fixture-info.md
+      - 테스트 진행:
+          - 테스트 운용 개요: operation/index.md
+          - 테스트 진행 절차: operation/test-workflow.md
+      - SEQ와 자동 실행:
+          - SEQ와 자동 실행 순서 준비: operation/prepare.md
+          - 자동 실행 순서 녹화 및 편집: operation/automation-recording.md
+      - 테스트 실행 및 상태 확인:
+          - 테스트 실행과 상태 확인: operation/run-monitor.md
+          - 여러 실장기 PC 운용: operation/multi-pc-operation.md
+          - 상태 확인 상세: operation/monitoring-detail.md
+          - 실장기 정보 수정과 Excel: operation/fixture-info.md
+      - 직접 제어:
+          - 직접 COM과 Binary: operation/direct-control-binary.md
+          - SoC별 DRAM 마진 설정: operation/dram-margin.md
   - 문제 해결:
       - 확인 순서: troubleshooting/index.md
       - 통신과 실장기 PC: troubleshooting/communication.md
       - SK Commander 인식: troubleshooting/sk-commander.md
       - SEQ·COM·중단 복구: troubleshooting/test-execution.md
+      - 단계별 점검표: troubleshooting/full-checklist.md
+      - 버튼과 메뉴 찾기: troubleshooting/button-guide.md
+      - 지원 범위와 현장 확인: troubleshooting/support-scope.md

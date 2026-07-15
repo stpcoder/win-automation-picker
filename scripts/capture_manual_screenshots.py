@@ -63,8 +63,11 @@ Task { @MainActor in
             true,
             onScreenWindowsOnly: true
         )
-        guard let window = content.windows.first(where: {
+        let matchingWindows = content.windows.filter {
             $0.owningApplication?.processID == targetPID && $0.title == targetTitle
+        }
+        guard let window = matchingWindows.max(by: {
+            ($0.frame.width * $0.frame.height) < ($1.frame.width * $1.frame.height)
         }) else {
             throw NSError(domain: "AEManualCapture", code: 1)
         }
@@ -583,6 +586,10 @@ def _capture(widget: object, path: Path) -> None:
     widget.update()
     time.sleep(0.25)
     widget.update()
+    logical_width = int(widget.winfo_width())
+    logical_height = int(widget.winfo_height())
+    minimum_width = max(1600, int(logical_width * 1.7))
+    minimum_height = max(900, int(logical_height * 1.7))
     handoff_value = os.environ.get("AE_MANUAL_CAPTURE_HANDOFF", "").strip()
     if handoff_value:
         handoff_path = Path(handoff_value).expanduser().resolve()
@@ -608,6 +615,16 @@ def _capture(widget: object, path: Path) -> None:
                 and path.is_file()
                 and path.stat().st_size >= 10_000
             ):
+                captured = tk.PhotoImage(file=str(path))
+                if (
+                    captured.width() < minimum_width
+                    or captured.height() < minimum_height
+                ):
+                    raise RuntimeError(
+                        f"외부 화면 캡처 해상도가 너무 작습니다: "
+                        f"{captured.width()}x{captured.height()} "
+                        f"(최소 {minimum_width}x{minimum_height})"
+                    )
                 completed_path.unlink(missing_ok=True)
                 handoff_path.unlink(missing_ok=True)
                 return
@@ -645,7 +662,15 @@ def _capture(widget: object, path: Path) -> None:
                         if max(red, green, blue) <= 3:
                             black_count += 1
                 black_ratio = black_count / max(1, sample_count)
-                if black_ratio < 0.08:
+                if (
+                    sampled.width() < minimum_width
+                    or sampled.height() < minimum_height
+                ):
+                    capture_issue = (
+                        f"undersized image {sampled.width()}x{sampled.height()} "
+                        f"for {logical_width}x{logical_height} window"
+                    )
+                elif black_ratio < 0.08:
                     dimensions = candidate_dimensions
                     break
                 capture_issue = f"invalid black-frame ratio {black_ratio:.1%}"
@@ -675,6 +700,12 @@ def _capture(widget: object, path: Path) -> None:
         raise RuntimeError(
             f"Captured window dimensions do not match {widget.title()}: "
             f"{image.width()}x{image.height()} vs {expected_width}x{expected_height}"
+        )
+    if image.width() < minimum_width or image.height() < minimum_height:
+        raise RuntimeError(
+            f"Captured image is too small for the manual: {path.name} "
+            f"is {image.width()}x{image.height()}, expected at least "
+            f"{minimum_width}x{minimum_height}"
         )
 
 
@@ -1406,6 +1437,33 @@ def capture(output_dir: Path) -> None:
             channel = app._settings_slaves[0]["channels"][2]
             app.after(150, capture_channel_firmware_settings)
             app._ask_channel_values(channel, parent=app)
+
+            dummy_controller = workspace / "DramMarginController.exe"
+            dummy_controller.write_bytes(b"MZ manual screenshot fixture")
+            margin_parent = tk.Toplevel(app)
+            margin_parent.title("DRAM 마진 번들 만들기")
+            margin_parent.geometry("820x180+100+100")
+            margin_parent.update()
+            app._open_margin_soc_workflow_dialog(
+                margin_parent,
+                tk.StringVar(master=app, value=str(dummy_controller)),
+                tk.StringVar(master=app, value=""),
+            )
+            margin_dialogs = [
+                child
+                for child in app.winfo_children()
+                if isinstance(child, tk.Toplevel)
+                and child.title() == "SoC별 DRAM 마진 설정 준비"
+            ]
+            if not margin_dialogs:
+                raise RuntimeError("SoC별 DRAM 마진 설정 화면이 열리지 않았습니다.")
+            margin_dialog = margin_dialogs[0]
+            margin_dialog.geometry("1020x760+35+55")
+            margin_dialog.update()
+            _assert_operator_language(margin_dialog, "SoC별 DRAM 마진 설정")
+            _capture(margin_dialog, output_dir / "18-dram-margin-settings.png")
+            margin_dialog.destroy()
+            margin_parent.destroy()
 
             app._show_today_work()
             app._toggle_run_advanced_tools()
