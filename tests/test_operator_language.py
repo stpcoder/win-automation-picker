@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
+import struct
 
 from win_automation_picker.ftp_app import (
     DEFAULT_CONFIG_FILES as APP_DEFAULT_CONFIG_FILES,
@@ -43,6 +44,20 @@ LEGACY_VISIBLE_PHRASES = (
     "연결 구조 BLOCK",
     "구성 검사: BLOCK",
 )
+AWKWARD_MANUAL_PHRASES = (
+    "시작 전에 프로그램 준비",
+    "정보가 채워지는 방법",
+    "처음 한 번만 하는 순서",
+    "한눈에 보는 순서",
+    "평소처럼",
+    "사용하는 때",
+    "누른 뒤 확인할 곳",
+    "헷갈",
+    "통째로",
+    "스스로 종료",
+    "아니라",
+    "반면",
+)
 
 
 def _manual_files() -> list[Path]:
@@ -67,6 +82,20 @@ def test_operator_manual_uses_fixture_terms_only() -> None:
 
     assert not findings, (
         "작업자 화면에 사용하지 않는 용어가 남아 있습니다:\n" + "\n".join(findings)
+    )
+
+
+def test_operator_manual_avoids_conversational_or_contrast_phrasing() -> None:
+    findings = [
+        f"{path.relative_to(ROOT)}: {phrase}"
+        for path in _manual_files()
+        for phrase in AWKWARD_MANUAL_PHRASES
+        if phrase in path.read_text(encoding="utf-8")
+    ]
+
+    assert not findings, (
+        "설명서 문체에 대화체 또는 불필요한 대비 표현이 남아 있습니다:\n"
+        + "\n".join(findings)
     )
 
 
@@ -109,6 +138,31 @@ def test_manual_screenshots_exist() -> None:
                 missing.append(f"{page.relative_to(ROOT)} -> {target}")
 
     assert not missing, "설명서 화면 파일이 없습니다:\n" + "\n".join(missing)
+
+
+def test_manual_screenshots_keep_readable_source_resolution() -> None:
+    screenshots: set[Path] = set()
+    pages = [ROOT / "README.md", ROOT / "README.ko.md", *sorted(DOCS.rglob("*.md"))]
+    for page in pages:
+        text = page.read_text(encoding="utf-8")
+        for target in IMAGE_LINK.findall(text):
+            screenshots.add((page.parent / target).resolve())
+
+    undersized: list[str] = []
+    for screenshot in sorted(screenshots):
+        with screenshot.open("rb") as handle:
+            header = handle.read(24)
+        assert header[:8] == b"\x89PNG\r\n\x1a\n", screenshot
+        width, height = struct.unpack(">II", header[16:24])
+        if width < 1600 or height < 900:
+            undersized.append(
+                f"{screenshot.relative_to(ROOT)}: {width}x{height}"
+            )
+
+    assert not undersized, (
+        "설명서 화면은 원본을 확인할 수 있는 해상도로 생성해야 합니다:\n"
+        + "\n".join(undersized)
+    )
 
 
 def test_screenshot_names_use_current_operator_terms() -> None:
